@@ -1,0 +1,13 @@
+{
+  "name": "gratos",
+  "module": "index.ts",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "devDependencies": {
+    "bun-types": "latest",
+    "wrangler": "^3.0.0",
+    "typescript": "^5.0.0"
+  }
+}

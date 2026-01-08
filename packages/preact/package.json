@@ -1,0 +1,30 @@
+{
+    "name": "@gratos/preact",
+    "version": "0.1.0",
+    "type": "module",
+    "main": "./dist/index.js",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "files": [
+        "dist"
+    ],
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        }
+    },
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "build": "bun build ./src/index.tsx --outdir ./dist --external preact --external @simplewebauthn/browser && tsc"
+    },
+    "dependencies": {
+        "preact": "^10.19.0",
+        "@simplewebauthn/browser": "^9.0.0"
+    },
+    "devDependencies": {
+        "typescript": "^5.0.0"
+    }
+}
