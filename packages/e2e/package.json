@@ -1,0 +1,13 @@
+{
+    "name": "gratos-e2e",
+    "version": "0.0.1",
+    "type": "module",
+    "scripts": {
+        "test": "playwright test"
+    },
+    "devDependencies": {
+        "@playwright/test": "^1.41.0",
+        "typescript": "^5.0.0",
+        "@types/node": "^20.0.0"
+    }
+}

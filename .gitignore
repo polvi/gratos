@@ -34,3 +34,6 @@ lerna-debug.log*
 .aider*
 
 *.swp
+
+test-results
+playwright-report
