@@ -1,0 +1,60 @@
+import { h } from 'preact';
+import { useState } from 'preact/hooks';
+import { startRegistration } from '@simplewebauthn/browser';
+import { useAuth } from './AuthContext';
+
+export function RegisterButton() {
+    const { login, apiBaseUrl } = useAuth();
+    const [username, setUsername] = useState('');
+    const [status, setStatus] = useState('');
+
+    const handleRegister = async () => {
+        if (!username) return;
+        try {
+            setStatus('Registering...');
+            const resp = await fetch(`${apiBaseUrl}/register/options?username=${encodeURIComponent(username)}`);
+            const options = await resp.json();
+
+            const attResp = await startRegistration(options);
+
+            const verifyResp = await fetch(`${apiBaseUrl}/register/verify`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    username,
+                    response: attResp,
+                }),
+                credentials: 'include', // technically not needed for register but consistency
+            });
+
+            const verificationJSON = await verifyResp.json();
+
+            if (verificationJSON && verificationJSON.verified) {
+                setStatus('Success!');
+                login(verificationJSON.user);
+                setTimeout(() => setStatus(''), 2000);
+            } else {
+                setStatus('Failed');
+            }
+        } catch (error) {
+            console.error(error);
+            setStatus('Error');
+        }
+    };
+
+    return (
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <input
+                type="text"
+                placeholder="Username"
+                value={username}
+                onInput={(e) => setUsername((e.target as HTMLInputElement).value)}
+            />
+            <button onClick={handleRegister} disabled={!!status || !username}>
+                {status || 'Register'}
+            </button>
+        </div>
+    );
+}

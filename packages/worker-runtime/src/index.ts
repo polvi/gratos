@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+// @ts-ignore
 import { Buffer } from 'node:buffer';
 import {
     generateRegistrationOptions,
@@ -12,6 +13,7 @@ import type {
 } from '@simplewebauthn/server';
 
 import { cors } from 'hono/cors';
+import { setCookie, getCookie, deleteCookie } from 'hono/cookie';
 
 type Env = {
     DB: D1Database;
@@ -136,15 +138,29 @@ app.post('/register/verify', async (c) => {
         let user = await getUser(c.env.DB, username);
         if (!user) {
             await c.env.DB.prepare('INSERT INTO users (id, username) VALUES (?, ?)').bind(storedUserId, username).run();
+            user = { id: storedUserId, username };
         }
 
         await saveCredential(c.env.DB, storedUserId, verification);
+
+        // Create Session
+        const sessionId = crypto.randomUUID();
+        // 7 days
+        await c.env.KV.put(`session:${sessionId}`, storedUserId, { expirationTtl: 60 * 60 * 24 * 7 });
+
+        setCookie(c, 'session_id', sessionId, {
+            httpOnly: true,
+            secure: true,
+            sameSite: 'None',
+            path: '/',
+            maxAge: 60 * 60 * 24 * 7,
+        });
 
         // cleanup
         await c.env.KV.delete(`reg_challenge_user:${username}`);
         await c.env.KV.delete(`reg_userid_user:${username}`);
 
-        return c.json({ verified: true });
+        return c.json({ verified: true, user });
     }
 
     return c.json({ verified: false, error: 'Verification failed' }, 400);
@@ -201,10 +217,53 @@ app.post('/login/verify', async (c) => {
         // cleanup
         await c.env.KV.delete(`auth_challenge:${challengeId}`);
 
+        // Create Session
+        const sessionId = crypto.randomUUID();
+        // 7 days
+        if (user) {
+            await c.env.KV.put(`session:${sessionId}`, (user as any).id, { expirationTtl: 60 * 60 * 24 * 7 });
+        }
+
+        setCookie(c, 'session_id', sessionId, {
+            httpOnly: true,
+            secure: true,
+            sameSite: 'None', // Needed for cross-origin if frontend is separate during dev
+            path: '/',
+            maxAge: 60 * 60 * 24 * 7,
+        });
+
         return c.json({ verified: true, user });
     }
 
     return c.json({ verified: false }, 400);
+});
+
+app.get('/whoami', async (c) => {
+    const sessionId = getCookie(c, 'session_id');
+    if (!sessionId) {
+        return c.json({ error: 'Not authenticated' }, 401);
+    }
+
+    const userId = await c.env.KV.get(`session:${sessionId}`);
+    if (!userId) {
+        return c.json({ error: 'Session expired' }, 401);
+    }
+
+    const user = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(userId).first();
+    if (!user) {
+        return c.json({ error: 'User not found' }, 404);
+    }
+
+    return c.json({ user });
+});
+
+app.post('/logout', async (c) => {
+    const sessionId = getCookie(c, 'session_id');
+    if (sessionId) {
+        await c.env.KV.delete(`session:${sessionId}`);
+        deleteCookie(c, 'session_id');
+    }
+    return c.json({ success: true });
 });
 
 
