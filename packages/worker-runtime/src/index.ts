@@ -18,6 +18,12 @@ import { setCookie, getCookie, deleteCookie } from 'hono/cookie';
 type Env = {
     DB: D1Database;
     KV: KVNamespace;
+    RP_NAME?: string;
+    RP_ID?: string;
+    ORIGIN?: string;
+    SESSION_TTL?: string;
+    CHALLENGE_TTL?: string;
+    COOKIE_DOMAIN?: string;
 };
 
 const app = new Hono<{ Bindings: Env }>();
@@ -31,10 +37,18 @@ app.use('/*', cors({
     credentials: true,
 }));
 
-const RP_NAME = 'Gratos Auth';
-// In real app, match your domain
-const RP_ID = 'localhost';
-const ORIGIN = `http://${RP_ID}:4321`;
+// Helper to get config values
+function getConfig(c: any) {
+    const url = new URL(c.req.url);
+    const RP_ID = c.env.RP_ID || url.hostname;
+    const ORIGIN = c.env.ORIGIN || url.origin;
+    const RP_NAME = c.env.RP_NAME || 'Gratos Auth';
+    const SESSION_TTL = parseInt(c.env.SESSION_TTL || '604800', 10); // Default 7 days
+    const CHALLENGE_TTL = parseInt(c.env.CHALLENGE_TTL || '300', 10); // Default 5 mins
+    const COOKIE_DOMAIN = c.env.COOKIE_DOMAIN; // Optional
+
+    return { RP_ID, ORIGIN, RP_NAME, SESSION_TTL, CHALLENGE_TTL, COOKIE_DOMAIN };
+}
 
 app.get('/', (c) => c.text('Gratos Worker Running'));
 
@@ -77,6 +91,7 @@ async function saveCredential(db: D1Database, userId: string, verification: any)
 // --- Registration ---
 
 app.get('/register/options', async (c) => {
+    const { RP_ID, RP_NAME, CHALLENGE_TTL } = getConfig(c);
     const username = c.req.query('username');
     if (!username) return c.json({ error: 'Username required' }, 400);
 
@@ -108,13 +123,16 @@ app.get('/register/options', async (c) => {
     const options = await generateRegistrationOptions(opts);
 
     // Key by username for the verify step to find it easily
-    await c.env.KV.put(`reg_challenge_user:${username}`, options.challenge, { expirationTtl: 60 * 5 });
-    await c.env.KV.put(`reg_userid_user:${username}`, userId, { expirationTtl: 60 * 5 });
+    await c.env.KV.put(`reg_challenge_user:${username}`, options.challenge, { expirationTtl: CHALLENGE_TTL });
+    await c.env.KV.put(`reg_userid_user:${username}`, userId, { expirationTtl: CHALLENGE_TTL });
 
     return c.json(options);
 });
 
 app.post('/register/verify', async (c) => {
+    // cookedCookieDomain was a hallucination in the destructure above, let's fix it properly in the function body
+    const config = getConfig(c);
+
     const body = await c.req.json();
     const { username, response } = body;
 
@@ -130,8 +148,8 @@ app.post('/register/verify', async (c) => {
     const verification = await verifyRegistrationResponse({
         response,
         expectedChallenge: storedChallenge,
-        expectedOrigin: ORIGIN,
-        expectedRPID: RP_ID,
+        expectedOrigin: config.ORIGIN,
+        expectedRPID: config.RP_ID,
     });
 
     if (verification.verified && verification.registrationInfo) {
@@ -145,15 +163,16 @@ app.post('/register/verify', async (c) => {
 
         // Create Session
         const sessionId = crypto.randomUUID();
-        // 7 days
-        await c.env.KV.put(`session:${sessionId}`, storedUserId, { expirationTtl: 60 * 60 * 24 * 7 });
+
+        await c.env.KV.put(`session:${sessionId}`, storedUserId, { expirationTtl: config.SESSION_TTL });
 
         setCookie(c, 'session_id', sessionId, {
             httpOnly: true,
             secure: true,
             sameSite: 'None',
             path: '/',
-            maxAge: 60 * 60 * 24 * 7,
+            maxAge: config.SESSION_TTL,
+            domain: config.COOKIE_DOMAIN,
         });
 
         // cleanup
@@ -169,6 +188,7 @@ app.post('/register/verify', async (c) => {
 // --- Authentication ---
 
 app.get('/login/options', async (c) => {
+    const { RP_ID, CHALLENGE_TTL } = getConfig(c);
     const opts: GenerateAuthenticationOptionsOpts = {
         rpID: RP_ID,
         userVerification: 'preferred',
@@ -177,12 +197,13 @@ app.get('/login/options', async (c) => {
     const options = await generateAuthenticationOptions(opts);
 
     const challengeId = crypto.randomUUID();
-    await c.env.KV.put(`auth_challenge:${challengeId}`, options.challenge, { expirationTtl: 60 * 5 });
+    await c.env.KV.put(`auth_challenge:${challengeId}`, options.challenge, { expirationTtl: CHALLENGE_TTL });
 
     return c.json({ ...options, challengeId });
 });
 
 app.post('/login/verify', async (c) => {
+    const { RP_ID, ORIGIN, SESSION_TTL, COOKIE_DOMAIN } = getConfig(c);
     const { response, challengeId } = await c.req.json();
 
     const expectedChallenge = await c.env.KV.get(`auth_challenge:${challengeId}`);
@@ -219,9 +240,9 @@ app.post('/login/verify', async (c) => {
 
         // Create Session
         const sessionId = crypto.randomUUID();
-        // 7 days
+
         if (user) {
-            await c.env.KV.put(`session:${sessionId}`, (user as any).id, { expirationTtl: 60 * 60 * 24 * 7 });
+            await c.env.KV.put(`session:${sessionId}`, (user as any).id, { expirationTtl: SESSION_TTL });
         }
 
         setCookie(c, 'session_id', sessionId, {
@@ -229,7 +250,8 @@ app.post('/login/verify', async (c) => {
             secure: true,
             sameSite: 'None', // Needed for cross-origin if frontend is separate during dev
             path: '/',
-            maxAge: 60 * 60 * 24 * 7,
+            maxAge: SESSION_TTL,
+            domain: COOKIE_DOMAIN,
         });
 
         return c.json({ verified: true, user });
@@ -258,10 +280,14 @@ app.get('/whoami', async (c) => {
 });
 
 app.post('/logout', async (c) => {
+    const { COOKIE_DOMAIN } = getConfig(c);
     const sessionId = getCookie(c, 'session_id');
     if (sessionId) {
         await c.env.KV.delete(`session:${sessionId}`);
-        deleteCookie(c, 'session_id');
+        deleteCookie(c, 'session_id', {
+            path: '/',
+            domain: COOKIE_DOMAIN,
+        });
     }
     return c.json({ success: true });
 });

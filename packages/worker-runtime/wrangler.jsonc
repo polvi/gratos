@@ -5,6 +5,14 @@
     "compatibility_flags": [
         "nodejs_compat"
     ],
+    "vars": {
+        // "RP_NAME": "Gratos Auth",
+        // "RP_ID": "example.com",
+        "ORIGIN": "http://localhost:4321",
+        // "SESSION_TTL": "604800",
+        // "CHALLENGE_TTL": "300"
+        // "COOKIE_DOMAIN": "example.com"
+    },
     "d1_databases": [
         {
             "binding": "DB",
