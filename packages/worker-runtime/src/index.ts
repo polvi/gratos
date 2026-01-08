@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { Buffer } from 'node:buffer';
 import {
     generateRegistrationOptions,
     verifyRegistrationResponse,

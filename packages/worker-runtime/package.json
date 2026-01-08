@@ -4,7 +4,7 @@
     "type": "module",
     "base": "./src/index.ts",
     "scripts": {
-        "dev": "wrangler dev src/index.ts",
+        "dev": "wrangler dev --compatibility-flags nodejs_compat",
         "deploy": "wrangler deploy --minify src/index.ts"
     },
     "dependencies": {

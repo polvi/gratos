@@ -55,10 +55,25 @@ export function Auth({ apiBaseUrl }: AuthProps) {
             // 2. Pass to browser authenticator
             const asseResp = await startAuthentication(options);
 
-            // 3. Verify (TODO: Implement verify endpoint in worker)
-            // const verifyResp = await fetch(`${apiBaseUrl}/login/verify`, ...);
+            // 3. Verify
+            const verifyResp = await fetch(`${apiBaseUrl}/login/verify`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    challengeId: options.challengeId,
+                    response: asseResp,
+                }),
+            });
 
-            setStatus('Login flow initiated (verify not fully implemented)');
+            const verifyJSON = await verifyResp.json();
+
+            if (verifyJSON && verifyJSON.verified) {
+                setStatus(`Login successful! Welcome ${verifyJSON.user?.username || 'User'}`);
+            } else {
+                setStatus(`Login failed: ${JSON.stringify(verifyJSON)}`);
+            }
         } catch (error) {
             console.error(error);
             setStatus(`Error: ${(error as Error).message}`);
