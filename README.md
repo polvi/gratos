@@ -21,5 +21,6 @@ Install dependencies and start the local development server:
 
 ```bash
 bun install
-bun run dev
+bun --cwd packages/worker-runtime dev
+bun --cwd packages/demo dev
 ```
