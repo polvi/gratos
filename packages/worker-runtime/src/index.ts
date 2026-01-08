@@ -53,13 +53,19 @@ async function saveCredential(db: D1Database, userId: string, verification: any)
 
     const id = crypto.randomUUID();
 
+    // Ensure credentialID is stored as a string base64url
+    let storedCredentialID = credentialID;
+    if (typeof credentialID !== 'string') {
+        storedCredentialID = Buffer.from(credentialID).toString('base64url');
+    }
+
     await db.prepare(`
     INSERT INTO public_keys (id, user_id, credential_id, public_key, user_backed_up, transports)
     VALUES (?, ?, ?, ?, ?, ?)
   `).bind(
         id,
         userId,
-        credentialID,
+        storedCredentialID,
         Buffer.from(credentialPublicKey).toString('base64'),
         credentialBackedUp ? 1 : 0,
         ''
@@ -107,7 +113,9 @@ app.get('/register/options', async (c) => {
 });
 
 app.post('/register/verify', async (c) => {
-    const { username, response } = await c.req.json(); // client MUST send username
+    const body = await c.req.json();
+    const { username, response } = body;
+
     if (!username) return c.json({ error: 'Username required' }, 400);
 
     const storedChallenge = await c.env.KV.get(`reg_challenge_user:${username}`);
@@ -127,14 +135,7 @@ app.post('/register/verify', async (c) => {
     if (verification.verified && verification.registrationInfo) {
         let user = await getUser(c.env.DB, username);
         if (!user) {
-            // Create user
             await c.env.DB.prepare('INSERT INTO users (id, username) VALUES (?, ?)').bind(storedUserId, username).run();
-        } else {
-            // If user existed but we generated a new ID? 
-            // We should have used the existing ID.
-            // getUser checks username.
-            // storedUserId came from KV.
-            // if user existed, we put existing ID in KV.
         }
 
         await saveCredential(c.env.DB, storedUserId, verification);
@@ -177,6 +178,8 @@ app.post('/login/verify', async (c) => {
     const credential = await c.env.DB.prepare('SELECT * FROM public_keys WHERE credential_id = ?').bind(credentialId).first() as any;
 
     if (!credential) {
+        // Dump all credentials to help debug
+        const allCreds = await c.env.DB.prepare('SELECT credential_id FROM public_keys').all();
         return c.json({ error: 'Credential not found' }, 400);
     }
 
