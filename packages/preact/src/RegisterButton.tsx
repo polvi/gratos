@@ -9,7 +9,10 @@ export function RegisterButton() {
     const [status, setStatus] = useState('');
 
     const handleRegister = async () => {
-        if (!username) return;
+        if (!username) {
+            setStatus('Please enter a username');
+            return;
+        }
         try {
             setStatus('Registering...');
             const resp = await fetch(`${apiBaseUrl}/register/options?username=${encodeURIComponent(username)}`);
@@ -50,9 +53,12 @@ export function RegisterButton() {
                 type="text"
                 placeholder="Username"
                 value={username}
-                onInput={(e) => setUsername((e.target as HTMLInputElement).value)}
+                onInput={(e) => {
+                    setUsername((e.target as HTMLInputElement).value);
+                    if (status === 'Please enter a username') setStatus('');
+                }}
             />
-            <button onClick={handleRegister} disabled={!!status || !username}>
+            <button onClick={handleRegister} disabled={status === 'Registering...'}>
                 {status || 'Register'}
             </button>
         </div>
