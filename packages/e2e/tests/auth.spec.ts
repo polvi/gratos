@@ -27,35 +27,33 @@ test.describe('Gratos Auth with Virtual Authenticator', () => {
         // Debug: Listen to console
         page.on('console', msg => console.log('PAGE LOG:', msg.text()));
 
-        const usernameInput = page.getByPlaceholder('Enter username');
-        const registerBtn = page.getByRole('button', { name: 'Register Passkey' });
-        const loginBtn = page.getByRole('button', { name: 'Login with Passkey' });
+        const usernameInput = page.getByPlaceholder('Username');
+        const registerBtn = page.getByRole('button', { name: 'Register', exact: true });
 
         // 2. Register
         const username = `user_${Date.now()}`;
-        await usernameInput.fill(username);
+        // Wait for hydration to settle
+        await page.waitForTimeout(1000);
+        await usernameInput.click();
+        await usernameInput.pressSequentially(username, { delay: 50 });
+
+        // Wait for state update
+        await expect(usernameInput).toHaveValue(username);
+        await expect(registerBtn).toBeEnabled();
+
         await registerBtn.click();
 
-        // Wait for ANY status message (success or error)
-        try {
-            // Check for success first
-            await expect(page.getByText('Registration successful!')).toBeVisible({ timeout: 5000 });
-        } catch (e) {
-            // If failed, try to capture what IS visible
-            const status = await page.locator('p').textContent().catch(() => 'No status text found');
-            console.log('TEST FAILURE DEBUG: Status text is:', status);
-            throw e; // Rethrow to fail test
-        }
+        // 3. Verify Registration (Auto-login)
+        await expect(page.getByText(`Welcome back, ${username}!`)).toBeVisible({ timeout: 10000 });
 
-        // 3. Login
+        // 4. Logout
+        const logoutBtn = page.getByRole('button', { name: 'Logout' });
+        await logoutBtn.click();
+        await expect(page.getByText('Welcome to Gratos Hotel')).toBeVisible();
+
+        // 5. Login
+        const loginBtn = page.getByRole('button', { name: 'Login', exact: true });
         await loginBtn.click();
-
-        try {
-            await expect(page.getByText(`Login successful! Welcome ${username}`)).toBeVisible({ timeout: 5000 });
-        } catch (e) {
-            const status = await page.locator('div > p').last().textContent().catch(() => 'No status text found');
-            console.log('LOGIN FAILURE DEBUG: Status text is:', status);
-            throw e;
-        }
+        await expect(page.getByText(`Welcome back, ${username}!`)).toBeVisible({ timeout: 10000 });
     });
 });
