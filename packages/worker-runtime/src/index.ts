@@ -7,10 +7,10 @@ import {
 } from '@simplewebauthn/server';
 import type {
     GenerateRegistrationOptionsOpts,
-    VerifyRegistrationResponseOpts,
     GenerateAuthenticationOptionsOpts,
-    VerifyAuthenticationResponseOpts,
 } from '@simplewebauthn/server';
+
+import { cors } from 'hono/cors';
 
 type Env = {
     DB: D1Database;
@@ -19,12 +19,51 @@ type Env = {
 
 const app = new Hono<{ Bindings: Env }>();
 
+app.use('/*', cors({
+    origin: ['http://localhost:4321', 'http://localhost:5173'],
+    allowHeaders: ['Content-Type'],
+    allowMethods: ['POST', 'GET', 'OPTIONS'],
+    exposeHeaders: ['Content-Length'],
+    maxAge: 600,
+    credentials: true,
+}));
+
 const RP_NAME = 'Gratos Auth';
-// In a real app, this should be your production domain
+// In real app, match your domain
 const RP_ID = 'localhost';
-const ORIGIN = `http://${RP_ID}:5173`;
+const ORIGIN = `http://${RP_ID}:4321`;
 
 app.get('/', (c) => c.text('Gratos Worker Running'));
+
+// --- Helpers ---
+
+async function getUser(db: D1Database, username: string) {
+    return await db.prepare('SELECT * FROM users WHERE username = ?').bind(username).first();
+}
+
+async function getUserCredentials(db: D1Database, userId: string): Promise<any[]> {
+    const { results } = await db.prepare('SELECT * FROM public_keys WHERE user_id = ?').bind(userId).all();
+    return results || [];
+}
+
+async function saveCredential(db: D1Database, userId: string, verification: any) {
+    const { registrationInfo } = verification;
+    const { credentialID, credentialPublicKey, credentialBackedUp } = registrationInfo;
+
+    const id = crypto.randomUUID();
+
+    await db.prepare(`
+    INSERT INTO public_keys (id, user_id, credential_id, public_key, user_backed_up, transports)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).bind(
+        id,
+        userId,
+        credentialID,
+        Buffer.from(credentialPublicKey).toString('base64'),
+        credentialBackedUp ? 1 : 0,
+        ''
+    ).run();
+}
 
 // --- Registration ---
 
@@ -32,24 +71,24 @@ app.get('/register/options', async (c) => {
     const username = c.req.query('username');
     if (!username) return c.json({ error: 'Username required' }, 400);
 
-    // Check if user exists, if not create a stub or handle appropriately
-    // For simplicity, we'll assume a new user or fetch existing user ID from DB
-    // Here we just generate a random ID for the session/flow
-    const userId = crypto.randomUUID();
+    let user: any = await getUser(c.env.DB, username);
+    const userId = user ? user.id : crypto.randomUUID();
 
-    // Retrieve user's existing credentials to prevent re-registration
-    // const userCredentials = await getUserCredentials(c.env.DB, userId);
+    let excludeCredentials: any[] = [];
+    if (user) {
+        const creds = await getUserCredentials(c.env.DB, user.id);
+        excludeCredentials = creds.map(cred => ({
+            id: cred.credential_id,
+            type: 'public-key',
+        }));
+    }
 
     const opts: GenerateRegistrationOptionsOpts = {
         rpName: RP_NAME,
         rpID: RP_ID,
         userID: userId,
         userName: username,
-        // excludeCredentials: userCredentials.map((cred) => ({
-        //   id: cred.credentialID,
-        //   type: 'public-key',
-        //   transports: cred.transports,
-        // })),
+        excludeCredentials,
         authenticatorSelection: {
             residentKey: 'preferred',
             userVerification: 'preferred',
@@ -59,23 +98,54 @@ app.get('/register/options', async (c) => {
 
     const options = await generateRegistrationOptions(opts);
 
-    // Store checks in KV for verification
-    await c.env.KV.put(`reg_challenge:${userId}`, options.challenge, { expirationTtl: 60 * 5 }); // 5 minutes
+    // Key by username for the verify step to find it easily
+    await c.env.KV.put(`reg_challenge_user:${username}`, options.challenge, { expirationTtl: 60 * 5 });
+    await c.env.KV.put(`reg_userid_user:${username}`, userId, { expirationTtl: 60 * 5 });
 
     return c.json(options);
 });
 
 app.post('/register/verify', async (c) => {
-    const { username, response } = await c.req.json();
-    // In a real flow, you'd pass the userId or session ID to link the challenge
-    // For this simplified example, we'd need a consistent way to track the user across requests
-    // For now, let's assume the client passes back the user ID (not secure for real apps, but good for demo)
-    // OR we use a session cookie.
+    const { username, response } = await c.req.json(); // client MUST send username
+    if (!username) return c.json({ error: 'Username required' }, 400);
 
-    // TODO: persistent session management
+    const storedChallenge = await c.env.KV.get(`reg_challenge_user:${username}`);
+    const storedUserId = await c.env.KV.get(`reg_userid_user:${username}`);
 
-    // Mock verification for now as we need to set up the DB helpers
-    return c.json({ verified: true });
+    if (!storedChallenge || !storedUserId) {
+        return c.json({ error: 'Challenge not found or expired' }, 400);
+    }
+
+    const verification = await verifyRegistrationResponse({
+        response,
+        expectedChallenge: storedChallenge,
+        expectedOrigin: ORIGIN,
+        expectedRPID: RP_ID,
+    });
+
+    if (verification.verified && verification.registrationInfo) {
+        let user = await getUser(c.env.DB, username);
+        if (!user) {
+            // Create user
+            await c.env.DB.prepare('INSERT INTO users (id, username) VALUES (?, ?)').bind(storedUserId, username).run();
+        } else {
+            // If user existed but we generated a new ID? 
+            // We should have used the existing ID.
+            // getUser checks username.
+            // storedUserId came from KV.
+            // if user existed, we put existing ID in KV.
+        }
+
+        await saveCredential(c.env.DB, storedUserId, verification);
+
+        // cleanup
+        await c.env.KV.delete(`reg_challenge_user:${username}`);
+        await c.env.KV.delete(`reg_userid_user:${username}`);
+
+        return c.json({ verified: true });
+    }
+
+    return c.json({ verified: false, error: 'Verification failed' }, 400);
 });
 
 // --- Authentication ---
@@ -88,11 +158,49 @@ app.get('/login/options', async (c) => {
 
     const options = await generateAuthenticationOptions(opts);
 
-    // Store challenge
     const challengeId = crypto.randomUUID();
     await c.env.KV.put(`auth_challenge:${challengeId}`, options.challenge, { expirationTtl: 60 * 5 });
 
     return c.json({ ...options, challengeId });
+});
+
+app.post('/login/verify', async (c) => {
+    const { response, challengeId } = await c.req.json();
+
+    const expectedChallenge = await c.env.KV.get(`auth_challenge:${challengeId}`);
+    if (!expectedChallenge) {
+        return c.json({ error: 'Challenge expired or invalid' }, 400);
+    }
+
+    const credentialId = response.id;
+    const credential = await c.env.DB.prepare('SELECT * FROM public_keys WHERE credential_id = ?').bind(credentialId).first() as any;
+
+    if (!credential) {
+        return c.json({ error: 'Credential not found' }, 400);
+    }
+
+    // Verify
+    const verification = await verifyAuthenticationResponse({
+        response,
+        expectedChallenge,
+        expectedOrigin: ORIGIN,
+        expectedRPID: RP_ID,
+        authenticator: {
+            credentialID: credentialId,
+            credentialPublicKey: Buffer.from(credential.public_key, 'base64'),
+            counter: 0,
+        },
+    });
+
+    if (verification.verified) {
+        const user = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(credential.user_id).first();
+        // cleanup
+        await c.env.KV.delete(`auth_challenge:${challengeId}`);
+
+        return c.json({ verified: true, user });
+    }
+
+    return c.json({ verified: false }, 400);
 });
 
 
