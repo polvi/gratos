@@ -21,6 +21,7 @@ type Env = {
     RP_NAME?: string;
     RP_ID?: string;
     ORIGIN?: string;
+    CORS_ALLOW_ORIGIN?: string;
     SESSION_TTL?: string;
     CHALLENGE_TTL?: string;
     COOKIE_DOMAIN?: string;
@@ -28,14 +29,17 @@ type Env = {
 
 const app = new Hono<{ Bindings: Env }>();
 
-app.use('/*', cors({
-    origin: ['http://localhost:4321', 'http://localhost:5173'],
-    allowHeaders: ['Content-Type'],
-    allowMethods: ['POST', 'GET', 'OPTIONS'],
-    exposeHeaders: ['Content-Length'],
-    maxAge: 600,
-    credentials: true,
-}));
+app.use('/*', (c, next) => {
+    const origins = (c.env.CORS_ALLOW_ORIGIN || 'http://localhost:4321,http://localhost:5173').split(',');
+    return cors({
+        origin: origins,
+        allowHeaders: ['Content-Type'],
+        allowMethods: ['POST', 'GET', 'OPTIONS'],
+        exposeHeaders: ['Content-Length'],
+        maxAge: 600,
+        credentials: true,
+    })(c, next);
+});
 
 // Helper to get config values
 function getConfig(c: any) {

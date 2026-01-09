@@ -10,9 +10,10 @@
         "astro": "astro"
     },
     "dependencies": {
-        "astro": "^4.0.0",
+        "@astrojs/cloudflare": "^12.6.12",
         "@astrojs/preact": "^3.0.0",
-        "preact": "^10.19.0",
-        "@gratos/preact": "workspace:*"
+        "@gratos/preact": "workspace:*",
+        "astro": "^5.16.7",
+        "preact": "^10.19.0"
     }
 }

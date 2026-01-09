@@ -1,7 +1,15 @@
 import { defineConfig } from 'astro/config';
 import preact from '@astrojs/preact';
+import cloudflare from '@astrojs/cloudflare';
 
 // https://astro.build/config
 export default defineConfig({
     integrations: [preact()],
+    output: 'static',
+    adapter: cloudflare(),
+    image: {
+        service: {
+            entrypoint: 'astro/assets/services/noop'
+        }
+    }
 });

@@ -1,0 +1,22 @@
+{
+    "name": "gratos-demo",
+    "main": "./dist/_worker.js/index.js",
+    "compatibility_date": "2024-04-01",
+    "compatibility_flags": [
+        "nodejs_compat"
+    ],
+    "assets": {
+        "directory": "./dist"
+    },
+    "vars": {},
+    "env": {
+        "prod": {
+            "routes": [
+                {
+                    "pattern": "gratos-demo.proc.io",
+                    "custom_domain": true
+                }
+            ]
+        }
+    }
+}

@@ -30,6 +30,7 @@ pnpm-debug.log*
 lerna-debug.log*
 
 # misc
+.astro*
 .DS_Store
 .aider*
 
@@ -37,3 +38,4 @@ lerna-debug.log*
 
 test-results
 playwright-report
+
