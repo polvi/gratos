@@ -1,6 +1,6 @@
 # Gratos
 
-Gratos is an open-source, serverless, headless, first-party authentication service for the post-password era. It provides modern, privacy-focused user authentication using passkeys, designed to run easily at the edge.
+Gratos is an open-source, privacy first, serverless, headless, first-party, first-factor, authentication service for the post-password era. It provides modern, privacy-focused user authentication using passkeys, designed to run easily at the edge.
 
 Gratos is inspired by [Ory Kratos](https://www.ory.sh/kratos/), however it is solely focused on passkey based authentication. The user identity layer is intended to be stored in the app, with Gratos only storing and verifying public key information from webauthn, creating first party sessions leveraging the domain attribute, and allowing for third party oauth flows.
 
