@@ -43,8 +43,34 @@ export function LoginButton() {
     };
 
     return (
-        <button onClick={handleLogin} disabled={!!status}>
-            {status || 'Login'}
-        </button>
+        <>
+            <style>{`
+                .login-btn {
+                    padding: 8px 16px;
+                    height: 40px;
+                    cursor: pointer;
+                    background: transparent;
+                    color: #18181b;
+                    border: 1px solid #e4e4e7;
+                    border-radius: 4px;
+                    font-size: 14px;
+                    font-weight: 500;
+                    background: white;
+                }
+                .login-btn:hover {
+                    background: #f4f4f5;
+                }
+                @media (max-width: 600px) {
+                    .login-btn {
+                        width: 100%;
+                        height: 48px;
+                        font-size: 16px;
+                    }
+                }
+            `}</style>
+            <button className="login-btn" onClick={handleLogin} disabled={!!status}>
+                {status || 'Login'}
+            </button>
+        </>
     );
 }

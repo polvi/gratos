@@ -48,10 +48,56 @@ export function RegisterButton() {
     };
 
     return (
-        <div>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <div style={{ position: 'relative' }}>
+            <style>{`
+                .register-input-group {
+                    display: flex;
+                    gap: 8px;
+                    align-items: center;
+                }
+                .register-input {
+                    padding: 8px 12px;
+                    border: 1px solid #ddd;
+                    border-radius: 4px;
+                    font-size: 16px; /* Avoid iOS zoom */
+                }
+                .register-btn {
+                    padding: 8px 16px;
+                    height: 40px;
+                    cursor: pointer;
+                    background: #18181b;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    font-size: 14px;
+                    font-weight: 500;
+                }
+                .register-btn:disabled {
+                    background: #a1a1aa;
+                    cursor: not-allowed;
+                }
+                @media (max-width: 600px) {
+                    .register-input-group {
+                        flex-direction: column;
+                        width: 100%;
+                        align-items: stretch;
+                    }
+                    .register-input {
+                        width: 100%;
+                        height: 44px; /* Touch target */
+                        box-sizing: border-box;
+                    }
+                    .register-btn {
+                        width: 100%;
+                        height: 48px; /* Larger touch target */
+                        font-size: 16px;
+                    }
+                }
+            `}</style>
+            <div className="register-input-group">
                 <input
                     type="text"
+                    className="register-input"
                     placeholder="Username"
                     value={username}
                     onInput={(e) => {
@@ -59,13 +105,17 @@ export function RegisterButton() {
                         if (status === 'Please enter a username') setStatus('');
                     }}
                 />
-                <button onClick={handleRegister} disabled={status === 'Registering...'}>
+                <button
+                    className="register-btn"
+                    onClick={handleRegister}
+                    disabled={status === 'Registering...'}
+                >
                     {status || 'Register'}
                 </button>
             </div>
             {!window.isSecureContext && (
-                <div style={{ color: 'red', fontSize: '0.8em', marginTop: '4px' }}>
-                    ⚠️ Not Secure Context. WebAuthn requires HTTPS or localhost.
+                <div style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: '6px', textAlign: 'center', background: '#fee2e2', padding: '4px', borderRadius: '4px' }}>
+                    ⚠️ Not Secure Context. HTTPS required.
                 </div>
             )}
         </div>
