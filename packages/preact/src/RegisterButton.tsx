@@ -41,26 +41,33 @@ export function RegisterButton() {
             } else {
                 setStatus('Failed');
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error(error);
-            setStatus('Error');
+            setStatus(error.message || String(error));
         }
     };
 
     return (
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <input
-                type="text"
-                placeholder="Username"
-                value={username}
-                onInput={(e) => {
-                    setUsername((e.target as HTMLInputElement).value);
-                    if (status === 'Please enter a username') setStatus('');
-                }}
-            />
-            <button onClick={handleRegister} disabled={status === 'Registering...'}>
-                {status || 'Register'}
-            </button>
+        <div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input
+                    type="text"
+                    placeholder="Username"
+                    value={username}
+                    onInput={(e) => {
+                        setUsername((e.target as HTMLInputElement).value);
+                        if (status === 'Please enter a username') setStatus('');
+                    }}
+                />
+                <button onClick={handleRegister} disabled={status === 'Registering...'}>
+                    {status || 'Register'}
+                </button>
+            </div>
+            {!window.isSecureContext && (
+                <div style={{ color: 'red', fontSize: '0.8em', marginTop: '4px' }}>
+                    ⚠️ Not Secure Context. WebAuthn requires HTTPS or localhost.
+                </div>
+            )}
         </div>
     );
 }

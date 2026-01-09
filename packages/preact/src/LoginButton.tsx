@@ -36,9 +36,9 @@ export function LoginButton() {
                 setStatus('Failed');
                 console.error(verifyJSON);
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error(error);
-            setStatus('Error');
+            setStatus(error.message || String(error));
         }
     };
 

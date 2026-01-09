@@ -14,6 +14,6 @@ import { DemoRoot } from '../components/DemoRoot';
         </style>
 	</head>
 	<body>
-		<DemoRoot client:load apiBaseUrl={import.meta.env.PUBLIC_GRATOS_SERVER} />
+		<DemoRoot client:only="preact"  apiBaseUrl={import.meta.env.PUBLIC_GRATOS_SERVER} />
 	</body>
 </html>
