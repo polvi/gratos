@@ -33,7 +33,7 @@
 			"vars": {
 				"ORIGIN": "https://gratos-demo.proc.io",
 				"COOKIE_DOMAIN": "proc.io",
-	 			"CORS_ALLOW_ORIGIN": "https://gratos-demo.proc.io",
+				"CORS_ALLOW_ORIGIN": "https://gratos-demo.proc.io",
 				"RP_ID": "proc.io"
 			},
 			"routes": [
@@ -46,7 +46,7 @@
 				{
 					"binding": "DB",
 					"database_name": "gratos-db",
-					"database_id": "96dc7e10-156a-404d-87c5-4c68567f320f"
+					"database_id": "103b6be5-52e8-4610-9321-da27d7db5212"
 				}
 			],
 			"kv_namespaces": [
