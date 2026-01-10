@@ -27,6 +27,8 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
+        if (!apiBaseUrl) return;
+
         const checkAuth = async () => {
             try {
                 const res = await fetch(`${apiBaseUrl}/whoami`, {
@@ -58,8 +60,24 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
     const logout = () => {
         setUser(null);
         // also call server logout
-        fetch(`${apiBaseUrl}/logout`, { method: 'POST', credentials: 'include' }).catch(console.error);
+        if (apiBaseUrl) {
+            fetch(`${apiBaseUrl}/logout`, { method: 'POST', credentials: 'include' }).catch(console.error);
+        }
     };
+
+    if (!apiBaseUrl) {
+        return (
+            <div style={{
+                padding: '2rem',
+                color: '#ef4444',
+                fontFamily: 'system-ui, sans-serif',
+                textAlign: 'center',
+                fontWeight: '500'
+            }}>
+                Configuration Error: auth server is undefined.
+            </div>
+        );
+    }
 
     return (
         <AuthContext.Provider value={{ user, isLoading, isAuthenticated: !!user, login, logout, apiBaseUrl }}>
