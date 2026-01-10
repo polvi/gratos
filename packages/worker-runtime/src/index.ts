@@ -26,6 +26,9 @@ type Env = {
     SESSION_TTL?: string;
     CHALLENGE_TTL?: string;
     COOKIE_DOMAIN?: string;
+    OIDC_CLIENT_ID?: string;
+    OIDC_REDIRECT_URI?: string;
+    LOGIN_URL?: string;
 };
 
 const app = new Hono<{ Bindings: Env }>();
@@ -288,5 +291,25 @@ app.post('/logout', async (c) => {
     return c.json({ success: true });
 });
 
+
+// --- OIDC ---
+
+import {
+    generateDiscoveryDocument,
+    generateJWKS,
+    handleAuthorize,
+    handleToken
+} from './oidc';
+
+app.get('/oidc/.well-known/openid-configuration', async (c) => {
+    return c.json(await generateDiscoveryDocument(c));
+});
+
+app.get('/oidc/jwks', async (c) => {
+    return c.json(await generateJWKS(c));
+});
+
+app.get('/oidc/authorize', handleAuthorize);
+app.post('/oidc/token', handleToken);
 
 export default app;

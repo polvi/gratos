@@ -9,7 +9,10 @@
 		// "RP_NAME": "Gratos Auth",
 		// "RP_ID": "example.com",
 		"ORIGIN": "http://localhost:4321",
-		"CORS_ALLOW_ORIGIN": "http://localhost:4321,http://localhost:5173"
+		"CORS_ALLOW_ORIGIN": "http://localhost:4321,http://localhost:5173",
+		"OIDC_CLIENT_ID": "kubernetes",
+		"OIDC_REDIRECT_URI": "http://localhost:8000",
+		"LOGIN_URL": "http://localhost:4321/login"
 		// "SESSION_TTL": "604800",
 		// "CHALLENGE_TTL": "300"
 		// "COOKIE_DOMAIN": "example.com"
@@ -34,6 +37,9 @@
 				"ORIGIN": "https://gratos-demo.proc.io",
 				"COOKIE_DOMAIN": "proc.io",
 				"CORS_ALLOW_ORIGIN": "https://gratos-demo.proc.io",
+				"OIDC_CLIENT_ID": "kubernetes",
+				"OIDC_REDIRECT_URI": "http://localhost:8000",
+				"LOGIN_URL": "https://gratos-demo.proc.io/login",
 				"RP_ID": "proc.io"
 			},
 			"routes": [

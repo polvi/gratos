@@ -9,7 +9,8 @@
     },
     "dependencies": {
         "@simplewebauthn/server": "^13.2.2",
-        "hono": "^4.11.3"
+        "hono": "^4.11.3",
+        "jose": "^6.1.3"
     },
     "devDependencies": {
         "@cloudflare/workers-types": "^4.20260109.0",
