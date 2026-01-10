@@ -13,7 +13,7 @@ export function LoginButton() {
             const resp = await fetch(`${apiBaseUrl}/login/options`);
             const options = await resp.json();
 
-            const asseResp = await startAuthentication(options);
+            const asseResp = await startAuthentication({ optionsJSON: options });
 
             const verifyResp = await fetch(`${apiBaseUrl}/login/verify`, {
                 method: 'POST',

@@ -27,7 +27,7 @@ export function RegisterButton() {
             options.user.name = username;
             options.user.displayName = username;
 
-            const attResp = await startRegistration(options);
+            const attResp = await startRegistration({ optionsJSON: options });
 
             const verifyResp = await fetch(`${apiBaseUrl}/register/verify`, {
                 method: 'POST',
