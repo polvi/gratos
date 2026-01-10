@@ -1,21 +1,25 @@
 {
-    "name": "gratos-demo",
-    "main": "./dist/_worker.js/index.js",
-    "compatibility_date": "2024-04-01",
-    "compatibility_flags": [
-        "nodejs_compat"
-    ],
-    "assets": {
-        "directory": "./dist"
-    },
-    "env": {
-        "prod": {
-            "routes": [
-                {
-                    "pattern": "gratos-demo.proc.io",
-                    "custom_domain": true
-                }
-            ]
+  "name": "gratos-demo",
+  "main": "./dist/_worker.js/index.js",
+  "compatibility_date": "2024-04-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist"
+  },
+  "vars": {
+    "PUBLIC_GRATOS_SERVER": "http://localhost:8787"
+  },
+  "env": {
+    "prod": {
+      "vars": {
+        "PUBLIC_GRATOS_SERVER": "https://id.proc.io"
+      },
+      "routes": [
+        {
+          "pattern": "gratos-demo.proc.io",
+          "custom_domain": true
         }
+      ]
     }
+  }
 }
