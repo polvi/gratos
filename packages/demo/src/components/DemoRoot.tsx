@@ -109,7 +109,7 @@ function Hero() {
             `}</style>
             <main className="hero-container">
                 <h1 className="hero-title">
-                    Welcome {isAuthenticated && user ? `back, ${user.username}!` : 'to Gratos Hotel'}
+                    Welcome {isAuthenticated && user ? (user.username ? `back, ${user.username}!` : 'back!') : 'to Gratos Hotel'}
                 </h1>
                 <p className="hero-subtitle">
                     Experience the future of authentication. Secure, passwordless, and seamless.

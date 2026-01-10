@@ -34,7 +34,8 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
                 });
                 if (res.ok) {
                     const data = await res.json();
-                    setUser(data.user);
+
+                    setUser({ ...data.user, username: '' });
                 }
             } catch (err) {
                 console.error('Failed to check auth', err);
@@ -46,7 +47,14 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
         checkAuth();
     }, [apiBaseUrl]);
 
-    const login = (userData: User) => setUser(userData);
+    const login = (userData: User) => {
+        const finalUser = { ...userData };
+
+        // Username is no longer persisted or passed
+        finalUser.username = '';
+        setUser(finalUser);
+    };
+
     const logout = () => {
         setUser(null);
         // also call server logout

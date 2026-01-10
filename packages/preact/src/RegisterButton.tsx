@@ -15,8 +15,17 @@ export function RegisterButton() {
         }
         try {
             setStatus('Registering...');
-            const resp = await fetch(`${apiBaseUrl}/register/options?username=${encodeURIComponent(username)}`);
+            // No username sent to server
+            const resp = await fetch(`${apiBaseUrl}/register/options`);
             const options = await resp.json();
+
+            // We get userId from the server to pass back for verification
+            const userId = options.userId;
+
+            // CLIENT-SIDE OVERWRITE: Put the real username here so the Authenticator (TouchID/FaceID) 
+            // shows the correct label to the user. The server never sees this string.
+            options.user.name = username;
+            options.user.displayName = username;
 
             const attResp = await startRegistration(options);
 
@@ -26,17 +35,19 @@ export function RegisterButton() {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    username,
+                    userId,
                     response: attResp,
                 }),
-                credentials: 'include', // technically not needed for register but consistency
+                credentials: 'include',
             });
 
             const verificationJSON = await verifyResp.json();
 
             if (verificationJSON && verificationJSON.verified) {
                 setStatus('Success!');
-                login(verificationJSON.user);
+                // Server doesn't return username anymore, so we merge it in
+                login({ ...verificationJSON.user, username: '' });
+
                 setTimeout(() => setStatus(''), 2000);
             } else {
                 setStatus('Failed');

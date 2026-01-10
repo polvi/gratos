@@ -1,9 +1,7 @@
 -- Migration number: 0001 	 2026-01-08T23:11:37.815Z
 
 CREATE TABLE users (
-  id TEXT PRIMARY KEY,
-  username TEXT UNIQUE NOT NULL,
-  display_name TEXT
+  id TEXT PRIMARY KEY
 );
 
 CREATE TABLE public_keys (

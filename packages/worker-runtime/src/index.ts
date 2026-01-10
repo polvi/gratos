@@ -58,8 +58,8 @@ app.get('/', (c) => c.text('Gratos Worker Running'));
 
 // --- Helpers ---
 
-async function getUser(db: D1Database, username: string) {
-    return await db.prepare('SELECT * FROM users WHERE username = ?').bind(username).first();
+async function getUser(db: D1Database, id: string) {
+    return await db.prepare('SELECT * FROM users WHERE id = ?').bind(id).first();
 }
 
 async function getUserCredentials(db: D1Database, userId: string): Promise<any[]> {
@@ -96,26 +96,19 @@ async function saveCredential(db: D1Database, userId: string, verification: any)
 
 app.get('/register/options', async (c) => {
     const { RP_ID, RP_NAME, CHALLENGE_TTL } = getConfig(c);
-    const username = c.req.query('username');
-    if (!username) return c.json({ error: 'Username required' }, 400);
 
-    let user: any = await getUser(c.env.DB, username);
-    const userId = user ? user.id : crypto.randomUUID();
+    // We do NOT take a username from the client to avoid PII leaking to server.
+    // The client will overwrite the user.name/displayName locally before calling the authenticator.
+    const userId = crypto.randomUUID();
 
-    let excludeCredentials: any[] = [];
-    if (user) {
-        const creds = await getUserCredentials(c.env.DB, user.id);
-        excludeCredentials = creds.map(cred => ({
-            id: cred.credential_id,
-            type: 'public-key',
-        }));
-    }
+    const excludeCredentials: any[] = [];
+    // Cannot check for existing credentials by username since we don't store it
 
     const opts: GenerateRegistrationOptionsOpts = {
         rpName: RP_NAME,
         rpID: RP_ID,
         userID: userId,
-        userName: username,
+        userName: 'Anonymous User', // Placeholder
         excludeCredentials,
         authenticatorSelection: {
             residentKey: 'preferred',
@@ -126,26 +119,24 @@ app.get('/register/options', async (c) => {
 
     const options = await generateRegistrationOptions(opts);
 
-    // Key by username for the verify step to find it easily
-    await c.env.KV.put(`reg_challenge_user:${username}`, options.challenge, { expirationTtl: CHALLENGE_TTL });
-    await c.env.KV.put(`reg_userid_user:${username}`, userId, { expirationTtl: CHALLENGE_TTL });
+    // Key by userId for the verify step
+    await c.env.KV.put(`reg_challenge:${userId}`, options.challenge, { expirationTtl: CHALLENGE_TTL });
 
-    return c.json(options);
+    // We return the generated userId so the client can pass it back
+    return c.json({ ...options, userId });
 });
 
 app.post('/register/verify', async (c) => {
-    // cookedCookieDomain was a hallucination in the destructure above, let's fix it properly in the function body
     const config = getConfig(c);
 
     const body = await c.req.json();
-    const { username, response } = body;
+    const { response, userId } = body;
 
-    if (!username) return c.json({ error: 'Username required' }, 400);
+    if (!userId) return c.json({ error: 'User ID required' }, 400);
 
-    const storedChallenge = await c.env.KV.get(`reg_challenge_user:${username}`);
-    const storedUserId = await c.env.KV.get(`reg_userid_user:${username}`);
+    const storedChallenge = await c.env.KV.get(`reg_challenge:${userId}`);
 
-    if (!storedChallenge || !storedUserId) {
+    if (!storedChallenge) {
         return c.json({ error: 'Challenge not found or expired' }, 400);
     }
 
@@ -157,18 +148,19 @@ app.post('/register/verify', async (c) => {
     });
 
     if (verification.verified && verification.registrationInfo) {
-        let user = await getUser(c.env.DB, username);
+        let user = await getUser(c.env.DB, userId);
         if (!user) {
-            await c.env.DB.prepare('INSERT INTO users (id, username) VALUES (?, ?)').bind(storedUserId, username).run();
-            user = { id: storedUserId, username };
+            // No username stored
+            await c.env.DB.prepare('INSERT INTO users (id) VALUES (?)').bind(userId).run();
+            user = { id: userId };
         }
 
-        await saveCredential(c.env.DB, storedUserId, verification);
+        await saveCredential(c.env.DB, userId, verification);
 
         // Create Session
         const sessionId = crypto.randomUUID();
 
-        await c.env.KV.put(`session:${sessionId}`, storedUserId, { expirationTtl: config.SESSION_TTL });
+        await c.env.KV.put(`session:${sessionId}`, userId, { expirationTtl: config.SESSION_TTL });
 
         setCookie(c, 'session_id', sessionId, {
             httpOnly: true,
@@ -180,8 +172,7 @@ app.post('/register/verify', async (c) => {
         });
 
         // cleanup
-        await c.env.KV.delete(`reg_challenge_user:${username}`);
-        await c.env.KV.delete(`reg_userid_user:${username}`);
+        await c.env.KV.delete(`reg_challenge:${userId}`);
 
         return c.json({ verified: true, user });
     }
