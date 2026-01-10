@@ -2,12 +2,15 @@
   "name": "gratos",
   "module": "index.ts",
   "type": "module",
+  "scripts": {
+    "build-demo": "bun --cwd packages/preact build && bun --cwd packages/demo build"
+  },
   "workspaces": [
     "packages/*"
   ],
   "devDependencies": {
-    "bun-types": "latest",
-    "wrangler": "^3.0.0",
-    "typescript": "^5.0.0"
+    "bun-types": "^1.3.5",
+    "wrangler": "^4.58.0",
+    "typescript": "^5.9.3"
   }
 }

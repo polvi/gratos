@@ -21,10 +21,10 @@
         "build": "bun build ./src/index.tsx --outdir ./dist --external preact --external @simplewebauthn/browser && tsc"
     },
     "dependencies": {
-        "preact": "^10.19.0",
-        "@simplewebauthn/browser": "^9.0.0"
+        "preact": "^10.28.2",
+        "@simplewebauthn/browser": "^13.2.2"
     },
     "devDependencies": {
-        "typescript": "^5.0.0"
+        "typescript": "^5.9.3"
     }
 }
