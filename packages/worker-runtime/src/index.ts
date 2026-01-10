@@ -11,6 +11,7 @@ import type {
     GenerateRegistrationOptionsOpts,
     GenerateAuthenticationOptionsOpts,
 } from '@simplewebauthn/server';
+import { isoUint8Array } from '@simplewebauthn/server/helpers';
 
 import { cors } from 'hono/cors';
 import { setCookie, getCookie, deleteCookie } from 'hono/cookie';
@@ -67,17 +68,15 @@ async function getUserCredentials(db: D1Database, userId: string): Promise<any[]
     return results || [];
 }
 
-async function saveCredential(db: D1Database, userId: string, verification: any) {
+async function saveCredential(db: D1Database, userId: string, verification: any, clientCredentialID: string) {
     const { registrationInfo } = verification;
-    const { credentialID, credentialPublicKey, credentialBackedUp } = registrationInfo;
+    const { credentialBackedUp, credential } = registrationInfo;
+    const credentialPublicKey = credential.publicKey;
 
     const id = crypto.randomUUID();
 
-    // Ensure credentialID is stored as a string base64url
-    let storedCredentialID = credentialID;
-    if (typeof credentialID !== 'string') {
-        storedCredentialID = Buffer.from(credentialID).toString('base64url');
-    }
+    // Use the ID from the client response, which we know is a string
+    const storedCredentialID = clientCredentialID;
 
     await db.prepare(`
     INSERT INTO public_keys (id, user_id, credential_id, public_key, user_backed_up, transports)
@@ -107,7 +106,7 @@ app.get('/register/options', async (c) => {
     const opts: GenerateRegistrationOptionsOpts = {
         rpName: RP_NAME,
         rpID: RP_ID,
-        userID: userId,
+        userID: isoUint8Array.fromUTF8String(userId),
         userName: 'Anonymous User', // Placeholder
         excludeCredentials,
         authenticatorSelection: {
@@ -155,7 +154,7 @@ app.post('/register/verify', async (c) => {
             user = { id: userId };
         }
 
-        await saveCredential(c.env.DB, userId, verification);
+        await saveCredential(c.env.DB, userId, verification, response.id);
 
         // Create Session
         const sessionId = crypto.randomUUID();
@@ -216,16 +215,18 @@ app.post('/login/verify', async (c) => {
     }
 
     // Verify
+    const credentialObj = {
+        id: credentialId,
+        publicKey: new Uint8Array(Buffer.from(credential.public_key, 'base64')),
+        counter: 0,
+    };
+
     const verification = await verifyAuthenticationResponse({
         response,
         expectedChallenge,
         expectedOrigin: ORIGIN,
         expectedRPID: RP_ID,
-        authenticator: {
-            credentialID: credentialId,
-            credentialPublicKey: Buffer.from(credential.public_key, 'base64'),
-            counter: 0,
-        },
+        credential: credentialObj,
     });
 
     if (verification.verified) {
