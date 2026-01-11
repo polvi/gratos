@@ -2,7 +2,7 @@
 
 Gratos is an open-source, zero trust, serverless, headless, first-party, first-factor, authentication service for the post-password era. It provides modern, privacy-focused user authentication using passkeys, designed to run easily at the edge.
 
-Gratos is inspired by [Ory Kratos](https://www.ory.sh/kratos/), however it is solely focused on passkey based authentication. The user identity layer is intended to be stored in the app, with Gratos only storing and verifying public key information from webauthn, creating first party sessions leveraging the domain attribute, and allowing for third party oauth flows.
+Gratos is inspired by [Ory Kratos](https://www.ory.sh/kratos/), however it is solely focused on passkey based authentication. The user identity layer is intended to be stored in the app, with Gratos only storing and verifying public key information from webauthn, creating first party sessions leveraging the domain attribute. 
 
 This project is organized as follows:
 - packages/preact, with includes preact components published at @gratos/preact
@@ -22,5 +22,14 @@ Install dependencies and start the local development server:
 ```bash
 bun install
 bun --cwd packages/worker-runtime dev
-bun --cwd packages/demo dev
+bun --cwd packages/demo dev ```
+
+
+## OIDC
+
+Gratos supports a very basic OIDC endpoint that is primarily intended to be used with cli tools. Example usage with kubernetes:
+
 ```
+kubectl oidc-login setup --oidc-issuer-url=https://id.proc.io/oidc --oidc-client-id=kubernetes
+```
+
