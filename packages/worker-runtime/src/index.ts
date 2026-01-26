@@ -31,14 +31,18 @@ type Env = {
     LOGIN_URL?: string;
 };
 
-const app = new Hono<{ Bindings: Env }>();
+type Variables = {
+    userId: string;
+}
+
+const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 app.use('/*', (c, next) => {
     const origins = (c.env.CORS_ALLOW_ORIGIN || 'http://localhost:4321,http://localhost:5173').split(',');
     return cors({
         origin: origins,
         allowHeaders: ['Content-Type'],
-        allowMethods: ['POST', 'GET', 'OPTIONS'],
+        allowMethods: ['POST', 'GET', 'OPTIONS', 'DELETE', 'PUT'],
         exposeHeaders: ['Content-Length'],
         maxAge: 600,
         credentials: true,
@@ -58,7 +62,42 @@ function getConfig(c: any) {
     return { RP_ID, ORIGIN, RP_NAME, SESSION_TTL, CHALLENGE_TTL, COOKIE_DOMAIN };
 }
 
+
+
+function isValidCookieDomain(domain: string, cookieDomain: string): boolean {
+    const cleanCookieDomain = cookieDomain.startsWith('.') ? cookieDomain.slice(1) : cookieDomain;
+    
+    // Validate it's not a TLD (must have at least one dot, unless it's localhost)
+    if (cleanCookieDomain !== 'localhost' && !cleanCookieDomain.includes('.')) {
+        return false;
+    }
+
+    if (domain === cookieDomain) return true;
+    if (domain.endsWith('.' + cookieDomain)) return true;
+    // Also handle leading dot in cookieDomain if user provided it (though browsers often ignore/strip it now)
+    if (cookieDomain.startsWith('.') && domain.endsWith(cookieDomain)) return true;
+    
+    return false;
+}
+
 app.get('/', (c) => c.text('Gratos Worker Running'));
+
+// --- Middleware ---
+
+const authMiddleware = async (c: any, next: any) => {
+    const sessionId = getCookie(c, 'session_id');
+    if (!sessionId) {
+        return c.json({ error: 'Not authenticated' }, 401);
+    }
+
+    const userId = await c.env.KV.get(`session:${sessionId}`);
+    if (!userId) {
+        return c.json({ error: 'Session expired' }, 401);
+    }
+
+    c.set('userId', userId);
+    await next();
+};
 
 // --- Helpers ---
 
@@ -92,6 +131,42 @@ async function saveCredential(db: D1Database, userId: string, verification: any,
         credentialBackedUp ? 1 : 0,
         ''
     ).run();
+}
+
+async function saveClient(db: D1Database, userId: string, domain: string, domainSetting: string) {
+    const id = crypto.randomUUID();
+    const createdAt = Date.now();
+
+    await db.prepare(`
+    INSERT INTO clients (id, user_id, domain, domain_setting, created_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).bind(
+        id,
+        userId,
+        domain,
+        domainSetting,
+        createdAt
+    ).run();
+
+    return { id, domain, domain_setting: domainSetting, created_at: createdAt };
+}
+
+
+
+async function getClients(db: D1Database, userId: string) {
+    const { results } = await db.prepare('SELECT * FROM clients WHERE user_id = ? ORDER BY created_at DESC').bind(userId).all();
+    return results || [];
+}
+
+async function updateClient(db: D1Database, userId: string, clientId: string, domain: string, domainSetting: string) {
+    await db.prepare(`
+    UPDATE clients SET domain = ?, domain_setting = ? WHERE id = ? AND user_id = ?
+  `).bind(domain, domainSetting, clientId, userId).run();
+    return { id: clientId, domain, domainSetting };
+}
+
+async function deleteClient(db: D1Database, userId: string, clientId: string) {
+    await db.prepare('DELETE FROM clients WHERE id = ? AND user_id = ?').bind(clientId, userId).run();
 }
 
 // --- Registration ---
@@ -291,6 +366,73 @@ app.post('/logout', async (c) => {
     return c.json({ success: true });
 });
 
+// --- Clients API ---
+
+app.use('/clients/*', authMiddleware);
+
+app.post('/clients', async (c) => {
+    const userId = c.get('userId');
+
+    // 2. Parse Body and Validate
+    const body = await c.req.json();
+    const { domain, domain_setting } = body;
+
+    if (!domain || typeof domain !== 'string') {
+        return c.json({ error: 'Invalid or missing "domain"' }, 400);
+    }
+    if (!domain_setting || typeof domain_setting !== 'string') {
+        return c.json({ error: 'Invalid or missing "domain_setting"' }, 400);
+    }
+
+
+
+    if (!isValidCookieDomain(domain, domain_setting)) {
+        return c.json({ error: 'Invalid cookie domain. Must be the same as or a parent of the domain.' }, 400);
+    }
+
+    // 3. Create Client
+    try {
+        const client = await saveClient(c.env.DB, userId, domain, domain_setting);
+        return c.json(client);
+    } catch (e) {
+        console.error('Failed to create client', e);
+        return c.json({ error: 'Failed to create client' }, 500);
+    }
+});
+
+app.get('/clients', async (c) => {
+    const userId = c.get('userId');
+    const clients = await getClients(c.env.DB, userId);
+    return c.json({ clients });
+});
+
+app.put('/clients/:id', async (c) => {
+    const userId = c.get('userId');
+    const clientId = c.req.param('id');
+    const body = await c.req.json();
+    const { domain, domain_setting } = body;
+
+    if (!domain || typeof domain !== 'string') return c.json({ error: 'Invalid domain' }, 400);
+    if (!domain_setting || typeof domain_setting !== 'string') return c.json({ error: 'Invalid domain_setting' }, 400);
+
+    if (!isValidCookieDomain(domain, domain_setting)) {
+        return c.json({ error: 'Invalid cookie domain. Must be the same as or a parent of the domain.' }, 400);
+    }
+
+    try {
+        const client = await updateClient(c.env.DB, userId, clientId, domain, domain_setting);
+        return c.json(client);
+    } catch (e) {
+        return c.json({ error: 'Failed to update client' }, 500);
+    }
+});
+
+app.delete('/clients/:id', async (c) => {
+    const userId = c.get('userId');
+    const clientId = c.req.param('id');
+    await deleteClient(c.env.DB, userId, clientId);
+    return c.json({ success: true });
+});
 
 // --- OIDC ---
 

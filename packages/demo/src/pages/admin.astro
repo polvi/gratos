@@ -1,0 +1,24 @@
+---
+import { AdminRoot } from "@gratos/preact";
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width" />
+    <title>Admin - Gratos Hotel</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <AdminRoot
+      client:only="preact"
+      apiBaseUrl={import.meta.env.PUBLIC_GRATOS_SERVER}
+    />
+  </body>
+</html>
