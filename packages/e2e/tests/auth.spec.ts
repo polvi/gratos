@@ -49,7 +49,7 @@ test.describe('Gratos Auth with Virtual Authenticator', () => {
         // 4. Logout
         const logoutBtn = page.getByRole('button', { name: 'Logout' });
         await logoutBtn.click();
-        await expect(page.getByText('Welcome to Gratos Hotel')).toBeVisible();
+        await expect(page.getByText('Welcome to the Gratos demo')).toBeVisible();
 
         // 5. Login
         const loginBtn = page.getByRole('button', { name: 'Login', exact: true });

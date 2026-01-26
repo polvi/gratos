@@ -42,7 +42,7 @@ function Header() {
             `}</style>
             <header className="header-container">
                 <div className="logo-text">
-                    <span style={{ fontSize: '1.5rem' }}>🏨</span> Gratos Hotel
+                    Gratos Demo
                 </div>
                 <div className="auth-actions">
                     {isAuthenticated ? (
@@ -109,7 +109,7 @@ function Hero() {
             `}</style>
             <main className="hero-container">
                 <h1 className="hero-title">
-                    Welcome {isAuthenticated && user ? (user.username ? `back, ${user.username}!` : 'back!') : 'to Gratos Hotel'}
+                    Welcome {isAuthenticated && user ? (user.username ? `back, ${user.username}!` : 'back!') : 'to the Gratos demo'}
                 </h1>
                 <p className="hero-subtitle">
                     Experience the future of authentication. Secure, passwordless, and seamless.
