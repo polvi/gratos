@@ -436,12 +436,14 @@ app.delete('/clients/:id', async (c) => {
 
 // --- OIDC ---
 
+import {
     generateDiscoveryDocument,
     generateJWKS,
     handleAuthorize,
     handleToken
 } from './oidc';
 import { loginPage } from './auth-pages';
+
 
 
 

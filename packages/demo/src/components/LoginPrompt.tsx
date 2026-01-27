@@ -27,9 +27,9 @@ export function LoginPrompt({ loginUrl }: LoginPromptProps) {
       overflow: 'hidden'
     }}>
       <div style={{ padding: '16px', display: 'flex', alignItems: 'center', borderBottom: '1px solid #e0e0e0' }}>
-        <img src="https://www.gstatic.com/images/branding/product/1x/googleg_48dp.png" alt="Google Logo" style={{ width: '20px', height: '20px', marginRight: '12px' }} />
         <span style={{ fontSize: '14px', fontWeight: 500, color: '#3c4043' }}>Sign in to Gratos Demo</span>
       </div>
+
       <div style={{ padding: '16px' }}>
          <div style={{ marginBottom: '16px', fontSize: '12px', color: '#5f6368' }}>
             Continue with your Gratos account to save your progress.
