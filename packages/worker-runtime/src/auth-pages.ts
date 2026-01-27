@@ -1,5 +1,5 @@
 
-export const loginPage = (returnTo: string | null) => `
+export const loginPage = (returnTo: string | null, clientId: string | null) => `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -24,6 +24,7 @@ export const loginPage = (returnTo: string | null) => `
         const loadingMsg = document.getElementById('loadingMsg');
         
         const returnTo = ${returnTo ? `"${returnTo}"` : 'null'};
+        const clientId = ${clientId ? `"${clientId}"` : 'null'};
 
         async function doLogin() {
             try {
@@ -50,19 +51,21 @@ export const loginPage = (returnTo: string | null) => `
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         response: asseResp,
-                        challengeId: opts.challengeId
+                        challengeId: opts.challengeId,
+                        clientId: clientId,
+                        returnTo: returnTo
                     })
                 });
 
                 const verifyJson = await verifyResp.json();
 
-                if (verifyJson.verified) {
+                if (verifyJson.redirectUrl) {
+                    window.location.href = verifyJson.redirectUrl;
+                } else if (verifyJson.verified) {
                     if (returnTo) {
                         window.location.href = returnTo;
                     } else {
                         loadingMsg.innerText = 'Success!';
-                        // window.location.reload(); 
-                        // Or close window? For now reload or stay.
                     }
                 } else {
                     loadingMsg.style.display = 'none';
@@ -81,3 +84,4 @@ export const loginPage = (returnTo: string | null) => `
 </body>
 </html>
 `;
+

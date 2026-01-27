@@ -158,6 +158,11 @@ async function getClients(db: D1Database, userId: string) {
     return results || [];
 }
 
+async function getClient(db: D1Database, id: string) {
+    return await db.prepare('SELECT * FROM clients WHERE id = ?').bind(id).first();
+}
+
+
 async function updateClient(db: D1Database, userId: string, clientId: string, domain: string, domainSetting: string) {
     await db.prepare(`
     UPDATE clients SET domain = ?, domain_setting = ? WHERE id = ? AND user_id = ?
@@ -328,11 +333,38 @@ app.post('/login/verify', async (c) => {
             domain: COOKIE_DOMAIN,
         });
 
+        // Handle Redirect / Client ID Flow
+        const { clientId, returnTo } = await c.req.json();
+        if (clientId) {
+            const client = await getClient(c.env.DB, clientId) as any;
+            if (client && client.domain) {
+                // Generate Code
+                const code = crypto.randomUUID();
+                await c.env.KV.put(`oidc_code:${code}`, JSON.stringify({
+                    userId: (user as any).id,
+                    clientId,
+                    createdAt: Date.now()
+                    // Add other OIDC fields if needed
+                }), { expirationTtl: 600 });
+
+                // Construct Redirect URL
+                // Verify if client.domain needs protocol
+                let domain = client.domain;
+                if (!domain.startsWith('http')) {
+                    domain = `https://${domain}`;
+                }
+                
+                const redirectUrl = `${domain}/session/complete?code=${code}&redirect_to=${encodeURIComponent(returnTo || '/')}`;
+                return c.json({ verified: true, user, redirectUrl });
+            }
+        }
+
         return c.json({ verified: true, user });
     }
 
     return c.json({ verified: false }, 400);
 });
+
 
 app.get('/whoami', async (c) => {
     const sessionId = getCookie(c, 'session_id');
@@ -458,8 +490,10 @@ app.get('/oidc/jwks', async (c) => {
 
 app.get('/login', (c) => {
     const returnTo = c.req.query('return_to');
-    return c.html(loginPage(returnTo || '/'));
+    const clientId = c.req.query('client_id');
+    return c.html(loginPage(returnTo || '/', clientId || null));
 });
+
 
 app.get('/session/complete', async (c) => {
     const code = c.req.query('code');
@@ -474,11 +508,10 @@ app.get('/session/complete', async (c) => {
         return c.text('Invalid or expired code', 400);
     }
 
-    // Cleanup code? Maybe not immediately if we want to allow retry? 
-    // Standard is single use.
+    // Cleanup code
     await c.env.KV.delete(`oidc_code:${code}`);
 
-    const { userId } = storedData as any;
+    const { userId, clientId } = storedData as any;
 
     if (!userId) return c.text('Invalid code data', 400);
 
@@ -486,17 +519,29 @@ app.get('/session/complete', async (c) => {
     const sessionId = crypto.randomUUID();
     await c.env.KV.put(`session:${sessionId}`, userId, { expirationTtl: SESSION_TTL });
 
+    // Determine Cookie Domain from Client Config if available
+    let cookieDomain = COOKIE_DOMAIN;
+    if (clientId) {
+        const client = await getClient(c.env.DB, clientId);
+        if (client && client.domain_setting) {
+            cookieDomain = client.domain_setting;
+        }
+    }
+
     setCookie(c, 'session_id', sessionId, {
         httpOnly: true,
         secure: true,
         sameSite: 'None',
         path: '/',
         maxAge: SESSION_TTL,
-        domain: COOKIE_DOMAIN,
+        domain: cookieDomain,
     });
 
-    return c.redirect('/');
+    const redirectTo = c.req.query('redirect_to');
+    return c.redirect(redirectTo || '/');
 });
+
+
 
 
 app.get('/oidc/authorize', handleAuthorize);
