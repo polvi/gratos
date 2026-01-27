@@ -34,7 +34,7 @@
 	"env": {
 		"prod": {
 			"vars": {
-				"ORIGIN": "https://dash.letsident.org",
+				"ORIGIN": "https://id.letsident.org",
 				"COOKIE_DOMAIN": "letsident.org",
 				"CORS_ALLOW_ORIGIN": "https://dash.letsident.org,https://gratos-demo.proc.io",
 				"OIDC_CLIENT_ID": "kubernetes",
