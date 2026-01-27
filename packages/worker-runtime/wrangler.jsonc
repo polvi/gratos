@@ -36,7 +36,7 @@
 			"vars": {
 				"ORIGIN": "https://dash.letsident.org",
 				"COOKIE_DOMAIN": "letsident.org",
-				"CORS_ALLOW_ORIGIN": "https://dash.letsident.org",
+				"CORS_ALLOW_ORIGIN": "https://dash.letsident.org,https://gratos-demo.proc.io",
 				"OIDC_CLIENT_ID": "kubernetes",
 				"OIDC_REDIRECT_URI": "http://localhost:8000",
 				"LOGIN_URL": "https://dash.letsident.org/login",
