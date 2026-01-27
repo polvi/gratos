@@ -34,17 +34,17 @@
 	"env": {
 		"prod": {
 			"vars": {
-				"ORIGIN": "https://gratos-demo.proc.io",
-				"COOKIE_DOMAIN": "proc.io",
-				"CORS_ALLOW_ORIGIN": "https://gratos-demo.proc.io",
+				"ORIGIN": "https://dash.letsident.org",
+				"COOKIE_DOMAIN": "letsident.org",
+				"CORS_ALLOW_ORIGIN": "https://dash.letsident.org",
 				"OIDC_CLIENT_ID": "kubernetes",
 				"OIDC_REDIRECT_URI": "http://localhost:8000",
-				"LOGIN_URL": "https://gratos-demo.proc.io/login",
-				"RP_ID": "proc.io"
+				"LOGIN_URL": "https://dash.letsident.org/login",
+				"RP_ID": "letsident.org"
 			},
 			"routes": [
 				{
-					"pattern": "id.proc.io",
+					"pattern": "id.letsident.org",
 					"custom_domain": true
 				}
 			],

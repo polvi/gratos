@@ -10,13 +10,24 @@
     "PUBLIC_GRATOS_SERVER": "http://localhost:8787"
   },
   "env": {
-    "prod": {
+    "prod-li": {
       "vars": {
-        "PUBLIC_GRATOS_SERVER": "https://id.proc.io"
+        "PUBLIC_GRATOS_SERVER": "https://id.letsident.org"
       },
       "routes": [
         {
           "pattern": "gratos-demo.proc.io",
+          "custom_domain": true
+        }
+      ]
+    },
+    "prod": {
+      "vars": {
+        "PUBLIC_GRATOS_SERVER": "https://id.letsident.org"
+      },
+      "routes": [
+        {
+          "pattern": "dash.letsident.org",
           "custom_domain": true
         }
       ]
