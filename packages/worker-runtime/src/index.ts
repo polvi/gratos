@@ -496,10 +496,15 @@ app.get('/login', (c) => {
 
 
 app.get('/session/complete', async (c) => {
-    const code = c.req.query('code');
+    const url = new URL(c.req.url);
+    const code = url.searchParams.get('code');
     const { SESSION_TTL, COOKIE_DOMAIN } = getConfig(c);
 
-    if (!code) return c.text('Missing code', 400);
+    if (!code) {
+        return c.text(`Missing code. URL: ${c.req.url}. Params: ${[...url.searchParams.keys()].join(',')}`, 400);
+    }
+
+
 
     // Retrieve code data
     // Note: We use the shared KV, so this works across domains if they share the KV binding.
