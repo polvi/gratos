@@ -46,6 +46,10 @@
 				{
 					"pattern": "id.letsident.org",
 					"custom_domain": true
+				},
+				{
+					"pattern": "id.proc.io",
+					"custom_domain": true
 				}
 			],
 			"d1_databases": [
