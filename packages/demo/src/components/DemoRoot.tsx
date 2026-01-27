@@ -138,13 +138,20 @@ function Hero() {
     );
 }
 
-export function DemoRoot({ apiBaseUrl }: { apiBaseUrl: string }) {
+import { LoginPrompt } from './LoginPrompt';
+
+export function DemoRoot({ apiBaseUrl, clientId, returnTo }: { apiBaseUrl: string; clientId?: string; returnTo?: string }) {
+    const loginUrl = `${apiBaseUrl}/login?client_id=${clientId}&return_to=${encodeURIComponent(returnTo || (typeof window !== 'undefined' ? window.location.origin : ''))}`;
+
     return (
         <AuthProvider apiBaseUrl={apiBaseUrl}>
             <div style={{ minHeight: '100vh', background: '#fafafa', fontFamily: 'system-ui, sans-serif' }}>
                 <Header />
                 <Hero />
+                {clientId && <LoginPrompt loginUrl={loginUrl} />}
             </div>
         </AuthProvider>
     );
 }
+
+

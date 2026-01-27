@@ -436,12 +436,14 @@ app.delete('/clients/:id', async (c) => {
 
 // --- OIDC ---
 
-import {
     generateDiscoveryDocument,
     generateJWKS,
     handleAuthorize,
     handleToken
 } from './oidc';
+import { loginPage } from './auth-pages';
+
+
 
 app.get('/oidc/.well-known/openid-configuration', async (c) => {
     return c.json(await generateDiscoveryDocument(c));
@@ -451,7 +453,52 @@ app.get('/oidc/jwks', async (c) => {
     return c.json(await generateJWKS(c));
 });
 
+
+app.get('/login', (c) => {
+    const returnTo = c.req.query('return_to');
+    return c.html(loginPage(returnTo || '/'));
+});
+
+app.get('/session/complete', async (c) => {
+    const code = c.req.query('code');
+    const { SESSION_TTL, COOKIE_DOMAIN } = getConfig(c);
+
+    if (!code) return c.text('Missing code', 400);
+
+    // Retrieve code data
+    // Note: We use the shared KV, so this works across domains if they share the KV binding.
+    const storedData = await c.env.KV.get(`oidc_code:${code}`, 'json');
+    if (!storedData) {
+        return c.text('Invalid or expired code', 400);
+    }
+
+    // Cleanup code? Maybe not immediately if we want to allow retry? 
+    // Standard is single use.
+    await c.env.KV.delete(`oidc_code:${code}`);
+
+    const { userId } = storedData as any;
+
+    if (!userId) return c.text('Invalid code data', 400);
+
+    // Create session for THIS domain
+    const sessionId = crypto.randomUUID();
+    await c.env.KV.put(`session:${sessionId}`, userId, { expirationTtl: SESSION_TTL });
+
+    setCookie(c, 'session_id', sessionId, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'None',
+        path: '/',
+        maxAge: SESSION_TTL,
+        domain: COOKIE_DOMAIN,
+    });
+
+    return c.redirect('/');
+});
+
+
 app.get('/oidc/authorize', handleAuthorize);
 app.post('/oidc/token', handleToken);
 
 export default app;
+

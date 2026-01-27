@@ -7,8 +7,10 @@
     "directory": "./dist"
   },
   "vars": {
-    "PUBLIC_GRATOS_SERVER": "http://localhost:8787"
+    "PUBLIC_GRATOS_SERVER": "http://localhost:8787",
+    "PUBLIC_CLIENT_ID": "00000000-0000-0000-0000-000000000000"
   },
+
   "env": {
     "prod-li": {
       "vars": {
