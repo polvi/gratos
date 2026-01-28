@@ -78,6 +78,7 @@ export function LoginPrompt({ loginBaseUrl, apiBaseUrl, clientId }: LoginPromptP
              <iframe 
                 src={`${loginBaseUrl}/login/prompt?client_id=${clientId}&return_to=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin + '/iframe-callback' : '')}`}
                 title="Sign in with Gratos"
+                allow="publickey-credentials-get *"
                 style={{
                     width: '100%',
                     height: '40px',
@@ -85,6 +86,7 @@ export function LoginPrompt({ loginBaseUrl, apiBaseUrl, clientId }: LoginPromptP
                     overflow: 'hidden'
                 }}
              />
+
          ) : (
              <button 
                 onClick={handleLogout}
