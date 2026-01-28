@@ -8,7 +8,7 @@ interface LoginPromptProps {
 export function LoginPrompt({ loginUrl, apiBaseUrl }: LoginPromptProps) {
   const [idpUser, setIdpUser] = useState<any>(null);
 
-  useEffect(() => {
+  const fetchUser = () => {
     fetch(`${apiBaseUrl}/whoami`, {
         credentials: 'include'
     })
@@ -19,7 +19,28 @@ export function LoginPrompt({ loginUrl, apiBaseUrl }: LoginPromptProps) {
         }
     })
     .catch(() => { /* ignore error */ });
+  };
+
+  useEffect(() => {
+    fetchUser();
+
+    const handleMessage = (event: MessageEvent) => {
+        if (event.data && event.data.type === 'GRATOS_LOGIN_SUCCESS') {
+            fetchUser();
+        }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
   }, [apiBaseUrl]);
+
+  const handleLogin = (e: any) => {
+      e.preventDefault();
+      const width = 500;
+      const height = 600;
+      const left = window.screen.width / 2 - width / 2;
+      const top = window.screen.height / 2 - height / 2;
+      window.open(loginUrl, 'login_popup', `width=${width},height=${height},left=${left},top=${top}`);
+  };
 
   const handleLogout = async () => {
     try {
@@ -60,7 +81,7 @@ export function LoginPrompt({ loginUrl, apiBaseUrl }: LoginPromptProps) {
                 ? `Continue as ${idpUser.email || 'User'} to access your account.`
                 : 'Continue with your Gratos account to save your progress.'}
          </div>
-         <a href={loginUrl} style={{
+         <a href={loginUrl} onClick={handleLogin} style={{
             display: 'block',
             backgroundColor: '#1a73e8',
             color: 'white',
@@ -69,7 +90,8 @@ export function LoginPrompt({ loginUrl, apiBaseUrl }: LoginPromptProps) {
             borderRadius: '4px',
             textDecoration: 'none',
             fontSize: '14px',
-            fontWeight: 500
+            fontWeight: 500,
+            cursor: 'pointer'
          }}>
             {idpUser ? `Continue as ${idpUser.email || 'User'}` : 'Sign in as User'}
          </a>
@@ -94,6 +116,7 @@ export function LoginPrompt({ loginUrl, apiBaseUrl }: LoginPromptProps) {
       </div>
     </div>
   );
+}
 
 }
 
