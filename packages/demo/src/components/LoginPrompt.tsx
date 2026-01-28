@@ -21,6 +21,18 @@ export function LoginPrompt({ loginUrl, apiBaseUrl }: LoginPromptProps) {
     .catch(() => { /* ignore error */ });
   }, [apiBaseUrl]);
 
+  const handleLogout = async () => {
+    try {
+      await fetch(`${apiBaseUrl}/logout`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+      setIdpUser(null);
+    } catch (e) {
+      console.error('Logout failed', e);
+    }
+  };
+
   return (
     <div style={{
       position: 'fixed',
@@ -61,8 +73,27 @@ export function LoginPrompt({ loginUrl, apiBaseUrl }: LoginPromptProps) {
          }}>
             {idpUser ? `Continue as ${idpUser.email || 'User'}` : 'Sign in as User'}
          </a>
+         {idpUser && (
+             <button 
+                onClick={handleLogout}
+                style={{
+                    display: 'block',
+                    width: '100%',
+                    marginTop: '8px',
+                    background: 'none',
+                    border: 'none',
+                    color: '#5f6368',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    textDecoration: 'underline'
+                }}
+             >
+                Sign out
+             </button>
+         )}
       </div>
     </div>
   );
+
 }
 
