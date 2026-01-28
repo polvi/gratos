@@ -5,3 +5,4 @@ export * from './RegisterButton';
 export * from './UserProfile';
 export * from './Admin';
 export * from './AdminRoot';
+export * from './LetsIdent';

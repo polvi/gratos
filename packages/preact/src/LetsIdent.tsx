@@ -1,12 +1,13 @@
+import { h } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 
-interface LoginPromptProps {
+interface LetsIdentProps {
   loginBaseUrl: string;
   apiBaseUrl: string;
   clientId?: string;
 }
 
-export function LoginPrompt({ loginBaseUrl, apiBaseUrl, clientId }: LoginPromptProps) {
+export function LetsIdent({ loginBaseUrl, apiBaseUrl, clientId }: LetsIdentProps) {
   const [idpUser, setIdpUser] = useState<any>(null);
 
   const fetchUser = () => {
@@ -110,5 +111,3 @@ export function LoginPrompt({ loginBaseUrl, apiBaseUrl, clientId }: LoginPromptP
     </div>
   );
 }
-
-

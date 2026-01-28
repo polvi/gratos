@@ -138,9 +138,10 @@ function Hero() {
     );
 }
 
-import { LoginPrompt } from './LoginPrompt';
+import { LetsIdent } from '@gratos/preact';
 
 export function DemoRoot({ apiBaseUrl, loginBaseUrl, clientId }: { apiBaseUrl: string; loginBaseUrl: string; clientId?: string }) {
+    const loginUrl = `${loginBaseUrl}/login?client_id=${clientId}&return_to=${encodeURIComponent(loginBaseUrl + '/login/success')}`;
 
     return (
         <AuthProvider apiBaseUrl={apiBaseUrl}>
@@ -148,7 +149,7 @@ export function DemoRoot({ apiBaseUrl, loginBaseUrl, clientId }: { apiBaseUrl: s
             <div style={{ minHeight: '100vh', background: '#fafafa', fontFamily: 'system-ui, sans-serif' }}>
                 <Header />
                 <Hero />
-                {clientId && <LoginPrompt loginBaseUrl={loginBaseUrl} apiBaseUrl={apiBaseUrl} clientId={clientId} />}
+                {clientId && <LetsIdent loginBaseUrl={loginBaseUrl} apiBaseUrl={apiBaseUrl} clientId={clientId} />}
 
 
             </div>
