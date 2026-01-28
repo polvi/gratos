@@ -11,5 +11,12 @@ export default defineConfig({
         service: {
             entrypoint: 'astro/assets/services/noop'
         }
+    },
+    vite: {
+        resolve: {
+            alias: {
+                "detect-libc": "./src/mocks/detect-libc.ts"
+            }
+        }
     }
 });
