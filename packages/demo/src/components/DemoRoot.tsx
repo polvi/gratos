@@ -149,7 +149,8 @@ export function DemoRoot({ apiBaseUrl, loginBaseUrl, clientId, returnTo }: { api
             <div style={{ minHeight: '100vh', background: '#fafafa', fontFamily: 'system-ui, sans-serif' }}>
                 <Header />
                 <Hero />
-                {clientId && <LoginPrompt loginUrl={loginUrl} apiBaseUrl={apiBaseUrl} />}
+                {clientId && <LoginPrompt loginBaseUrl={loginBaseUrl} apiBaseUrl={apiBaseUrl} clientId={clientId} />}
+
 
             </div>
         </AuthProvider>

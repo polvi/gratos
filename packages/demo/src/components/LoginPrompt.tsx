@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'preact/hooks';
 
 interface LoginPromptProps {
-  loginUrl: string;
+  loginBaseUrl: string;
   apiBaseUrl: string;
+  clientId?: string;
 }
 
-export function LoginPrompt({ loginUrl, apiBaseUrl }: LoginPromptProps) {
+export function LoginPrompt({ loginBaseUrl, apiBaseUrl, clientId }: LoginPromptProps) {
   const [idpUser, setIdpUser] = useState<any>(null);
 
   const fetchUser = () => {
@@ -32,15 +33,6 @@ export function LoginPrompt({ loginUrl, apiBaseUrl }: LoginPromptProps) {
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
   }, [apiBaseUrl]);
-
-  const handleLogin = (e: any) => {
-      e.preventDefault();
-      const width = 500;
-      const height = 600;
-      const left = window.screen.width / 2 - width / 2;
-      const top = window.screen.height / 2 - height / 2;
-      window.open(loginUrl, 'login_popup', `width=${width},height=${height},left=${left},top=${top}`);
-  };
 
   const handleLogout = async () => {
     try {
@@ -81,33 +73,32 @@ export function LoginPrompt({ loginUrl, apiBaseUrl }: LoginPromptProps) {
                 ? `Continue as ${idpUser.email || 'User'} to access your account.`
                 : 'Continue with your Gratos account to save your progress.'}
          </div>
-         <a href={loginUrl} onClick={handleLogin} style={{
-            display: 'block',
-            backgroundColor: '#1a73e8',
-            color: 'white',
-            textAlign: 'center',
-            padding: '8px 16px',
-            borderRadius: '4px',
-            textDecoration: 'none',
-            fontSize: '14px',
-            fontWeight: 500,
-            cursor: 'pointer'
-         }}>
-            {idpUser ? `Continue as ${idpUser.email || 'User'}` : 'Sign in as User'}
-         </a>
-         {idpUser && (
+         
+         {!idpUser ? (
+             <iframe 
+                src={`${loginBaseUrl}/login/prompt?client_id=${clientId}&return_to=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin + '/iframe-callback' : '')}`}
+                title="Sign in with Gratos"
+                style={{
+                    width: '100%',
+                    height: '40px',
+                    border: 'none',
+                    overflow: 'hidden'
+                }}
+             />
+         ) : (
              <button 
                 onClick={handleLogout}
                 style={{
                     display: 'block',
                     width: '100%',
-                    marginTop: '8px',
                     background: 'none',
                     border: 'none',
                     color: '#5f6368',
                     cursor: 'pointer',
                     fontSize: '12px',
-                    textDecoration: 'underline'
+                    textDecoration: 'underline',
+                    textAlign: 'left',
+                    padding: 0
                 }}
              >
                 Sign out
@@ -118,5 +109,4 @@ export function LoginPrompt({ loginUrl, apiBaseUrl }: LoginPromptProps) {
   );
 }
 
-}
 

@@ -474,7 +474,8 @@ import {
     handleAuthorize,
     handleToken
 } from './oidc';
-import { loginPage } from './auth-pages';
+import { loginPage, promptPage } from './auth-pages';
+
 
 
 
@@ -493,6 +494,13 @@ app.get('/login', (c) => {
     const clientId = c.req.query('client_id');
     return c.html(loginPage(returnTo || '/', clientId || null));
 });
+
+app.get('/login/prompt', (c) => {
+    const returnTo = c.req.query('return_to');
+    const clientId = c.req.query('client_id');
+    return c.html(promptPage(returnTo || '/', clientId || null));
+});
+
 
 
 app.get('/session/complete', async (c) => {
