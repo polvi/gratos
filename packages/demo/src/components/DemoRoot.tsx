@@ -148,7 +148,8 @@ export function DemoRoot({ apiBaseUrl, clientId, returnTo }: { apiBaseUrl: strin
             <div style={{ minHeight: '100vh', background: '#fafafa', fontFamily: 'system-ui, sans-serif' }}>
                 <Header />
                 <Hero />
-                {clientId && <LoginPrompt loginUrl={loginUrl} />}
+                {clientId && <LoginPrompt loginUrl={loginUrl} apiBaseUrl={apiBaseUrl} />}
+
             </div>
         </AuthProvider>
     );

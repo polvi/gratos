@@ -19,7 +19,8 @@ import { DemoRoot } from "../components/DemoRoot";
   <body>
     <DemoRoot
       client:only="preact"
-      apiBaseUrl={import.meta.env.PUBLIC_GRATOS_SERVER}
+      apiBaseUrl={import.meta.env.PUBLIC_GRATOS_DOMAIN_SERVER}
+      loginBaseUrl={import.meta.env.PUBLIC_GRATOS_SERVER}
       clientId={import.meta.env.PUBLIC_CLIENT_ID}
       returnTo="https://gratos-demo.proc.io"
     />

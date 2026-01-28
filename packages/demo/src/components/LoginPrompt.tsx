@@ -1,15 +1,25 @@
-import { useEffect } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 
 interface LoginPromptProps {
   loginUrl: string;
+  apiBaseUrl: string;
 }
 
-export function LoginPrompt({ loginUrl }: LoginPromptProps) {
+export function LoginPrompt({ loginUrl, apiBaseUrl }: LoginPromptProps) {
+  const [idpUser, setIdpUser] = useState<any>(null);
 
   useEffect(() => {
-    // Determine if we should show the prompt (e.g., check if already logged in or dismissed)
-    // For this demo, we'll just show it.
-  }, []);
+    fetch(`${apiBaseUrl}/whoami`, {
+        credentials: 'include'
+    })
+    .then(res => res.ok ? res.json() : null)
+    .then(data => {
+        if (data && data.user) {
+            setIdpUser(data.user);
+        }
+    })
+    .catch(() => { /* ignore error */ });
+  }, [apiBaseUrl]);
 
   return (
     <div style={{
@@ -27,12 +37,16 @@ export function LoginPrompt({ loginUrl }: LoginPromptProps) {
       overflow: 'hidden'
     }}>
       <div style={{ padding: '16px', display: 'flex', alignItems: 'center', borderBottom: '1px solid #e0e0e0' }}>
-        <span style={{ fontSize: '14px', fontWeight: 500, color: '#3c4043' }}>Sign in to Gratos Demo</span>
+        <span style={{ fontSize: '14px', fontWeight: 500, color: '#3c4043' }}>
+            {idpUser ? 'Welcome back' : 'Sign in to Gratos Demo'}
+        </span>
       </div>
 
       <div style={{ padding: '16px' }}>
          <div style={{ marginBottom: '16px', fontSize: '12px', color: '#5f6368' }}>
-            Continue with your Gratos account to save your progress.
+            {idpUser 
+                ? `Continue as ${idpUser.email || 'User'} to access your account.`
+                : 'Continue with your Gratos account to save your progress.'}
          </div>
          <a href={loginUrl} style={{
             display: 'block',
@@ -45,9 +59,10 @@ export function LoginPrompt({ loginUrl }: LoginPromptProps) {
             fontSize: '14px',
             fontWeight: 500
          }}>
-            Sign in as User
+            {idpUser ? `Continue as ${idpUser.email || 'User'}` : 'Sign in as User'}
          </a>
       </div>
     </div>
   );
 }
+

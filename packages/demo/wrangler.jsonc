@@ -6,16 +6,8 @@
   "assets": {
     "directory": "./dist"
   },
-  "vars": {
-    "PUBLIC_GRATOS_SERVER": "http://localhost:8787",
-    "PUBLIC_CLIENT_ID": "00000000-0000-0000-0000-000000000000"
-  },
-
   "env": {
     "prod-li": {
-      "vars": {
-        "PUBLIC_GRATOS_SERVER": "https://id.letsident.org"
-      },
       "routes": [
         {
           "pattern": "gratos-demo.proc.io",
@@ -24,9 +16,6 @@
       ]
     },
     "prod": {
-      "vars": {
-        "PUBLIC_GRATOS_SERVER": "https://id.letsident.org"
-      },
       "routes": [
         {
           "pattern": "dash.letsident.org",
