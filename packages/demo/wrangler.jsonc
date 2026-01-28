@@ -13,7 +13,7 @@
   },
 
   "env": {
-    "prod-li": {
+    "proc-io": {
       "vars": {
         "PUBLIC_GRATOS_SERVER": "https://id.letsident.org",
         "PUBLIC_GRATOS_DOMAIN_SERVER": "https://id.proc.io",
