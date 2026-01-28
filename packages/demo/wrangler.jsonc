@@ -6,8 +6,19 @@
   "assets": {
     "directory": "./dist"
   },
+  "vars": {
+    "PUBLIC_GRATOS_SERVER": "http://localhost:8787",
+    "PUBLIC_GRATOS_DOMAIN_SERVER": "http://localhost:8787",
+    "PUBLIC_CLIENT_ID": "f7090f20-5058-4a93-9303-c071f7b66eff"
+  },
+
   "env": {
     "prod-li": {
+      "vars": {
+        "PUBLIC_GRATOS_SERVER": "https://id.letsident.org",
+        "PUBLIC_GRATOS_DOMAIN_SERVER": "https://id.proc.io",
+        "PUBLIC_CLIENT_ID": "15ec252b-4cdc-40a7-8936-741f4457c055"
+      },
       "routes": [
         {
           "pattern": "gratos-demo.proc.io",
@@ -16,6 +27,11 @@
       ]
     },
     "prod": {
+      "vars": {
+        "PUBLIC_GRATOS_SERVER": "https://id.letsident.org",
+        "PUBLIC_GRATOS_DOMAIN_SERVER": "https://id.letsident.org",
+        "PUBLIC_CLIENT_ID": "15ec252b-4cdc-40a7-8936-741f4457c055"
+      },
       "routes": [
         {
           "pattern": "dash.letsident.org",

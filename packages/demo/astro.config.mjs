@@ -5,7 +5,7 @@ import cloudflare from '@astrojs/cloudflare';
 // https://astro.build/config
 export default defineConfig({
     integrations: [preact()],
-    output: 'static',
+    output: 'server',
     adapter: cloudflare(),
     image: {
         service: {
