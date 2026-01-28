@@ -496,7 +496,7 @@ import {
     handleAuthorize,
     handleToken
 } from './oidc';
-import { loginPage, promptPage } from './auth-pages';
+import { loginPage, promptPage, successPage } from './auth-pages';
 
 
 
@@ -521,6 +521,10 @@ app.get('/login/prompt', (c) => {
     const returnTo = c.req.query('return_to');
     const clientId = c.req.query('client_id');
     return c.html(promptPage(returnTo || '/', clientId || null));
+});
+
+app.get('/login/success', (c) => {
+    return c.html(successPage());
 });
 
 

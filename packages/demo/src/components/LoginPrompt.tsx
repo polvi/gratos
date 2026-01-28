@@ -76,7 +76,7 @@ export function LoginPrompt({ loginBaseUrl, apiBaseUrl, clientId }: LoginPromptP
          
          {!idpUser ? (
              <iframe 
-                src={`${loginBaseUrl}/login/prompt?client_id=${clientId}&return_to=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin + '/iframe-callback' : '')}`}
+                src={`${loginBaseUrl}/login/prompt?client_id=${clientId}&return_to=${encodeURIComponent(loginBaseUrl + '/login/success')}`}
                 title="Sign in with Gratos"
                 allow="publickey-credentials-get *"
                 style={{

@@ -183,3 +183,19 @@ export const promptPage = (returnTo: string | null, clientId: string | null) => 
 `;
 
 
+export const successPage = () => `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Success</title>
+</head>
+<body>
+    <script>
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: "GRATOS_LOGIN_SUCCESS" }, "*");
+      }
+    </script>
+</body>
+</html>
+`;
