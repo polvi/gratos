@@ -116,7 +116,7 @@ export const promptPage = (returnTo: string | null, clientId: string | null) => 
     <script src="https://unpkg.com/@simplewebauthn/browser/dist/bundle/index.umd.min.js"></script>
 </head>
 <body>
-    <button id="signinBtn" class="btn">Sign in as User</button>
+    <button id="signinBtn" class="btn">Sign in</button>
     <div id="errorMsg" class="error"></div>
 
     <script>
@@ -145,7 +145,7 @@ export const promptPage = (returnTo: string | null, clientId: string | null) => 
                 } catch (e) {
                      // Cancelled
                      btn.disabled = false;
-                     btn.innerText = 'Sign in as User';
+                     btn.innerText = 'Sign in';
                      return;
                 }
 
@@ -168,13 +168,13 @@ export const promptPage = (returnTo: string | null, clientId: string | null) => 
                 } else {
                      errorMsg.innerText = verifyJson.error || 'Login failed';
                      btn.disabled = false;
-                     btn.innerText = 'Sign in as User';
+                     btn.innerText = 'Sign in';
                 }
             } catch (err) {
                 console.error(err);
                 errorMsg.innerText = 'Authentication failed';
                 btn.disabled = false;
-                btn.innerText = 'Sign in as User';
+                btn.innerText = 'Sign in';
             }
         });
     </script>

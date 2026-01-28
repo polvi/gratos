@@ -64,7 +64,16 @@ function getConfig(c: any) {
 
 
 
-function isValidCookieDomain(domain: string, cookieDomain: string): boolean {
+function isValidCookieDomain(origin: string, cookieDomain: string): boolean {
+    let hostname = origin;
+    try {
+        const url = new URL(origin);
+        hostname = url.hostname;
+    } catch (e) {
+        // Fallback if not a valid URL (backward compatibility for plain domains)
+        hostname = origin;
+    }
+
     const cleanCookieDomain = cookieDomain.startsWith('.') ? cookieDomain.slice(1) : cookieDomain;
     
     // Validate it's not a TLD (must have at least one dot, unless it's localhost)
@@ -72,10 +81,10 @@ function isValidCookieDomain(domain: string, cookieDomain: string): boolean {
         return false;
     }
 
-    if (domain === cookieDomain) return true;
-    if (domain.endsWith('.' + cookieDomain)) return true;
-    // Also handle leading dot in cookieDomain if user provided it (though browsers often ignore/strip it now)
-    if (cookieDomain.startsWith('.') && domain.endsWith(cookieDomain)) return true;
+    if (hostname === cookieDomain) return true;
+    if (hostname.endsWith('.' + cookieDomain)) return true;
+    // Also handle leading dot in cookieDomain if user provided it
+    if (cookieDomain.startsWith('.') && hostname.endsWith(cookieDomain)) return true;
     
     return false;
 }
@@ -133,22 +142,22 @@ async function saveCredential(db: D1Database, userId: string, verification: any,
     ).run();
 }
 
-async function saveClient(db: D1Database, userId: string, domain: string, domainSetting: string) {
+async function saveClient(db: D1Database, userId: string, origin: string, domainSetting: string) {
     const id = crypto.randomUUID();
     const createdAt = Date.now();
 
     await db.prepare(`
-    INSERT INTO clients (id, user_id, domain, domain_setting, created_at)
+    INSERT INTO clients (id, user_id, origin, domain_setting, created_at)
     VALUES (?, ?, ?, ?, ?)
   `).bind(
         id,
         userId,
-        domain,
+        origin,
         domainSetting,
         createdAt
     ).run();
 
-    return { id, domain, domain_setting: domainSetting, created_at: createdAt };
+    return { id, origin, domain_setting: domainSetting, created_at: createdAt };
 }
 
 
@@ -163,11 +172,11 @@ async function getClient(db: D1Database, id: string) {
 }
 
 
-async function updateClient(db: D1Database, userId: string, clientId: string, domain: string, domainSetting: string) {
+async function updateClient(db: D1Database, userId: string, clientId: string, origin: string, domainSetting: string) {
     await db.prepare(`
-    UPDATE clients SET domain = ?, domain_setting = ? WHERE id = ? AND user_id = ?
-  `).bind(domain, domainSetting, clientId, userId).run();
-    return { id: clientId, domain, domainSetting };
+    UPDATE clients SET origin = ?, domain_setting = ? WHERE id = ? AND user_id = ?
+  `).bind(origin, domainSetting, clientId, userId).run();
+    return { id: clientId, origin, domainSetting };
 }
 
 async function deleteClient(db: D1Database, userId: string, clientId: string) {
@@ -337,7 +346,7 @@ app.post('/login/verify', async (c) => {
         const { clientId, returnTo } = await c.req.json();
         if (clientId) {
             const client = await getClient(c.env.DB, clientId) as any;
-            if (client && client.domain) {
+            if (client && client.origin) {
                 // Generate Code
                 const code = crypto.randomUUID();
                 await c.env.KV.put(`oidc_code:${code}`, JSON.stringify({
@@ -348,13 +357,17 @@ app.post('/login/verify', async (c) => {
                 }), { expirationTtl: 600 });
 
                 // Construct Redirect URL
-                // Verify if client.domain needs protocol
-                let domain = client.domain;
-                if (!domain.startsWith('http')) {
-                    domain = `https://${domain}`;
+                let origin = client.origin;
+                if (!origin.startsWith('http')) {
+                    origin = `https://${origin}`;
                 }
                 
-                const redirectUrl = `${domain}/session/complete?code=${code}&redirect_to=${encodeURIComponent(returnTo || '/')}`;
+                // Remove trailing slash if present to avoid double slash
+                if (origin.endsWith('/')) {
+                    origin = origin.slice(0, -1);
+                }
+                
+                const redirectUrl = `${origin}/session/complete?code=${code}&redirect_to=${encodeURIComponent(returnTo || '/')}`;
                 return c.json({ verified: true, user, redirectUrl });
             }
         }
@@ -407,10 +420,15 @@ app.post('/clients', async (c) => {
 
     // 2. Parse Body and Validate
     const body = await c.req.json();
-    const { domain, domain_setting } = body;
+    let { origin, domain, domain_setting } = body;
 
-    if (!domain || typeof domain !== 'string') {
-        return c.json({ error: 'Invalid or missing "domain"' }, 400);
+    // Backward compatibility: map domain to origin if origin is missing
+    if (!origin && domain) {
+        origin = domain;
+    }
+
+    if (!origin || typeof origin !== 'string') {
+        return c.json({ error: 'Invalid or missing "origin"' }, 400);
     }
     if (!domain_setting || typeof domain_setting !== 'string') {
         return c.json({ error: 'Invalid or missing "domain_setting"' }, 400);
@@ -418,13 +436,13 @@ app.post('/clients', async (c) => {
 
 
 
-    if (!isValidCookieDomain(domain, domain_setting)) {
+    if (!isValidCookieDomain(origin, domain_setting)) {
         return c.json({ error: 'Invalid cookie domain. Must be the same as or a parent of the domain.' }, 400);
     }
 
     // 3. Create Client
     try {
-        const client = await saveClient(c.env.DB, userId, domain, domain_setting);
+        const client = await saveClient(c.env.DB, userId, origin, domain_setting);
         return c.json(client);
     } catch (e) {
         console.error('Failed to create client', e);
@@ -442,17 +460,21 @@ app.put('/clients/:id', async (c) => {
     const userId = c.get('userId');
     const clientId = c.req.param('id');
     const body = await c.req.json();
-    const { domain, domain_setting } = body;
+    let { origin, domain, domain_setting } = body;
 
-    if (!domain || typeof domain !== 'string') return c.json({ error: 'Invalid domain' }, 400);
+    if (!origin && domain) {
+        origin = domain;
+    }
+
+    if (!origin || typeof origin !== 'string') return c.json({ error: 'Invalid origin' }, 400);
     if (!domain_setting || typeof domain_setting !== 'string') return c.json({ error: 'Invalid domain_setting' }, 400);
 
-    if (!isValidCookieDomain(domain, domain_setting)) {
+    if (!isValidCookieDomain(origin, domain_setting)) {
         return c.json({ error: 'Invalid cookie domain. Must be the same as or a parent of the domain.' }, 400);
     }
 
     try {
-        const client = await updateClient(c.env.DB, userId, clientId, domain, domain_setting);
+        const client = await updateClient(c.env.DB, userId, clientId, origin, domain_setting);
         return c.json(client);
     } catch (e) {
         return c.json({ error: 'Failed to update client' }, 500);

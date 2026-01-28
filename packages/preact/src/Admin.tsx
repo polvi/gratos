@@ -3,7 +3,7 @@ import { useAuth } from './AuthContext';
 
 interface Client {
     id: string;
-    domain: string;
+    origin: string;
     domain_setting: string;
     created_at: number;
 }
@@ -12,7 +12,7 @@ export function Admin() {
     const { apiBaseUrl, isAuthenticated, isLoading } = useAuth();
     const [clients, setClients] = useState<Client[]>([]);
     const [loadingClients, setLoadingClients] = useState(false);
-    const [form, setForm] = useState({ domain: '', domain_setting: '' });
+    const [form, setForm] = useState({ origin: '', domain_setting: '' });
     const [error, setError] = useState('');
 
     useEffect(() => {
@@ -39,7 +39,7 @@ export function Admin() {
     async function handleSubmit(e: any) {
         e.preventDefault();
         setError('');
-        if (!form.domain || !form.domain_setting) {
+        if (!form.origin || !form.domain_setting) {
             setError('Both fields are required');
             return;
         }
@@ -54,7 +54,7 @@ export function Admin() {
             if (res.ok) {
                 const newClient = await res.json();
                 setClients([newClient, ...clients]);
-                setForm({ domain: '', domain_setting: '' });
+                setForm({ origin: '', domain_setting: '' });
             } else {
                 const err = await res.json();
                 setError(err.error || 'Failed to create client');
@@ -93,12 +93,12 @@ export function Admin() {
                 {error && <div style={{ color: 'red', marginBottom: '0.5rem' }}>{error}</div>}
                 <form onSubmit={handleSubmit} style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
                     <div style={{ flex: 1 }}>
-                        <label style={{ display: 'block', marginBottom: '0.5rem' }}>Domain</label>
+                        <label style={{ display: 'block', marginBottom: '0.5rem' }}>Client Origin (URL)</label>
                         <input
                             type="text"
-                            placeholder="id.example.com"
-                            value={form.domain}
-                            onInput={(e: any) => setForm({ ...form, domain: e.target.value })}
+                            placeholder="https://id.example.com or http://localhost:3000"
+                            value={form.origin}
+                            onInput={(e: any) => setForm({ ...form, origin: e.target.value })}
                             style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc' }}
                         />
                     </div>
@@ -129,7 +129,7 @@ export function Admin() {
                         <thead>
                             <tr style={{ background: '#eee', textAlign: 'left' }}>
                                 <th style={{ padding: '0.5rem' }}>ID</th>
-                                <th style={{ padding: '0.5rem' }}>Domain</th>
+                                <th style={{ padding: '0.5rem' }}>Origin</th>
                                 <th style={{ padding: '0.5rem' }}>Cookie Domain</th>
                                 <th style={{ padding: '0.5rem' }}>Created At</th>
                                 <th style={{ padding: '0.5rem' }}>Actions</th>
@@ -144,7 +144,7 @@ export function Admin() {
                             {clients.map(client => (
                                 <tr key={client.id} style={{ borderBottom: '1px solid #eee' }}>
                                     <td style={{ padding: '0.5rem', fontFamily: 'monospace', fontSize: '0.9rem' }}>{client.id}</td>
-                                    <td style={{ padding: '0.5rem' }}>{client.domain}</td>
+                                    <td style={{ padding: '0.5rem' }}>{client.origin}</td>
                                     <td style={{ padding: '0.5rem' }}>{client.domain_setting}</td>
                                     <td style={{ padding: '0.5rem', fontSize: '0.9rem' }}>{new Date(client.created_at).toLocaleString()}</td>
                                     <td style={{ padding: '0.5rem' }}>
