@@ -140,8 +140,7 @@ function Hero() {
 
 import { LoginPrompt } from './LoginPrompt';
 
-export function DemoRoot({ apiBaseUrl, loginBaseUrl, clientId, returnTo }: { apiBaseUrl: string; loginBaseUrl: string; clientId?: string; returnTo?: string }) {
-    const loginUrl = `${loginBaseUrl}/login?client_id=${clientId}&return_to=${encodeURIComponent(returnTo || (typeof window !== 'undefined' ? window.location.origin : ''))}`;
+export function DemoRoot({ apiBaseUrl, loginBaseUrl, clientId }: { apiBaseUrl: string; loginBaseUrl: string; clientId?: string }) {
 
     return (
         <AuthProvider apiBaseUrl={apiBaseUrl}>
