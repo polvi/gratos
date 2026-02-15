@@ -161,7 +161,7 @@ export const promptPage = (returnTo: string | null, clientId: string | null) => 
         }
 
         function showSignin() {
-            signinView.style.display = '';
+            signinView.style.display = 'block';
             registerView.style.display = 'none';
             errorMsg.innerText = '';
             notifyResize();
@@ -169,7 +169,7 @@ export const promptPage = (returnTo: string | null, clientId: string | null) => 
 
         function showRegister() {
             signinView.style.display = 'none';
-            registerView.style.display = '';
+            registerView.style.display = 'block';
             errorMsg.innerText = '';
             usernameInput.value = '';
             notifyResize();
