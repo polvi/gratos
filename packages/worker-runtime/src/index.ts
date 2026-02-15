@@ -221,7 +221,7 @@ app.post('/register/verify', async (c) => {
     const config = getConfig(c);
 
     const body = await c.req.json();
-    const { response, userId } = body;
+    const { response, userId, clientId, returnTo } = body;
 
     if (!userId) return c.json({ error: 'User ID required' }, 400);
 
@@ -264,6 +264,30 @@ app.post('/register/verify', async (c) => {
 
         // cleanup
         await c.env.KV.delete(`reg_challenge:${userId}`);
+
+        // Handle Redirect / Client ID Flow (same pattern as /login/verify)
+        if (clientId) {
+            const client = await getClient(c.env.DB, clientId) as any;
+            if (client && client.origin) {
+                const code = crypto.randomUUID();
+                await c.env.KV.put(`oidc_code:${code}`, JSON.stringify({
+                    userId,
+                    clientId,
+                    createdAt: Date.now()
+                }), { expirationTtl: 600 });
+
+                let origin = client.origin;
+                if (!origin.startsWith('http')) {
+                    origin = `https://${origin}`;
+                }
+                if (origin.endsWith('/')) {
+                    origin = origin.slice(0, -1);
+                }
+
+                const redirectUrl = `${origin}/session/complete?code=${code}&redirect_to=${encodeURIComponent(returnTo || '/')}`;
+                return c.json({ verified: true, user, redirectUrl });
+            }
+        }
 
         return c.json({ verified: true, user });
     }

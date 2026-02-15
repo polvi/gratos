@@ -9,6 +9,7 @@ interface LetsIdentProps {
 
 export function LetsIdent({ loginBaseUrl, apiBaseUrl, clientId }: LetsIdentProps) {
   const [idpUser, setIdpUser] = useState<any>(null);
+  const [iframeHeight, setIframeHeight] = useState(40);
 
   const fetchUser = () => {
     fetch(`${apiBaseUrl}/whoami`, {
@@ -29,6 +30,9 @@ export function LetsIdent({ loginBaseUrl, apiBaseUrl, clientId }: LetsIdentProps
     const handleMessage = (event: MessageEvent) => {
         if (event.data && event.data.type === 'GRATOS_LOGIN_SUCCESS') {
             fetchUser();
+        }
+        if (event.data && event.data.type === 'GRATOS_RESIZE' && typeof event.data.height === 'number') {
+            setIframeHeight(event.data.height);
         }
     };
     window.addEventListener('message', handleMessage);
@@ -79,10 +83,10 @@ export function LetsIdent({ loginBaseUrl, apiBaseUrl, clientId }: LetsIdentProps
              <iframe 
                 src={`${loginBaseUrl}/login/prompt?client_id=${clientId}&return_to=${encodeURIComponent(loginBaseUrl + '/login/success')}`}
                 title="Sign in with Gratos"
-                allow="publickey-credentials-get *"
+                allow="publickey-credentials-get *; publickey-credentials-create *"
                 style={{
                     width: '100%',
-                    height: '40px',
+                    height: `${iframeHeight}px`,
                     border: 'none',
                     overflow: 'hidden'
                 }}
