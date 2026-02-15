@@ -68,7 +68,7 @@ export function LetsIdent({ loginBaseUrl, apiBaseUrl, clientId }: LetsIdentProps
     }}>
       <div style={{ padding: '16px', display: 'flex', alignItems: 'center', borderBottom: '1px solid #e0e0e0' }}>
         <span style={{ fontSize: '14px', fontWeight: 500, color: '#3c4043' }}>
-            {idpUser ? 'Welcome back' : 'Sign in to Gratos Demo'}
+            {idpUser ? 'Welcome back' : "Let's Ident"}
         </span>
       </div>
 
@@ -76,7 +76,7 @@ export function LetsIdent({ loginBaseUrl, apiBaseUrl, clientId }: LetsIdentProps
          <div style={{ marginBottom: '16px', fontSize: '12px', color: '#5f6368' }}>
             {idpUser 
                 ? `Continue as ${idpUser.email || 'User'} to access your account.`
-                : 'Continue with your Gratos account to save your progress.'}
+                : "Sign in or create an account to continue."}
          </div>
          
          {!idpUser ? (

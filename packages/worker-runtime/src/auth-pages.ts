@@ -252,6 +252,8 @@ export const promptPage = (returnTo: string | null, clientId: string | null) => 
                 try {
                     regResp = await startRegistration({ optionsJSON: opts });
                 } catch (e) {
+                    console.error('startRegistration error:', e);
+                    errorMsg.innerText = e.message || 'Registration cancelled or failed';
                     registerBtn.disabled = false;
                     registerBtn.innerText = 'Register';
                     return;
