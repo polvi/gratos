@@ -24,6 +24,21 @@ export function LetsIdent({ loginBaseUrl, apiBaseUrl, clientId }: LetsIdentProps
     .catch(() => { /* ignore error */ });
   };
 
+  const openRegister = () => {
+    const registerUrl = `${loginBaseUrl}/register?client_id=${clientId}&return_to=${encodeURIComponent(loginBaseUrl + '/login/success')}`;
+    // On mobile, open as a normal navigation (popups don't work well).
+    // On desktop, open as a centered popup.
+    const isMobile = window.innerWidth <= 600;
+    if (isMobile) {
+        window.open(registerUrl, '_blank');
+    } else {
+        const w = 450, h = 550;
+        const left = (screen.width - w) / 2;
+        const top = (screen.height - h) / 2;
+        window.open(registerUrl, 'gratos_register', `width=${w},height=${h},left=${left},top=${top},popup=yes`);
+    }
+  };
+
   useEffect(() => {
     fetchUser();
 
@@ -35,8 +50,7 @@ export function LetsIdent({ loginBaseUrl, apiBaseUrl, clientId }: LetsIdentProps
             setIframeHeight(event.data.height);
         }
         if (event.data && event.data.type === 'GRATOS_OPEN_REGISTER') {
-            const registerUrl = `${loginBaseUrl}/register?client_id=${clientId}&return_to=${encodeURIComponent(loginBaseUrl + '/login/success')}`;
-            window.open(registerUrl, 'gratos_register', 'width=450,height=500,popup=yes');
+            openRegister();
         }
     };
     window.addEventListener('message', handleMessage);
@@ -56,66 +70,106 @@ export function LetsIdent({ loginBaseUrl, apiBaseUrl, clientId }: LetsIdentProps
   };
 
   return (
-    <div style={{
-      position: 'fixed',
-      top: '20px',
-      right: '20px',
-      zIndex: 1000,
-      backgroundColor: 'white',
-      borderRadius: '4px',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-      fontFamily: 'Roboto, arial, sans-serif',
-      display: 'flex',
-      flexDirection: 'column',
-      width: '300px',
-      overflow: 'hidden'
-    }}>
-      <div style={{ padding: '16px', display: 'flex', alignItems: 'center', borderBottom: '1px solid #e0e0e0' }}>
-        <span style={{ fontSize: '14px', fontWeight: 500, color: '#3c4043' }}>
-            {idpUser ? 'Welcome back' : "Let's Ident"}
-        </span>
-      </div>
+    <>
+      <style>{`
+        .letsident-card {
+          position: fixed;
+          bottom: 0;
+          left: 0;
+          right: 0;
+          z-index: 1000;
+          background-color: white;
+          border-radius: 12px 12px 0 0;
+          box-shadow: 0 -2px 12px rgba(0,0,0,0.15);
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, arial, sans-serif;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          max-width: 100%;
+        }
+        @media (min-width: 480px) {
+          .letsident-card {
+            bottom: auto;
+            top: 20px;
+            right: 20px;
+            left: auto;
+            width: 320px;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+          }
+        }
+        .letsident-header {
+          padding: 14px 16px;
+          display: flex;
+          align-items: center;
+          border-bottom: 1px solid #e0e0e0;
+        }
+        .letsident-header span {
+          font-size: 15px;
+          font-weight: 600;
+          color: #202124;
+        }
+        .letsident-body {
+          padding: 16px;
+        }
+        .letsident-subtitle {
+          margin-bottom: 14px;
+          font-size: 13px;
+          color: #5f6368;
+          line-height: 1.4;
+        }
+        .letsident-iframe {
+          width: 100%;
+          border: none;
+          overflow: hidden;
+        }
+        .letsident-signout {
+          display: block;
+          width: 100%;
+          background: none;
+          border: 1px solid #dadce0;
+          border-radius: 8px;
+          color: #5f6368;
+          cursor: pointer;
+          font-size: 14px;
+          text-align: center;
+          padding: 10px 0;
+          -webkit-tap-highlight-color: transparent;
+        }
+        .letsident-signout:active {
+          background: #f1f3f4;
+        }
+      `}</style>
+      <div className="letsident-card">
+        <div className="letsident-header">
+          <span>{idpUser ? 'Welcome back' : "Let's Ident"}</span>
+        </div>
 
-      <div style={{ padding: '16px' }}>
-         <div style={{ marginBottom: '16px', fontSize: '12px', color: '#5f6368' }}>
-            {idpUser 
+        <div className="letsident-body">
+          <div className="letsident-subtitle">
+            {idpUser
                 ? `Continue as ${idpUser.email || 'User'} to access your account.`
-                : "Sign in or create an account to continue."}
-         </div>
-         
-         {!idpUser ? (
-             <iframe 
-                src={`${loginBaseUrl}/login/prompt?client_id=${clientId}&return_to=${encodeURIComponent(loginBaseUrl + '/login/success')}`}
-                title="Sign in with Gratos"
-                allow="publickey-credentials-get *"
-                style={{
-                    width: '100%',
-                    height: `${iframeHeight}px`,
-                    border: 'none',
-                    overflow: 'hidden'
-                }}
-             />
+                : 'Sign in or create an account to continue.'}
+          </div>
 
-         ) : (
-             <button 
+          {!idpUser ? (
+              <iframe
+                src={`${loginBaseUrl}/login/prompt?client_id=${clientId}&return_to=${encodeURIComponent(loginBaseUrl + '/login/success')}`}
+                title="Sign in with Let's Ident"
+                allow="publickey-credentials-get *"
+                className="letsident-iframe"
+                style={{ height: `${iframeHeight}px` }}
+              />
+          ) : (
+              <button
                 onClick={handleLogout}
-                style={{
-                    display: 'block',
-                    width: '100%',
-                    background: 'none',
-                    border: 'none',
-                    color: '#5f6368',
-                    cursor: 'pointer',
-                    fontSize: '12px',
-                    textDecoration: 'underline',
-                    textAlign: 'left',
-                    padding: 0
-                }}
-             >
+                className="letsident-signout"
+              >
                 Sign out
-             </button>
-         )}
+              </button>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }

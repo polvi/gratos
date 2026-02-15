@@ -94,26 +94,41 @@ export const promptPage = (returnTo: string | null, clientId: string | null) => 
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sign In</title>
     <style>
-        body { margin: 0; font-family: Roboto, arial, sans-serif; overflow: hidden; background: transparent; }
+        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, arial, sans-serif; overflow: hidden; background: transparent; }
         .btn {
             display: block;
             width: 100%;
             background-color: #1a73e8;
             color: white;
             text-align: center;
-            padding: 8px 16px;
-            border-radius: 4px;
+            padding: 12px 16px;
+            border-radius: 8px;
             text-decoration: none;
-            font-size: 14px;
+            font-size: 15px;
             font-weight: 500;
             border: none;
             cursor: pointer;
             box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
         }
         .btn:hover { background-color: #155db1; }
-        .error { color: red; font-size: 12px; margin-top: 4px; text-align: center; }
-        .link { font-size: 12px; color: #1a73e8; cursor: pointer; text-align: center; margin-top: 6px; background: none; border: none; text-decoration: underline; display: block; width: 100%; }
-        .link:hover { color: #155db1; }
+        .btn:active { background-color: #1260a0; }
+        .error { color: #d93025; font-size: 13px; margin-top: 6px; text-align: center; }
+        .link {
+            font-size: 14px;
+            color: #1a73e8;
+            cursor: pointer;
+            text-align: center;
+            margin-top: 10px;
+            background: none;
+            border: none;
+            text-decoration: none;
+            display: block;
+            width: 100%;
+            padding: 8px 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .link:active { color: #155db1; }
     </style>
     <script src="https://unpkg.com/@simplewebauthn/browser/dist/bundle/index.umd.min.js"></script>
 </head>
@@ -200,62 +215,88 @@ export const registerPage = (returnTo: string | null, clientId: string | null) =
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Create Account</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Create Account - Let's Ident</title>
     <style>
-        body { font-family: system-ui, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f8f9fa; }
-        .card { background: white; border-radius: 8px; padding: 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); width: 320px; }
-        h1 { font-size: 20px; margin: 0 0 8px; color: #202124; }
-        p { font-size: 14px; color: #5f6368; margin: 0 0 24px; }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            margin: 0;
+            padding: 0;
+            background-color: #f8f9fa;
+        }
+        .card {
+            background: white;
+            width: 100%;
+            min-height: 100vh;
+            padding: 32px 24px;
+            padding-top: max(32px, env(safe-area-inset-top, 0px));
+            padding-bottom: max(32px, env(safe-area-inset-bottom, 0px));
+        }
+        @media (min-width: 480px) {
+            body { align-items: center; padding: 24px; }
+            .card {
+                max-width: 400px;
+                min-height: auto;
+                border-radius: 12px;
+                box-shadow: 0 1px 6px rgba(0,0,0,0.12);
+                padding: 32px;
+            }
+        }
+        h1 { font-size: 22px; margin: 0 0 6px; color: #202124; font-weight: 700; }
+        .tagline { font-size: 15px; color: #5f6368; margin: 0 0 20px; line-height: 1.5; }
         input {
             display: block;
             width: 100%;
-            padding: 10px 12px;
+            padding: 14px 16px;
             border: 1px solid #dadce0;
-            border-radius: 4px;
-            font-size: 14px;
-            margin-bottom: 16px;
-            box-sizing: border-box;
+            border-radius: 8px;
+            font-size: 16px;
+            margin-bottom: 12px;
+            -webkit-appearance: none;
         }
-        input:focus { outline: none; border-color: #1a73e8; }
+        input:focus { outline: none; border-color: #1a73e8; box-shadow: 0 0 0 2px rgba(26,115,232,0.2); }
         .btn {
             display: block;
             width: 100%;
             background-color: #1a73e8;
             color: white;
             text-align: center;
-            padding: 10px 16px;
-            border-radius: 4px;
-            font-size: 14px;
+            padding: 14px 16px;
+            border-radius: 8px;
+            font-size: 16px;
             font-weight: 500;
             border: none;
             cursor: pointer;
-            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
         }
         .btn:hover { background-color: #155db1; }
+        .btn:active { background-color: #1260a0; }
         .btn:disabled { background-color: #94bfff; cursor: default; }
-        .error { color: #d93025; font-size: 13px; margin-top: 12px; text-align: center; }
-        .success { color: #1e8e3e; font-size: 13px; margin-top: 12px; text-align: center; }
-        .privacy-note { font-size: 12px; color: #80868b; margin-top: 16px; padding-top: 16px; border-top: 1px solid #e0e0e0; line-height: 1.5; }
-        .features { list-style: none; padding: 0; margin: 16px 0 0; }
-        .features li { font-size: 13px; color: #5f6368; padding: 4px 0; padding-left: 20px; position: relative; }
+        .error { color: #d93025; font-size: 14px; margin-top: 12px; text-align: center; }
+        .success { color: #1e8e3e; font-size: 14px; margin-top: 12px; text-align: center; }
+        .features { list-style: none; padding: 0; margin: 0 0 24px; }
+        .features li { font-size: 14px; color: #3c4043; padding: 6px 0; padding-left: 24px; position: relative; line-height: 1.4; }
         .features li::before { content: "\\2713"; position: absolute; left: 0; color: #1a73e8; font-weight: bold; }
+        .privacy-note { font-size: 13px; color: #80868b; margin-top: 20px; padding-top: 20px; border-top: 1px solid #e0e0e0; line-height: 1.6; }
     </style>
     <script src="https://unpkg.com/@simplewebauthn/browser/dist/bundle/index.umd.min.js"></script>
 </head>
 <body>
     <div class="card">
         <h1>Let's Ident</h1>
-        <p>Free, privacy-preserving authentication. No passwords, no tracking.</p>
+        <p class="tagline">Free, privacy-preserving authentication.<br>No passwords. No tracking.</p>
         <ul class="features">
             <li>Passwordless sign-in with passkeys</li>
             <li>No personal data stored on the server</li>
             <li>Works across all your devices</li>
         </ul>
-        <div style="margin-top: 20px;">
-            <input type="text" id="usernameInput" placeholder="Choose a username" autocomplete="username" autofocus />
-            <button id="registerBtn" class="btn">Create account</button>
-        </div>
+        <input type="text" id="usernameInput" placeholder="Choose a username" autocomplete="username" autofocus />
+        <button id="registerBtn" class="btn">Create account</button>
         <div class="privacy-note">Your username stays on your device and is never sent to the server. It's only used to label your passkey so you can recognize it later.</div>
         <div id="errorMsg" class="error"></div>
         <div id="successMsg" class="success"></div>
@@ -298,7 +339,7 @@ export const registerPage = (returnTo: string | null, clientId: string | null) =
                     console.error('startRegistration error:', e);
                     errorMsg.innerText = e.message || 'Registration cancelled';
                     registerBtn.disabled = false;
-                    registerBtn.innerText = 'Register';
+                    registerBtn.innerText = 'Create account';
                     return;
                 }
 
@@ -328,7 +369,7 @@ export const registerPage = (returnTo: string | null, clientId: string | null) =
                 } else {
                     errorMsg.innerText = verifyJson.error || 'Registration failed';
                     registerBtn.disabled = false;
-                    registerBtn.innerText = 'Register';
+                    registerBtn.innerText = 'Create account';
                 }
             } catch (err) {
                 console.error(err);
