@@ -1,9 +1,7 @@
 import { h } from 'preact';
-import { AuthProvider, useAuth, LoginButton, LogoutButton, RegisterButton, UserProfile } from '@gratos/preact';
+import { AuthProvider, useAuth, LetsIdent } from '@gratos/preact';
 
 function Header() {
-    const { isAuthenticated } = useAuth();
-
     return (
         <>
             <style>{`
@@ -22,40 +20,10 @@ function Header() {
                     align-items: center;
                     gap: 0.5rem;
                 }
-                .auth-actions {
-                    display: flex;
-                    align-items: center;
-                    gap: 1rem;
-                }
-                @media (max-width: 600px) {
-                    .header-container {
-                        flex-direction: column;
-                        gap: 1rem;
-                        padding: 1rem;
-                    }
-                    .auth-actions {
-                        width: 100%;
-                        justify-content: center;
-                        flex-wrap: wrap;
-                    }
-                }
             `}</style>
             <header className="header-container">
                 <div className="logo-text">
                     Gratos Demo
-                </div>
-                <div className="auth-actions">
-                    {isAuthenticated ? (
-                        <>
-                            <UserProfile />
-                            <LogoutButton />
-                        </>
-                    ) : (
-                        <>
-                            <LoginButton />
-                            <RegisterButton />
-                        </>
-                    )}
                 </div>
             </header>
         </>
@@ -120,15 +88,15 @@ function Hero() {
                     <h3 style={{ margin: '0 0 1rem 0' }}>Why Passkeys?</h3>
                     <div className="features-grid">
                         <div>
-                            <strong>🔒 Secure</strong>
+                            <strong>Secure</strong>
                             <p style={{ margin: '0.5rem 0 0 0', color: '#71717a' }}>Phishing-resistant by design.</p>
                         </div>
                         <div>
-                            <strong>⚡ Fast</strong>
+                            <strong>Fast</strong>
                             <p style={{ margin: '0.5rem 0 0 0', color: '#71717a' }}>No more typing complex passwords.</p>
                         </div>
                         <div>
-                            <strong>😊 Easy</strong>
+                            <strong>Easy</strong>
                             <p style={{ margin: '0.5rem 0 0 0', color: '#71717a' }}>Use your fingerprint or FaceID.</p>
                         </div>
                     </div>
@@ -138,23 +106,14 @@ function Hero() {
     );
 }
 
-import { LetsIdent } from '@gratos/preact';
-
 export function DemoRoot({ apiBaseUrl, loginBaseUrl, clientId }: { apiBaseUrl: string; loginBaseUrl: string; clientId?: string }) {
-    const loginUrl = `${loginBaseUrl}/login?client_id=${clientId}&return_to=${encodeURIComponent(loginBaseUrl + '/login/success')}`;
-
     return (
         <AuthProvider apiBaseUrl={apiBaseUrl}>
-
             <div style={{ minHeight: '100vh', background: '#fafafa', fontFamily: 'system-ui, sans-serif' }}>
                 <Header />
                 <Hero />
                 {clientId && <LetsIdent loginBaseUrl={loginBaseUrl} apiBaseUrl={apiBaseUrl} clientId={clientId} />}
-
-
             </div>
         </AuthProvider>
     );
 }
-
-
