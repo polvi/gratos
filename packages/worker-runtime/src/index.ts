@@ -520,7 +520,7 @@ import {
     handleAuthorize,
     handleToken
 } from './oidc';
-import { loginPage, promptPage, successPage } from './auth-pages';
+import { loginPage, promptPage, registerPage, successPage } from './auth-pages';
 
 
 
@@ -549,6 +549,12 @@ app.get('/login/prompt', (c) => {
 
 app.get('/login/success', (c) => {
     return c.html(successPage());
+});
+
+app.get('/register', (c) => {
+    const returnTo = c.req.query('return_to');
+    const clientId = c.req.query('client_id');
+    return c.html(registerPage(returnTo || '/', clientId || null));
 });
 
 

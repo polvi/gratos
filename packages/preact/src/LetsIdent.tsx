@@ -9,7 +9,7 @@ interface LetsIdentProps {
 
 export function LetsIdent({ loginBaseUrl, apiBaseUrl, clientId }: LetsIdentProps) {
   const [idpUser, setIdpUser] = useState<any>(null);
-  const [iframeHeight, setIframeHeight] = useState(40);
+  const [iframeHeight, setIframeHeight] = useState(60);
 
   const fetchUser = () => {
     fetch(`${apiBaseUrl}/whoami`, {
@@ -33,6 +33,10 @@ export function LetsIdent({ loginBaseUrl, apiBaseUrl, clientId }: LetsIdentProps
         }
         if (event.data && event.data.type === 'GRATOS_RESIZE' && typeof event.data.height === 'number') {
             setIframeHeight(event.data.height);
+        }
+        if (event.data && event.data.type === 'GRATOS_OPEN_REGISTER') {
+            const registerUrl = `${loginBaseUrl}/register?client_id=${clientId}&return_to=${encodeURIComponent(loginBaseUrl + '/login/success')}`;
+            window.open(registerUrl, 'gratos_register', 'width=450,height=500,popup=yes');
         }
     };
     window.addEventListener('message', handleMessage);
@@ -83,7 +87,7 @@ export function LetsIdent({ loginBaseUrl, apiBaseUrl, clientId }: LetsIdentProps
              <iframe 
                 src={`${loginBaseUrl}/login/prompt?client_id=${clientId}&return_to=${encodeURIComponent(loginBaseUrl + '/login/success')}`}
                 title="Sign in with Gratos"
-                allow="publickey-credentials-get *; publickey-credentials-create *"
+                allow="publickey-credentials-get *"
                 style={{
                     width: '100%',
                     height: `${iframeHeight}px`,

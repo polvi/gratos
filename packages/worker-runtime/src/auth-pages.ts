@@ -114,71 +114,35 @@ export const promptPage = (returnTo: string | null, clientId: string | null) => 
         .error { color: red; font-size: 12px; margin-top: 4px; text-align: center; }
         .link { font-size: 12px; color: #1a73e8; cursor: pointer; text-align: center; margin-top: 6px; background: none; border: none; text-decoration: underline; display: block; width: 100%; }
         .link:hover { color: #155db1; }
-        #registerView { display: none; }
-        #registerView input {
-            display: block;
-            width: 100%;
-            padding: 8px;
-            border: 1px solid #dadce0;
-            border-radius: 4px;
-            font-size: 14px;
-            margin-bottom: 8px;
-            box-sizing: border-box;
-        }
     </style>
     <script src="https://unpkg.com/@simplewebauthn/browser/dist/bundle/index.umd.min.js"></script>
 </head>
 <body>
-    <div id="signinView">
-        <button id="signinBtn" class="btn">Sign in</button>
-        <button id="showRegisterLink" class="link">Create account</button>
-    </div>
-    <div id="registerView">
-        <input type="text" id="usernameInput" placeholder="Username" autocomplete="username" />
-        <button id="registerBtn" class="btn">Register</button>
-        <button id="backToSigninLink" class="link">Back to sign in</button>
-    </div>
+    <button id="signinBtn" class="btn">Sign in</button>
+    <button id="createAccountLink" class="link">Create account</button>
     <div id="errorMsg" class="error"></div>
 
     <script>
-        const { startAuthentication, startRegistration } = SimpleWebAuthnBrowser;
-        const signinView = document.getElementById('signinView');
-        const registerView = document.getElementById('registerView');
+        const { startAuthentication } = SimpleWebAuthnBrowser;
         const signinBtn = document.getElementById('signinBtn');
-        const registerBtn = document.getElementById('registerBtn');
-        const showRegisterLink = document.getElementById('showRegisterLink');
-        const backToSigninLink = document.getElementById('backToSigninLink');
-        const usernameInput = document.getElementById('usernameInput');
+        const createAccountLink = document.getElementById('createAccountLink');
         const errorMsg = document.getElementById('errorMsg');
 
         const returnTo = ${returnTo ? `"${returnTo}"` : 'null'};
         const clientId = ${clientId ? `"${clientId}"` : 'null'};
 
-        function notifyResize() {
+        // Notify parent of content height so iframe can resize
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage({ type: 'GRATOS_RESIZE', height: document.body.scrollHeight + 2 }, '*');
+        }
+
+        // "Create account" opens a popup via the parent frame
+        createAccountLink.addEventListener('click', () => {
             if (window.parent && window.parent !== window) {
-                window.parent.postMessage({ type: 'GRATOS_RESIZE', height: document.body.scrollHeight }, '*');
+                window.parent.postMessage({ type: 'GRATOS_OPEN_REGISTER' }, '*');
             }
-        }
+        });
 
-        function showSignin() {
-            signinView.style.display = 'block';
-            registerView.style.display = 'none';
-            errorMsg.innerText = '';
-            notifyResize();
-        }
-
-        function showRegister() {
-            signinView.style.display = 'none';
-            registerView.style.display = 'block';
-            errorMsg.innerText = '';
-            usernameInput.value = '';
-            notifyResize();
-        }
-
-        showRegisterLink.addEventListener('click', showRegister);
-        backToSigninLink.addEventListener('click', showSignin);
-
-        // --- Sign in flow ---
         signinBtn.addEventListener('click', async () => {
             signinBtn.disabled = true;
             signinBtn.innerText = 'Signing in...';
@@ -225,8 +189,88 @@ export const promptPage = (returnTo: string | null, clientId: string | null) => 
                 signinBtn.innerText = 'Sign in';
             }
         });
+    </script>
+</body>
+</html>
+`;
 
-        // --- Registration flow ---
+
+export const registerPage = (returnTo: string | null, clientId: string | null) => `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Account</title>
+    <style>
+        body { font-family: system-ui, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f8f9fa; }
+        .card { background: white; border-radius: 8px; padding: 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); width: 320px; }
+        h1 { font-size: 20px; margin: 0 0 8px; color: #202124; }
+        p { font-size: 14px; color: #5f6368; margin: 0 0 24px; }
+        input {
+            display: block;
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #dadce0;
+            border-radius: 4px;
+            font-size: 14px;
+            margin-bottom: 16px;
+            box-sizing: border-box;
+        }
+        input:focus { outline: none; border-color: #1a73e8; }
+        .btn {
+            display: block;
+            width: 100%;
+            background-color: #1a73e8;
+            color: white;
+            text-align: center;
+            padding: 10px 16px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            border: none;
+            cursor: pointer;
+            box-sizing: border-box;
+        }
+        .btn:hover { background-color: #155db1; }
+        .btn:disabled { background-color: #94bfff; cursor: default; }
+        .error { color: #d93025; font-size: 13px; margin-top: 12px; text-align: center; }
+        .success { color: #1e8e3e; font-size: 13px; margin-top: 12px; text-align: center; }
+        .privacy-note { font-size: 12px; color: #80868b; margin-top: 16px; padding-top: 16px; border-top: 1px solid #e0e0e0; line-height: 1.5; }
+        .features { list-style: none; padding: 0; margin: 16px 0 0; }
+        .features li { font-size: 13px; color: #5f6368; padding: 4px 0; padding-left: 20px; position: relative; }
+        .features li::before { content: "\\2713"; position: absolute; left: 0; color: #1a73e8; font-weight: bold; }
+    </style>
+    <script src="https://unpkg.com/@simplewebauthn/browser/dist/bundle/index.umd.min.js"></script>
+</head>
+<body>
+    <div class="card">
+        <h1>Let's Ident</h1>
+        <p>Free, privacy-preserving authentication. No passwords, no tracking.</p>
+        <ul class="features">
+            <li>Passwordless sign-in with passkeys</li>
+            <li>No personal data stored on the server</li>
+            <li>Works across all your devices</li>
+        </ul>
+        <div style="margin-top: 20px;">
+            <input type="text" id="usernameInput" placeholder="Choose a username" autocomplete="username" autofocus />
+            <button id="registerBtn" class="btn">Create account</button>
+        </div>
+        <div class="privacy-note">Your username stays on your device and is never sent to the server. It's only used to label your passkey so you can recognize it later.</div>
+        <div id="errorMsg" class="error"></div>
+        <div id="successMsg" class="success"></div>
+    </div>
+
+    <script>
+        const { startRegistration } = SimpleWebAuthnBrowser;
+        const registerBtn = document.getElementById('registerBtn');
+        const usernameInput = document.getElementById('usernameInput');
+        const errorMsg = document.getElementById('errorMsg');
+        const successMsg = document.getElementById('successMsg');
+
+        const returnTo = ${returnTo ? `"${returnTo}"` : 'null'};
+        const clientId = ${clientId ? `"${clientId}"` : 'null'};
+
         registerBtn.addEventListener('click', async () => {
             const username = usernameInput.value.trim();
             if (!username) {
@@ -244,7 +288,6 @@ export const promptPage = (returnTo: string | null, clientId: string | null) => 
                 const opts = await resp.json();
                 const userId = opts.userId;
 
-                // Overwrite display name client-side (server only stores UUID)
                 opts.user.name = username;
                 opts.user.displayName = username;
 
@@ -253,7 +296,7 @@ export const promptPage = (returnTo: string | null, clientId: string | null) => 
                     regResp = await startRegistration({ optionsJSON: opts });
                 } catch (e) {
                     console.error('startRegistration error:', e);
-                    errorMsg.innerText = e.message || 'Registration cancelled or failed';
+                    errorMsg.innerText = e.message || 'Registration cancelled';
                     registerBtn.disabled = false;
                     registerBtn.innerText = 'Register';
                     return;
@@ -272,13 +315,15 @@ export const promptPage = (returnTo: string | null, clientId: string | null) => 
 
                 const verifyJson = await verifyResp.json();
 
-                if (verifyJson.redirectUrl) {
-                    window.location.href = verifyJson.redirectUrl;
-                } else if (verifyJson.verified) {
-                    if (returnTo) {
-                        window.location.href = returnTo;
+                if (verifyJson.verified) {
+                    // Notify opener (the parent page) and close popup
+                    if (window.opener) {
+                        window.opener.postMessage({ type: 'GRATOS_LOGIN_SUCCESS' }, '*');
+                        window.close();
+                    } else if (verifyJson.redirectUrl) {
+                        window.location.href = verifyJson.redirectUrl;
                     } else {
-                        registerBtn.innerText = 'Success!';
+                        successMsg.innerText = 'Account created! You can close this window.';
                     }
                 } else {
                     errorMsg.innerText = verifyJson.error || 'Registration failed';
@@ -293,13 +338,13 @@ export const promptPage = (returnTo: string | null, clientId: string | null) => 
             }
         });
 
-        // Initial resize notification
-        notifyResize();
+        usernameInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') registerBtn.click();
+        });
     </script>
 </body>
 </html>
 `;
-
 
 export const successPage = () => `
 <!DOCTYPE html>
