@@ -250,7 +250,7 @@ export const promptPage = (returnTo: string | null, clientId: string | null) => 
 
                 let regResp;
                 try {
-                    regResp = await startRegistration(opts);
+                    regResp = await startRegistration({ optionsJSON: opts });
                 } catch (e) {
                     registerBtn.disabled = false;
                     registerBtn.innerText = 'Register';
