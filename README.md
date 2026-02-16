@@ -12,10 +12,10 @@ The auth server and two demo apps demonstrate cross-domain passkey authenticatio
 |------|------|--------|
 | **id.letsident.org** | Auth server (Cloudflare Worker) | `letsident.org` |
 | **id.proc.io** | Auth server CNAME (alias for id.letsident.org) | `proc.io` |
-| **dash.letsident.org** | Demo app (Cloudflare Pages) | `letsident.org` |
-| **gratos-demo.proc.io** | Demo app (Cloudflare Pages) | `proc.io` |
+| [**dash.letsident.org**](https://dash.letsident.org) | Demo app (Cloudflare Worker) | `letsident.org` |
+| [**gratos-demo.proc.io**](https://gratos-demo.proc.io) | Demo app (Cloudflare Worker) | `proc.io` |
 
-`dash.letsident.org` and `gratos-demo.proc.io` are two independent demo apps on **different registrable domains**, both using the same Gratos auth server. A user who registers a passkey on one can sign in on the other using the same credential — no federation protocol, no redirects visible to the user. `id.proc.io` is a CNAME to `id.letsident.org`, giving the auth server a presence on `proc.io` for setting first-party cookies on that domain.
+[dash.letsident.org](https://dash.letsident.org) and [gratos-demo.proc.io](https://gratos-demo.proc.io) are two independent demo apps on **different registrable domains**, both using the same Gratos auth server. A user who registers a passkey on one can sign in on the other using the same credential — no federation protocol, no redirects visible to the user. `id.proc.io` is a CNAME to `id.letsident.org`, giving the auth server a presence on `proc.io` for setting first-party cookies on that domain.
 
 ## How Cross-Domain Auth Works
 
@@ -88,7 +88,7 @@ Browser
 packages/
   worker-runtime/   Cloudflare Worker — WebAuthn, sessions, OIDC
   preact/           @gratos/preact — LetsIdent, AuthContext, Admin
-  demo/             Astro SSR app on Cloudflare Pages
+  demo/             Astro SSR app on Cloudflare Workers
   e2e/              Playwright tests with virtual authenticator
 ```
 
