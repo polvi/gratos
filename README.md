@@ -1,6 +1,6 @@
 # Gratos
 
-Zero-trust, serverless, headless passkey authentication. Gratos stores only public key material — no passwords, no usernames on the server. User identity lives in the consuming app; Gratos handles WebAuthn credential storage and session management.
+Zero-trust, serverless, headless passkey authentication. Gratos stores only public key material: no passwords, no usernames on the server. User identity lives in the consuming app; Gratos handles WebAuthn credential storage and session management.
 
 Inspired by [Ory Kratos](https://www.ory.sh/kratos/), but solely focused on passkey-based authentication.
 
@@ -51,7 +51,7 @@ WebAuthn `navigator.credentials.create()` is blocked in cross-origin iframes (`s
 1. User clicks "Create account" in the iframe
 2. The iframe posts `GRATOS_OPEN_REGISTER` to the parent
 3. `LetsIdent` opens `id.letsident.org/register` in a popup (desktop) or new tab (mobile)
-4. The registration page runs at top-level on the auth server origin — no iframe restrictions
+4. The registration page runs at top-level on the auth server origin, so there are no iframe restrictions
 5. After successful WebAuthn registration + session creation, the popup posts `GRATOS_LOGIN_SUCCESS` to `window.opener` and closes itself
 6. `LetsIdent` picks up the message and refreshes user state
 
@@ -65,7 +65,7 @@ WebAuthn `navigator.credentials.create()` is blocked in cross-origin iframes (`s
 
 - The server generates a UUID for each user and **never stores usernames**
 - Usernames are only used client-side as the WebAuthn authenticator display name (the `user.name` field is overwritten in the browser before calling `startRegistration`)
-- The `users` table contains only `id` — no email, no name, no PII
+- The `users` table contains only `id`: no email, no name, no PII
 - Credentials table stores the public key, never private key material
 
 ## Architecture
@@ -86,8 +86,8 @@ Browser
 
 ```
 packages/
-  worker-runtime/   Cloudflare Worker — WebAuthn, sessions, OIDC
-  preact/           @gratos/preact — LetsIdent, AuthContext, Admin
+  worker-runtime/   Cloudflare Worker: WebAuthn, sessions, OIDC
+  preact/           @gratos/preact: LetsIdent, AuthContext, Admin
   demo/             Astro SSR app on Cloudflare Workers
   e2e/              Playwright tests with virtual authenticator
 ```
@@ -135,7 +135,7 @@ To add a new consuming site:
 />
 ```
 
-The consuming app's domain needs a Gratos worker instance (or a CNAME to one) so that `/session/complete` is reachable on that domain. For example, `id.proc.io` is a CNAME to `id.letsident.org` — this gives the worker a presence on `proc.io` so it can set first-party cookies there. The client's **origin** should point to this worker hostname (e.g., `https://id.proc.io`), not the consuming app itself.
+The consuming app's domain needs a Gratos worker instance (or a CNAME to one) so that `/session/complete` is reachable on that domain. For example, `id.proc.io` is a CNAME to `id.letsident.org`, which gives the worker a presence on `proc.io` so it can set first-party cookies there.
 
 ## OIDC
 
@@ -168,7 +168,7 @@ kubectl oidc-login setup --oidc-issuer-url=https://id.proc.io/oidc --oidc-client
 
 ## Key Dependencies
 
-- [@simplewebauthn/browser](https://simplewebauthn.dev/) — Client-side WebAuthn
-- [@simplewebauthn/server](https://simplewebauthn.dev/) — Server-side WebAuthn verification
-- [Hono](https://hono.dev/) — Worker HTTP framework
-- [Bun](https://bun.sh/) — Package manager and runtime
+- [@simplewebauthn/browser](https://simplewebauthn.dev/), client-side WebAuthn
+- [@simplewebauthn/server](https://simplewebauthn.dev/), server-side WebAuthn verification
+- [Hono](https://hono.dev/), Worker HTTP framework
+- [Bun](https://bun.sh/), package manager and runtime
