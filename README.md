@@ -15,7 +15,7 @@ The auth server and two demo apps demonstrate cross-domain passkey authenticatio
 | [**dash.letsident.org**](https://dash.letsident.org) | Demo app (Cloudflare Worker) | `letsident.org` |
 | [**gratos-demo.proc.io**](https://gratos-demo.proc.io) | Demo app (Cloudflare Worker) | `proc.io` |
 
-[dash.letsident.org](https://dash.letsident.org) and [gratos-demo.proc.io](https://gratos-demo.proc.io) are two independent demo apps on **different registrable domains**, both using the same Gratos auth server. A user who registers a passkey on one can sign in on the other using the same credential — no federation protocol, no redirects visible to the user. `id.proc.io` is a CNAME to `id.letsident.org`, giving the auth server a presence on `proc.io` for setting first-party cookies on that domain.
+[dash.letsident.org](https://dash.letsident.org) and [gratos-demo.proc.io](https://gratos-demo.proc.io) are two independent demo apps on **different registrable domains**, both using the same Gratos auth server. A user who registers a passkey on one can sign in on the other using the same credential. `id.proc.io` is a CNAME to `id.letsident.org`, giving the auth server a presence on `proc.io` for setting first-party cookies on that domain.
 
 ## How Cross-Domain Auth Works
 
@@ -40,7 +40,7 @@ gratos-demo.proc.io                          id.letsident.org
 1. `LetsIdent` renders an iframe pointing to `id.letsident.org/login/prompt`
 2. The iframe uses the `publickey-credentials-get` Permissions Policy to call `navigator.credentials.get()` cross-origin
 3. The worker verifies the assertion, creates a session, and generates a one-time code
-4. The iframe redirects to `gratos-demo.proc.io/session/complete?code=<code>`
+4. The iframe redirects to `id.proc.io/session/complete?code=<code>`
 5. `/session/complete` exchanges the code for a session, sets an `httpOnly` cookie scoped to the demo app's domain, and redirects home
 6. The iframe posts `GRATOS_LOGIN_SUCCESS` to the parent; `LetsIdent` calls `/whoami` to confirm
 
