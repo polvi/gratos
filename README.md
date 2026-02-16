@@ -135,7 +135,7 @@ To add a new consuming site:
 />
 ```
 
-The consuming app must also handle `GET /session/complete?code=<code>&redirect_to=<path>` — this endpoint is served by the Gratos worker and needs to be proxied or the worker must be deployed on a route accessible from the consuming app's domain.
+The consuming app's domain needs a Gratos worker instance (or a CNAME to one) so that `/session/complete` is reachable on that domain. For example, `id.proc.io` is a CNAME to `id.letsident.org` — this gives the worker a presence on `proc.io` so it can set first-party cookies there. The client's **origin** should point to this worker hostname (e.g., `https://id.proc.io`), not the consuming app itself.
 
 ## OIDC
 
