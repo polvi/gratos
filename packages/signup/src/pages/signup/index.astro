@@ -1,0 +1,23 @@
+---
+import { SignupFlow } from "../../components/SignupFlow";
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width" />
+    <title>Sign Up — Gratos</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { font-family: system-ui, sans-serif; background: #fafafa; color: #18181b; }
+    </style>
+  </head>
+  <body>
+    <SignupFlow
+      client:only="preact"
+      apiBaseUrl={import.meta.env.PUBLIC_GRATOS_SERVER}
+      provisionerBaseUrl={import.meta.env.PUBLIC_PROVISIONER_SERVER}
+    />
+  </body>
+</html>

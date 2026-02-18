@@ -1,0 +1,288 @@
+import { h } from 'preact';
+import { useState, useEffect, useCallback } from 'preact/hooks';
+import { AuthProvider, useAuth, LoginButton, RegisterButton } from '@gratos/preact';
+import { DomainEntry } from './DomainEntry';
+import { ClaimStatus } from './ClaimStatus';
+
+type Step = 'domain' | 'dns' | 'auth' | 'provisioning' | 'done';
+
+function SignupInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
+    const [step, setStep] = useState<Step>('domain');
+    const [claimId, setClaimId] = useState<string | null>(null);
+    const [domain, setDomain] = useState('');
+    const [cnameTarget, setCnameTarget] = useState('');
+    const { isAuthenticated } = useAuth();
+
+    // When user authenticates on the auth step, auto-advance to provisioning
+    useEffect(() => {
+        if (step === 'auth' && isAuthenticated && claimId) {
+            setStep('provisioning');
+        }
+    }, [step, isAuthenticated, claimId]);
+
+    return (
+        <div style={{ maxWidth: '480px', margin: '3rem auto', padding: '0 1.5rem' }}>
+            {/* Step 1: EnterDomain — anon, DB only */}
+            {step === 'domain' && (
+                <>
+                    <h1 style={{ fontSize: '1.75rem', fontWeight: 700, marginBottom: '0.5rem' }}>
+                        Set up your domain
+                    </h1>
+                    <p style={{ color: '#52525b', marginBottom: '2rem', lineHeight: 1.6 }}>
+                        Enter the domain where you want passkey authentication.
+                    </p>
+                    <DomainEntry
+                        provisionerBaseUrl={provisionerBaseUrl}
+                        onClaimed={(id, dom, target) => {
+                            setClaimId(id);
+                            setDomain(dom);
+                            setCnameTarget(target);
+                            setStep('dns');
+                        }}
+                    />
+                </>
+            )}
+
+            {/* Step 2: Show CNAME instructions, "Done" button */}
+            {step === 'dns' && (
+                <ClaimStatus
+                    domain={domain}
+                    cnameTarget={cnameTarget}
+                    onDone={() => setStep('auth')}
+                />
+            )}
+
+            {/* Step 3: Authenticate */}
+            {step === 'auth' && !isAuthenticated && (
+                <>
+                    <h1 style={{ fontSize: '1.75rem', fontWeight: 700, marginBottom: '0.5rem' }}>
+                        Create your account
+                    </h1>
+                    <p style={{ color: '#52525b', marginBottom: '2rem', lineHeight: 1.6 }}>
+                        Register or sign in to complete your domain claim.
+                    </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        <RegisterButton />
+                        <div style={{ textAlign: 'center', color: '#a1a1aa', fontSize: '0.875rem' }}>
+                            or
+                        </div>
+                        <LoginButton />
+                    </div>
+                </>
+            )}
+
+            {/* Step 4: ProvisionCF + poll ValidateCF + ClaimDomain */}
+            {step === 'provisioning' && claimId && (
+                <ProvisionAndFinalize
+                    claimId={claimId}
+                    domain={domain}
+                    provisionerBaseUrl={provisionerBaseUrl}
+                    onDone={() => setStep('done')}
+                />
+            )}
+
+            {/* Step 5: Done */}
+            {step === 'done' && (
+                <div style={{
+                    background: '#f0fdf4',
+                    border: '1px solid #bbf7d0',
+                    borderRadius: '0.5rem',
+                    padding: '1.5rem',
+                }}>
+                    <h2 style={{ color: '#166534', marginBottom: '0.5rem' }}>Domain Active</h2>
+                    <p style={{ color: '#15803d', fontSize: '0.875rem' }}>
+                        <strong>{domain}</strong> is live with Gratos passkey authentication.
+                    </p>
+                </div>
+            )}
+        </div>
+    );
+}
+
+function ProvisionAndFinalize({ claimId, domain, provisionerBaseUrl, onDone }: {
+    claimId: string;
+    domain: string;
+    provisionerBaseUrl: string;
+    onDone: () => void;
+}) {
+    const [status, setStatus] = useState<'provisioning' | 'waiting' | 'finalizing' | 'error'>('provisioning');
+    const [cfStatus, setCfStatus] = useState('');
+    const [error, setError] = useState('');
+
+    // Step 1: Provision CF hostname (fires on mount)
+    useEffect(() => {
+        (async () => {
+            try {
+                const res = await fetch(`${provisionerBaseUrl}/claims/${claimId}/provision`, {
+                    method: 'POST',
+                    credentials: 'include',
+                });
+                if (!res.ok) {
+                    const data = await res.json();
+                    // Already provisioned is fine, continue to polling
+                    if (res.status !== 409) {
+                        setError(data.error || 'Failed to provision');
+                        setStatus('error');
+                        return;
+                    }
+                }
+                setStatus('waiting');
+            } catch {
+                setError('Network error during provisioning');
+                setStatus('error');
+            }
+        })();
+    }, [claimId, provisionerBaseUrl]);
+
+    // Step 2: Poll for CF validation
+    const pollValidation = useCallback(async () => {
+        try {
+            const res = await fetch(`${provisionerBaseUrl}/claims/${claimId}`, {
+                credentials: 'include',
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            setCfStatus(data.cf_status || 'pending');
+
+            if (data.cf_status === 'active') {
+                // Step 3: Finalize
+                setStatus('finalizing');
+                const finalRes = await fetch(`${provisionerBaseUrl}/claims/${claimId}/finalize`, {
+                    method: 'POST',
+                    credentials: 'include',
+                });
+                if (!finalRes.ok) {
+                    const finalData = await finalRes.json();
+                    setError(finalData.error || 'Failed to finalize');
+                    setStatus('error');
+                    return;
+                }
+                onDone();
+            }
+        } catch {
+            // Ignore transient poll errors
+        }
+    }, [claimId, provisionerBaseUrl, onDone]);
+
+    useEffect(() => {
+        if (status !== 'waiting') return;
+        pollValidation();
+        const interval = setInterval(pollValidation, 5000);
+        return () => clearInterval(interval);
+    }, [status, pollValidation]);
+
+    const containerStyle = {
+        textAlign: 'center' as const,
+    };
+
+    if (status === 'error') {
+        return (
+            <div style={containerStyle}>
+                <p style={{ color: '#ef4444', marginBottom: '1rem' }}>{error}</p>
+                <a href="/signup" style={{ color: '#18181b' }}>Start over</a>
+            </div>
+        );
+    }
+
+    const cardStyle = {
+        background: '#fff',
+        border: '1px solid #e4e4e7',
+        borderRadius: '0.5rem',
+        padding: '1.5rem',
+        marginBottom: '1.5rem',
+    };
+
+    const codeStyle = {
+        background: '#f4f4f5',
+        padding: '0.25rem 0.5rem',
+        borderRadius: '0.25rem',
+        fontFamily: 'monospace',
+        fontSize: '0.8rem',
+    };
+
+    return (
+        <div>
+            <h1 style={{ fontSize: '1.75rem', fontWeight: 700, marginBottom: '0.5rem' }}>
+                {status === 'provisioning' && 'Provisioning...'}
+                {status === 'waiting' && 'Waiting for DNS validation'}
+                {status === 'finalizing' && 'Finalizing...'}
+            </h1>
+            <p style={{ color: '#52525b', marginBottom: '1.5rem', lineHeight: 1.6 }}>
+                {status === 'provisioning' && `Setting up letsident.${domain}...`}
+                {status === 'waiting' && `Verifying letsident.${domain}. This may take a few minutes.`}
+                {status === 'finalizing' && 'Almost there...'}
+            </p>
+
+            {status === 'waiting' && (
+                <>
+                    <div style={cardStyle}>
+                        <p style={{ fontSize: '0.875rem', color: '#52525b', marginBottom: '0.75rem' }}>
+                            Verify your CNAME is set up correctly:
+                        </p>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                            <thead>
+                                <tr style={{ textAlign: 'left', borderBottom: '1px solid #e4e4e7' }}>
+                                    <th style={{ padding: '0.5rem 0.5rem 0.5rem 0', color: '#71717a', fontWeight: 600 }}>Type</th>
+                                    <th style={{ padding: '0.5rem', color: '#71717a', fontWeight: 600 }}>Name</th>
+                                    <th style={{ padding: '0.5rem', color: '#71717a', fontWeight: 600 }}>Target</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td style={{ padding: '0.75rem 0.5rem 0.75rem 0' }}>CNAME</td>
+                                    <td style={{ padding: '0.75rem 0.5rem' }}>
+                                        <span style={codeStyle}>letsident</span>
+                                    </td>
+                                    <td style={{ padding: '0.75rem 0.5rem' }}>
+                                        <span style={codeStyle}>cname.letsident.net</span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                        <span style={{
+                            padding: '0.25rem 0.75rem',
+                            borderRadius: '9999px',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            background: '#fef9c3',
+                            color: '#854d0e',
+                        }}>
+                            {cfStatus ? `Status: ${cfStatus}` : 'Checking...'}
+                        </span>
+                        <button
+                            onClick={() => pollValidation()}
+                            style={{
+                                padding: '0.375rem 0.75rem',
+                                background: '#f4f4f5',
+                                border: '1px solid #d4d4d8',
+                                borderRadius: '0.375rem',
+                                fontSize: '0.8rem',
+                                cursor: 'pointer',
+                            }}
+                        >
+                            Refresh
+                        </button>
+                    </div>
+
+                    <p style={{ color: '#a1a1aa', fontSize: '0.75rem' }}>
+                        Auto-checking every 5 seconds.
+                    </p>
+                </>
+            )}
+        </div>
+    );
+}
+
+export function SignupFlow({ apiBaseUrl, provisionerBaseUrl }: {
+    apiBaseUrl: string;
+    provisionerBaseUrl: string;
+}) {
+    return (
+        <AuthProvider apiBaseUrl={apiBaseUrl}>
+            <SignupInner provisionerBaseUrl={provisionerBaseUrl} />
+        </AuthProvider>
+    );
+}

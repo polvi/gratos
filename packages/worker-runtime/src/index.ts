@@ -53,7 +53,8 @@ app.use('/*', (c, next) => {
 function getConfig(c: any) {
     const url = new URL(c.req.url);
     const RP_ID = c.env.RP_ID || url.hostname;
-    const ORIGIN = c.env.ORIGIN || url.origin;
+    const originStr = c.env.ORIGIN || url.origin;
+    const ORIGIN = originStr.includes(',') ? originStr.split(',').map((o: string) => o.trim()) : originStr;
     const RP_NAME = c.env.RP_NAME || 'Gratos Auth';
     const SESSION_TTL = parseInt(c.env.SESSION_TTL || '604800', 10); // Default 7 days
     const CHALLENGE_TTL = parseInt(c.env.CHALLENGE_TTL || '300', 10); // Default 5 mins

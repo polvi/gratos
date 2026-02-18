@@ -3,7 +3,10 @@
   "module": "index.ts",
   "type": "module",
   "scripts": {
-    "build-demo": "bun --cwd packages/preact build && bun --cwd packages/demo build"
+    "build-demo": "bun --cwd packages/preact build && bun --cwd packages/demo build",
+    "build-signup": "bun --cwd packages/preact build && bun --cwd packages/signup build",
+    "dev-signup": "bun --cwd packages/signup dev",
+    "dev-provisioner": "bun --cwd packages/provisioner dev"
   },
   "workspaces": [
     "packages/*"
