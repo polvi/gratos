@@ -1,97 +1,149 @@
 --------------------------- MODULE Gratos_Signup ---------------------------
-EXTENDS Sequences, Naturals, TLC
+EXTENDS Naturals, TLC, FiniteSets
 
-CONSTANTS 
-    Users,          \* Set of possible user identities
-    Domains,        \* Set of possible domain names
-    MaxTime         \* Time limit for expiration logic
+CONSTANTS
+    Identities,     \* Set of possible identities (human, bot, service, etc.)
+    Domains         \* Set of possible domain names
 
 VARIABLES
-    userState,      \* Mapping of session -> [type: {"anon", "auth"}, user: Users \cup {Nil}]
-    domainStatus,   \* Mapping of domain -> [status: {"available", "pending", "claimed"}, owner: Users \cup {Nil}, session: Sessions \cup {Nil}]
-    cnameRecord,    \* Mapping of domain -> BOOLEAN (True if CNAME points to Gratos)
-    currentTime     \* Global tick for expiration
+    sessions,       \* SUBSET Sessions — live session keys in KV
+    authed,         \* Set of [session, identity] — which sessions have authenticated
+    pendingClaims,  \* Set of [domain, session] — claim keys in KV
+    claimed,        \* Set of [domain, owner] — permanent (no TTL)
+    cfProvisioned,  \* SUBSET Domains — custom hostnames created in CF
+    cfValidated     \* SUBSET Domains — CF has validated the domain
 
 Sessions == 1..3
-Nil == "Nil"
 
-vars == <<userState, domainStatus, cnameRecord, currentTime>>
+vars == <<sessions, authed, pendingClaims, claimed, cfProvisioned, cfValidated>>
+
+\* --- Helpers ---
+
+IsAuthed(s) == \E r \in authed : r.session = s
+IsAnon(s) == s \in sessions /\ ~IsAuthed(s)
+IdentityOf(s) == (CHOOSE r \in authed : r.session = s).identity
+
+IsPending(d) == \E r \in pendingClaims : r.domain = d
+IsClaimed(d) == \E r \in claimed : r.domain = d
+IsAvailable(d) == ~IsPending(d) /\ ~IsClaimed(d)
+ClaimOf(d) == CHOOSE r \in pendingClaims : r.domain = d
+
+\* --- Type invariant ---
 
 TypeOK ==
-    /\ userState \in [Sessions -> [type: {"anon", "auth"}, user: Users \cup {Nil}]]
-    /\ domainStatus \in [Domains -> [status: {"available", "pending", "claimed"}, 
-                                    owner: Users \cup {Nil}, 
-                                    session: Sessions \cup {Nil},
-                                    expiresAt: Nat \cup {99}]]
-    /\ cnameRecord \in [Domains -> BOOLEAN]
-    /\ currentTime \in 0..MaxTime
+    /\ sessions \subseteq Sessions
+    /\ authed \subseteq [session: Sessions, identity: Identities]
+    /\ pendingClaims \subseteq [domain: Domains, session: Sessions]
+    /\ claimed \subseteq [domain: Domains, owner: Identities]
+    /\ cfProvisioned \subseteq Domains
+    /\ cfValidated \subseteq Domains
+    \* Functional dependencies
+    /\ \A r1, r2 \in authed : r1.session = r2.session => r1 = r2
+    /\ \A r1, r2 \in pendingClaims : r1.domain = r2.domain => r1 = r2
+    /\ \A r1, r2 \in claimed : r1.domain = r2.domain => r1 = r2
 
 Init ==
-    /\ userState = [s \in Sessions |-> [type: "anon", user: Nil]]
-    /\ domainStatus = [d \in Domains |-> [status: "available", owner: Nil, session: Nil, expiresAt: 99]]
-    /\ cnameRecord = [d \in Domains |-> FALSE]
-    /\ currentTime = 0
+    /\ sessions = Sessions
+    /\ authed = {}
+    /\ pendingClaims = {}
+    /\ claimed = {}
+    /\ cfProvisioned = {}
+    /\ cfValidated = {}
 
-\* Actions
+\* --- Actions ---
 
-\* 1. User enters domain name (Anonymous session starts claim)
+\* Anonymous session enters a domain name, starting a pending claim.
 EnterDomain(s, d) ==
-    /\ domainStatus[d].status = "available"
-    /\ domainStatus' = [domainStatus EXCEPT ![d] = [status |-> "pending", 
-                                                   owner |-> Nil, 
-                                                   session |-> s,
-                                                   expiresAt |-> currentTime + 2]]
-    /\ UNCHANGED <<userState, cnameRecord, currentTime>>
+    /\ IsAnon(s)
+    /\ IsAvailable(d)
+    /\ pendingClaims' = pendingClaims \cup {[domain |-> d, session |-> s]}
+    /\ UNCHANGED <<sessions, authed, claimed, cfProvisioned, cfValidated>>
 
-\* 2. User authenticates (Login/Register with Passkey)
-Authenticate(s, u) ==
-    /\ userState[s].type = "anon"
-    /\ userState' = [userState EXCEPT ![s] = [type |-> "auth", user |-> u]]
-    /\ UNCHANGED <<domainStatus, cnameRecord, currentTime>>
+\* Identity authenticates with a passkey.
+Authenticate(s, id) ==
+    /\ IsAnon(s)
+    /\ authed' = authed \cup {[session |-> s, identity |-> id]}
+    /\ UNCHANGED <<sessions, pendingClaims, claimed, cfProvisioned, cfValidated>>
 
-\* 3. CNAME is updated in the real world (External event)
-UpdateCNAME(d) ==
-    /\ cnameRecord' = [cnameRecord EXCEPT ![d] = TRUE]
-    /\ UNCHANGED <<userState, domainStatus, currentTime>>
+\* Authenticated session provisions a custom hostname in CF.
+\* Requires: authenticated, has a pending claim for this domain,
+\* and the domain is not already provisioned.
+ProvisionCF(s, d) ==
+    /\ IsPending(d)
+    /\ ClaimOf(d).session = s
+    /\ IsAuthed(s)
+    /\ d \notin cfProvisioned
+    /\ cfProvisioned' = cfProvisioned \cup {d}
+    /\ UNCHANGED <<sessions, authed, pendingClaims, claimed, cfValidated>>
 
-\* 4. Claim Domain (Requires Auth + CNAME + Session match)
+\* External event: CF validates the domain (DNS resolves, TLS issued, etc.)
+\* This is CF's source of truth — we don't check DNS ourselves.
+ValidateCF(d) ==
+    /\ d \in cfProvisioned
+    /\ d \notin cfValidated
+    /\ cfValidated' = cfValidated \cup {d}
+    /\ UNCHANGED <<sessions, authed, pendingClaims, claimed, cfProvisioned>>
+
+\* Claim a domain. Requires: authenticated, CF has validated,
+\* and session matches the pending claim.
 ClaimDomain(s, d) ==
-    /\ domainStatus[d].session = s
-    /\ userState[s].type = "auth"
-    /\ cnameRecord[d] = TRUE
-    /\ domainStatus' = [domainStatus EXCEPT ![d] = [status |-> "claimed", 
-                                                   owner |-> userState[s].user, 
-                                                   session |-> Nil,
-                                                   expiresAt |-> 99]]
-    /\ UNCHANGED <<userState, cnameRecord, currentTime>>
+    /\ IsPending(d)
+    /\ ClaimOf(d).session = s
+    /\ IsAuthed(s)
+    /\ d \in cfValidated
+    /\ claimed' = claimed \cup {[domain |-> d, owner |-> IdentityOf(s)]}
+    /\ pendingClaims' = pendingClaims \ {ClaimOf(d)}
+    /\ UNCHANGED <<sessions, authed, cfProvisioned, cfValidated>>
 
-\* 5. Expiration logic
-Expire(d) ==
-    /\ domainStatus[d].status = "pending"
-    /\ currentTime >= domainStatus[d].expiresAt
-    /\ domainStatus' = [domainStatus EXCEPT ![d] = [status |-> "available", owner |-> Nil, session |-> Nil, expiresAt |-> 99]]
-    /\ UNCHANGED <<userState, cnameRecord, currentTime>>
+\* KV TTL fires — session key disappears.
+\* Auth metadata goes with it (same key).
+ExpireSession(s) ==
+    /\ s \in sessions
+    /\ sessions' = sessions \ {s}
+    /\ authed' = authed \ {r \in authed : r.session = s}
+    /\ UNCHANGED <<pendingClaims, claimed, cfProvisioned, cfValidated>>
 
-Tick ==
-    /\ currentTime < MaxTime
-    /\ currentTime' = currentTime + 1
-    /\ UNCHANGED <<userState, domainStatus, cnameRecord>>
+\* KV TTL fires — claim key disappears.
+\* We must also clean up the CF resource if one was provisioned.
+ExpireClaim(d) ==
+    /\ IsPending(d)
+    /\ pendingClaims' = pendingClaims \ {ClaimOf(d)}
+    /\ cfProvisioned' = cfProvisioned \ {d}
+    /\ cfValidated' = cfValidated \ {d}
+    /\ UNCHANGED <<sessions, authed, claimed>>
 
-Next == 
+Next ==
     \/ \E s \in Sessions, d \in Domains : EnterDomain(s, d)
-    \/ \E s \in Sessions, u \in Users : Authenticate(s, u)
-    \/ \E d \in Domains : UpdateCNAME(d)
+    \/ \E s \in Sessions, id \in Identities : Authenticate(s, id)
+    \/ \E s \in Sessions, d \in Domains : ProvisionCF(s, d)
+    \/ \E d \in Domains : ValidateCF(d)
     \/ \E s \in Sessions, d \in Domains : ClaimDomain(s, d)
-    \/ \E d \in Domains : Expire(d)
-    \/ Tick
+    \/ \E s \in Sessions : ExpireSession(s)
+    \/ \E d \in Domains : ExpireClaim(d)
 
 Spec == Init /\ [][Next]_vars
 
-\* Invariants
-OnlyOnePendingPerDomain == 
-    \A d \in Domains : domainStatus[d].status = "pending" => domainStatus[d].session /= Nil
+\* --- Invariants ---
 
-NoDoubleClaim ==
-    \A d \in Domains : domainStatus[d].status = "claimed" => domainStatus[d].owner /= Nil
+\* Auth metadata only exists for live sessions
+AuthedImpliesLiveSession ==
+    \A r \in authed : r.session \in sessions
+
+\* A domain cannot be both pending and claimed
+NoPendingAndClaimed ==
+    \A d \in Domains : ~(IsPending(d) /\ IsClaimed(d))
+
+\* CF validation implies CF provisioned
+ValidatedImpliesProvisioned ==
+    cfValidated \subseteq cfProvisioned
+
+\* No orphaned CF resources: every provisioned domain is either
+\* pending (mid-claim) or claimed (completed)
+NoOrphanedCFResources ==
+    \A d \in cfProvisioned : IsPending(d) \/ IsClaimed(d)
+
+\* A claimed domain has a validated CF resource backing it
+ClaimedImpliesCFValidated ==
+    \A r \in claimed : r.domain \in cfValidated
 
 =============================================================================

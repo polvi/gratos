@@ -1,98 +1,108 @@
 # Gratos
 
-Zero-trust, serverless, headless passkey authentication. Gratos stores only public key material: no passwords, no usernames on the server. User identity lives in the consuming app; Gratos handles WebAuthn credential storage and session management.
+Per-app passkey authentication via CNAME. No shared identity, no passwords, no usernames on the server. Each domain pointing to Gratos is its own isolated tenant.
 
-Inspired by [Ory Kratos](https://www.ory.sh/kratos/), but solely focused on passkey-based authentication.
+Inspired by [Ory Kratos](https://www.ory.sh/kratos/), built on [WebAuthn](https://webauthn.guide/).
 
-## Live Demo
+## How It Works
 
-The auth server and two demo apps demonstrate cross-domain passkey authentication:
-
-| Site | Role | Domain |
-|------|------|--------|
-| **id.letsident.org** | Auth server (Cloudflare Worker) | `letsident.org` |
-| **id.proc.io** | Auth server CNAME (alias for id.letsident.org) | `proc.io` |
-| [**dash.letsident.org**](https://dash.letsident.org) | Demo app (Cloudflare Worker) | `letsident.org` |
-| [**gratos-demo.proc.io**](https://gratos-demo.proc.io) | Demo app (Cloudflare Worker) | `proc.io` |
-
-[dash.letsident.org](https://dash.letsident.org) and [gratos-demo.proc.io](https://gratos-demo.proc.io) are two independent demo apps on **different registrable domains**, both using the same Gratos auth server. A user who registers a passkey on one can sign in on the other using the same credential. `id.proc.io` is a CNAME to `id.letsident.org`, giving the auth server a presence on `proc.io` for setting first-party cookies on that domain.
-
-## How Cross-Domain Auth Works
-
-The key component is `LetsIdent`, a Preact widget that any site can embed. Here's the flow:
+Point a CNAME at the Gratos worker. The tenant is auto-derived from the request hostname — no registration step, no admin panel. Users, credentials, and sessions are all isolated per tenant.
 
 ```
-gratos-demo.proc.io                          id.letsident.org
-┌──────────────────────┐                    ┌──────────────────────┐
-│                      │                    │                      │
-│  LetsIdent component │                    │  Gratos Worker       │
-│  ┌────────────────┐  │                    │                      │
-│  │ <iframe>       │──┼── /login/prompt ──>│  Serves prompt page  │
-│  │ "Sign in"      │  │                    │  inside iframe       │
-│  │ "Create acct"  │  │                    │                      │
-│  └────────────────┘  │                    │                      │
-│                      │                    │                      │
-└──────────────────────┘                    └──────────────────────┘
+your-app.com  ──CNAME──►  gratos worker
+                           (tenant = your-app.com)
 ```
 
-### Sign-in (iframe)
-
-1. `LetsIdent` renders an iframe pointing to `id.letsident.org/login/prompt`
-2. The iframe uses the `publickey-credentials-get` Permissions Policy to call `navigator.credentials.get()` cross-origin
-3. The worker verifies the assertion, creates a session, and generates a one-time code
-4. The iframe redirects to `id.proc.io/session/complete?code=<code>`
-5. `/session/complete` exchanges the code for a session, sets an `httpOnly` cookie scoped to the demo app's domain, and redirects home
-6. The iframe posts `GRATOS_LOGIN_SUCCESS` to the parent; `LetsIdent` calls `/whoami` to confirm
-
-### Registration (popup)
-
-WebAuthn `navigator.credentials.create()` is blocked in cross-origin iframes (`sameOriginWithAncestors` must be `true`). Registration opens in a popup/new tab instead:
-
-1. User clicks "Create account" in the iframe
-2. The iframe posts `GRATOS_OPEN_REGISTER` to the parent
-3. `LetsIdent` opens `id.letsident.org/register` in a popup (desktop) or new tab (mobile)
-4. The registration page runs at top-level on the auth server origin, so there are no iframe restrictions
-5. After successful WebAuthn registration + session creation, the popup posts `GRATOS_LOGIN_SUCCESS` to `window.opener` and closes itself
-6. `LetsIdent` picks up the message and refreshes user state
-
-### Session Model
-
-- Sessions are cookie-based (`session_id`, `httpOnly`, `secure`, `sameSite=None`)
-- Stored in Cloudflare KV with a configurable TTL (default 7 days)
-- The one-time code exchange at `/session/complete` lets the consuming app set a session cookie on its own domain, using the `domain_setting` from the client config
-
-### Privacy Model
-
-- The server generates a UUID for each user and **never stores usernames**
-- Usernames are only used client-side as the WebAuthn authenticator display name (the `user.name` field is overwritten in the browser before calling `startRegistration`)
-- The `users` table contains only `id`: no email, no name, no PII
-- Credentials table stores the public key, never private key material
+Every domain that resolves to the Gratos worker gets its own user pool. A user who registers on `auth.foo.com` has no relationship to a user on `auth.bar.com`.
 
 ## Architecture
 
 ```
 Browser
-  ├─ @gratos/preact (LetsIdent component)
+  ├─ @gratos/preact (LoginButton, RegisterButton, etc.)
   │    └─ @simplewebauthn/browser
   │
-  └─ iframe / popup ──► Gratos Worker (Hono on Cloudflare Workers)
-                           ├─ @simplewebauthn/server
-                           ├─ D1 (credentials, users, clients)
-                           ├─ KV (sessions, challenges, OIDC codes)
-                           └─ OIDC provider (RS256, auto-generated keys)
+  └─ auth.myapp.com (CNAME → Gratos Worker)
+       ├─ Hono server on Cloudflare Workers
+       ├─ @simplewebauthn/server
+       ├─ D1 (users, credentials — scoped by tenant)
+       └─ KV (sessions, challenges)
 ```
+
+## Auth Flow
+
+Because the auth server lives on your domain (via CNAME), everything is same-origin. No iframes, no popups, no cross-domain redirects.
+
+1. User clicks **Register** or **Sign In** in your app
+2. `@gratos/preact` calls `auth.myapp.com` for WebAuthn options
+3. Browser prompts for passkey (biometric, security key, etc.)
+4. `@gratos/preact` sends the response back to `auth.myapp.com` for verification
+5. Worker verifies the credential, creates a session, sets an `httpOnly` cookie
+
+RP ID is the registrable domain (e.g., `auth.myapp.com` → RP ID `myapp.com`), so passkeys work across subdomains.
+
+## Session Model
+
+- First-party `httpOnly`, `secure` cookie on the registrable domain
+- Sessions stored in Cloudflare KV with configurable TTL (default 7 days)
+- Challenges expire after 5 minutes
+
+## Privacy Model
+
+- The server generates a UUID for each user and **never stores usernames**
+- Usernames are only used client-side as the WebAuthn authenticator display name
+- The `users` table contains only `id` — no email, no name, no PII
+- Credentials table stores the public key, never private key material
 
 ## Monorepo Structure
 
 ```
 packages/
-  worker-runtime/   Cloudflare Worker: WebAuthn, sessions, OIDC
-  preact/           @gratos/preact: LetsIdent, AuthContext, Admin
+  worker-runtime/   Cloudflare Worker: WebAuthn + sessions
+  preact/           @gratos/preact: LoginButton, RegisterButton, AuthContext
   demo/             Astro SSR app on Cloudflare Workers
   e2e/              Playwright tests with virtual authenticator
 ```
 
 ## Getting Started
+
+### 1. Add Gratos to your domain
+
+Create a CNAME record pointing to the Gratos worker:
+
+```
+auth.myapp.com  CNAME  your-gratos-worker.workers.dev
+```
+
+### 2. Embed the auth components
+
+```tsx
+import { AuthProvider, LoginButton, RegisterButton } from '@gratos/preact';
+
+function App() {
+  return (
+    <AuthProvider apiBaseUrl="https://auth.myapp.com">
+      <LoginButton />
+      <RegisterButton />
+    </AuthProvider>
+  );
+}
+```
+
+### 3. Check auth state
+
+```tsx
+import { useAuth } from '@gratos/preact';
+
+function Profile() {
+  const { user, isLoading } = useAuth();
+  if (isLoading) return <p>Loading...</p>;
+  if (!user) return <p>Not signed in</p>;
+  return <p>User: {user.id}</p>;
+}
+```
+
+## Development
 
 ```bash
 bun install
@@ -116,35 +126,6 @@ bun --cwd packages/worker-runtime deploy # Deploy worker
 bun --cwd packages/e2e test    # Starts both servers, runs Playwright with virtual authenticator
 ```
 
-## Client Configuration
-
-To add a new consuming site:
-
-1. Register/login on the auth server
-2. Go to `/admin` and create a client with:
-   - **origin**: the consuming site's origin (e.g., `https://gratos-demo.proc.io`)
-   - **domain_setting**: the cookie domain for that site (e.g., `proc.io`)
-3. Note the client ID
-4. In the consuming app, embed `LetsIdent`:
-
-```tsx
-<LetsIdent
-  loginBaseUrl="https://id.letsident.org"
-  apiBaseUrl="https://id.letsident.org"
-  clientId="<your-client-id>"
-/>
-```
-
-The consuming app's domain needs a Gratos worker instance (or a CNAME to one) so that `/session/complete` is reachable on that domain. For example, `id.proc.io` is a CNAME to `id.letsident.org`, which gives the worker a presence on `proc.io` so it can set first-party cookies there.
-
-## OIDC
-
-Gratos supports a basic OIDC authorization code flow, primarily for CLI tools:
-
-```
-kubectl oidc-login setup --oidc-issuer-url=https://id.proc.io/oidc --oidc-client-id=kubernetes
-```
-
 ## API Endpoints
 
 | Method | Path | Description |
@@ -155,20 +136,10 @@ kubectl oidc-login setup --oidc-issuer-url=https://id.proc.io/oidc --oidc-client
 | POST | `/login/verify` | Verify authentication + create session |
 | GET | `/whoami` | Get current user from session |
 | POST | `/logout` | Destroy session |
-| CRUD | `/clients` | Manage client apps (auth required) |
-| GET | `/login` | Full-page auto-login |
-| GET | `/login/prompt` | Iframe-embeddable sign-in prompt |
-| GET | `/register` | Registration page (popup/standalone) |
-| GET | `/login/success` | Posts `GRATOS_LOGIN_SUCCESS` to parent |
-| GET | `/session/complete` | One-time code exchange → session cookie |
-| GET | `/oidc/.well-known/openid-configuration` | OIDC discovery |
-| GET | `/oidc/jwks` | OIDC signing keys |
-| GET | `/oidc/authorize` | OIDC authorization |
-| POST | `/oidc/token` | OIDC token exchange |
 
 ## Key Dependencies
 
-- [@simplewebauthn/browser](https://simplewebauthn.dev/), client-side WebAuthn
-- [@simplewebauthn/server](https://simplewebauthn.dev/), server-side WebAuthn verification
-- [Hono](https://hono.dev/), Worker HTTP framework
-- [Bun](https://bun.sh/), package manager and runtime
+- [@simplewebauthn/browser](https://simplewebauthn.dev/) — client-side WebAuthn
+- [@simplewebauthn/server](https://simplewebauthn.dev/) — server-side WebAuthn verification
+- [Hono](https://hono.dev/) — Worker HTTP framework
+- [Bun](https://bun.sh/) — package manager and runtime
