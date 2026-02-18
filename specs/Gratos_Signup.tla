@@ -22,7 +22,7 @@ TypeOK ==
     /\ domainStatus \in [Domains -> [status: {"available", "pending", "claimed"}, 
                                     owner: Users \cup {Nil}, 
                                     session: Sessions \cup {Nil},
-                                    expiresAt: Naturals \cup {99}]]
+                                    expiresAt: Nat \cup {99}]]
     /\ cnameRecord \in [Domains -> BOOLEAN]
     /\ currentTime \in 0..MaxTime
 
