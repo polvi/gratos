@@ -1,6 +1,6 @@
 import { h } from 'preact';
 import { useState, useEffect, useCallback } from 'preact/hooks';
-import { AuthProvider, useAuth, LoginButton, RegisterButton } from '@gratos/preact';
+import { AuthProvider, useAuth, LoginButton, RegisterButton, LogoutButton } from '@gratos/preact';
 
 type Domain = {
     id: string;
@@ -11,7 +11,7 @@ type Domain = {
 };
 
 function DomainListInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
-    const { isAuthenticated } = useAuth();
+    const { isAuthenticated, logout } = useAuth();
     const [domains, setDomains] = useState<Domain[]>([]);
     const [loading, setLoading] = useState(true);
     const [deleting, setDeleting] = useState<string | null>(null);
@@ -104,20 +104,36 @@ function DomainListInner({ provisionerBaseUrl }: { provisionerBaseUrl: string })
         <div style={{ maxWidth: '480px', margin: '3rem auto', padding: '0 1.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <h1 style={{ fontSize: '1.75rem', fontWeight: 700 }}>Your Domains</h1>
-                <a
-                    href="/signup"
-                    style={{
-                        padding: '0.5rem 1rem',
-                        background: '#18181b',
-                        color: '#fff',
-                        textDecoration: 'none',
-                        borderRadius: '0.375rem',
-                        fontSize: '0.875rem',
-                        fontWeight: 600,
-                    }}
-                >
-                    Add Domain
-                </a>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <a
+                        href="/signup"
+                        style={{
+                            padding: '0.5rem 1rem',
+                            background: '#18181b',
+                            color: '#fff',
+                            textDecoration: 'none',
+                            borderRadius: '0.375rem',
+                            fontSize: '0.875rem',
+                            fontWeight: 600,
+                        }}
+                    >
+                        Add Domain
+                    </a>
+                    <button
+                        onClick={() => logout()}
+                        style={{
+                            padding: '0.5rem 0.75rem',
+                            background: 'none',
+                            border: '1px solid #d4d4d8',
+                            borderRadius: '0.375rem',
+                            fontSize: '0.875rem',
+                            color: '#71717a',
+                            cursor: 'pointer',
+                        }}
+                    >
+                        Log out
+                    </button>
+                </div>
             </div>
 
             {error && (
