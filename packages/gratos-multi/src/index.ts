@@ -138,7 +138,7 @@ app.get('/demo', (c) => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            body: JSON.stringify(cred),
+            body: JSON.stringify({ response: cred, userId: opts.userId }),
           });
           if (verRes.ok) { await checkSession(); }
           else { const d = await verRes.json(); setError(d.error || 'Registration failed'); }
@@ -155,7 +155,7 @@ app.get('/demo', (c) => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            body: JSON.stringify(cred),
+            body: JSON.stringify({ response: cred, challengeId: opts.challengeId }),
           });
           if (verRes.ok) { await checkSession(); }
           else { const d = await verRes.json(); setError(d.error || 'Login failed'); }
