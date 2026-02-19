@@ -4,8 +4,8 @@
   "type": "module",
   "scripts": {
     "build-demo": "bun --cwd packages/preact build && bun --cwd packages/demo build",
-    "build-signup": "bun --cwd packages/preact build && bun --cwd packages/signup build",
-    "dev-signup": "bun --cwd packages/signup dev",
+    "build-dash": "bun --cwd packages/preact build && bun --cwd packages/gratos-dash build",
+    "dev-dash": "bun --cwd packages/gratos-dash dev",
     "dev-provisioner": "bun --cwd packages/provisioner dev"
   },
   "workspaces": [

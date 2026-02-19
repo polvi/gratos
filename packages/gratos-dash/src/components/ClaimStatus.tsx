@@ -23,8 +23,8 @@ function CopyButton({ text }: { text: string }) {
                 border: 'none',
                 cursor: 'pointer',
                 padding: '0.125rem 0.25rem',
-                marginLeft: '0.25rem',
                 fontSize: '0.75rem',
+                flexShrink: 0,
                 color: copied ? '#16a34a' : '#a1a1aa',
                 verticalAlign: 'middle',
             }}
@@ -38,8 +38,9 @@ function CopyButton({ text }: { text: string }) {
     );
 }
 
-export function ClaimStatus({ domain, cnameTarget, onDone }: {
+export function ClaimStatus({ domain, cnameName, cnameTarget, onDone }: {
     domain: string;
+    cnameName: string;
     cnameTarget: string;
     onDone: () => void;
 }) {
@@ -69,32 +70,30 @@ export function ClaimStatus({ domain, cnameTarget, onDone }: {
             </p>
 
             <div style={cardStyle}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
-                    <thead>
-                        <tr style={{ textAlign: 'left', borderBottom: '1px solid #e4e4e7' }}>
-                            <th style={{ padding: '0.5rem 0.5rem 0.5rem 0', color: '#71717a', fontWeight: 600 }}>Type</th>
-                            <th style={{ padding: '0.5rem', color: '#71717a', fontWeight: 600 }}>Name</th>
-                            <th style={{ padding: '0.5rem', color: '#71717a', fontWeight: 600 }}>Target</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td style={{ padding: '0.75rem 0.5rem 0.75rem 0' }}>CNAME</td>
-                            <td style={{ padding: '0.75rem 0.5rem' }}>
-                                <span style={codeStyle}>letsident</span>
-                                <CopyButton text="letsident" />
-                            </td>
-                            <td style={{ padding: '0.75rem 0.5rem' }}>
-                                <span style={codeStyle}>cname.letsident.net</span>
-                                <CopyButton text="cname.letsident.net" />
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+                <div style={{ fontSize: '0.875rem' }}>
+                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                        <span style={{ color: '#71717a', fontWeight: 600, minWidth: '3rem' }}>Type</span>
+                        <span>CNAME</span>
+                    </div>
+                    <div style={{ marginBottom: '0.75rem' }}>
+                        <div style={{ color: '#71717a', fontWeight: 600, marginBottom: '0.25rem' }}>Name</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                            <span style={{ ...codeStyle, wordBreak: 'break-all' as const }}>{cnameName}</span>
+                            <CopyButton text={cnameName} />
+                        </div>
+                    </div>
+                    <div>
+                        <div style={{ color: '#71717a', fontWeight: 600, marginBottom: '0.25rem' }}>Target</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                            <span style={{ ...codeStyle, wordBreak: 'break-all' as const }}>{cnameTarget}</span>
+                            <CopyButton text={cnameTarget} />
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <p style={{ color: '#52525b', fontSize: '0.875rem', marginBottom: '1.5rem', lineHeight: 1.6 }}>
-                This creates <strong>letsident.{domain}</strong> as your auth endpoint. Once you've added the record, click Done to continue.
+                This creates <strong>{cnameName}.{domain}</strong> as your auth endpoint. Once you've added the record, click Done to continue.
             </p>
 
             <button

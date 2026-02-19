@@ -1,12 +1,13 @@
 {
-    "name": "@gratos/provisioner",
+    "name": "@gratos/multi",
     "version": "0.1.0",
     "type": "module",
     "scripts": {
-        "dev": "wrangler dev --compatibility-flags nodejs_compat --port 8788",
+        "dev": "wrangler dev --compatibility-flags nodejs_compat --port 8789",
         "deploy": "wrangler deploy --minify src/index.ts"
     },
     "dependencies": {
+        "@simplewebauthn/server": "^13.2.2",
         "hono": "^4.11.3"
     },
     "devDependencies": {

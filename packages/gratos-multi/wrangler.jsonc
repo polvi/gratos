@@ -1,0 +1,22 @@
+{
+	"name": "gratos-multi",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-02-18",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "gratos-multi-db",
+			"database_id": "LOCALLY-GENERATED-ID"
+		}
+	],
+	"kv_namespaces": [
+		{
+			"binding": "KV",
+			"id": "LOCALLY-GENERATED-ID",
+			"preview_id": "LOCALLY-GENERATED-ID"
+		}
+	]
+}

@@ -1,26 +1,27 @@
 {
 	"name": "gratos-provisioner",
 	"main": "src/index.ts",
-	"compatibility_date": "2024-04-01",
+	"compatibility_date": "2026-02-18",
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
 	"vars": {
 		"CF_ZONE_ID": "55ba510e429ec4305a3cf947aef59e41",
-		"CORS_ALLOW_ORIGIN": "http://localhost:4322"
+		"CORS_ALLOW_ORIGIN": "http://localhost:4322",
+		"AUTH_TENANT": "localhost"
 	},
+	"services": [
+		{
+			"binding": "AUTH",
+			"service": "gratos-multi",
+			"entrypoint": "AuthRPC"
+		}
+	],
 	"d1_databases": [
 		{
 			"binding": "DB",
-			"database_name": "gratos-db",
+			"database_name": "gratos-provisioner-db",
 			"database_id": "LOCALLY-GENERATED-ID"
-		}
-	],
-	"kv_namespaces": [
-		{
-			"binding": "AUTH_KV",
-			"id": "LOCALLY-GENERATED-ID",
-			"preview_id": "LOCALLY-GENERATED-ID"
 		}
 	],
 	"triggers": {

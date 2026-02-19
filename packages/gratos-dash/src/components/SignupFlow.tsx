@@ -10,6 +10,7 @@ function SignupInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
     const [step, setStep] = useState<Step>('domain');
     const [claimId, setClaimId] = useState<string | null>(null);
     const [domain, setDomain] = useState('');
+    const [cnameName, setCnameName] = useState('');
     const [cnameTarget, setCnameTarget] = useState('');
     const { isAuthenticated } = useAuth();
 
@@ -33,9 +34,10 @@ function SignupInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
                     </p>
                     <DomainEntry
                         provisionerBaseUrl={provisionerBaseUrl}
-                        onClaimed={(id, dom, target) => {
+                        onClaimed={(id, dom, name, target) => {
                             setClaimId(id);
                             setDomain(dom);
+                            setCnameName(name);
                             setCnameTarget(target);
                             setStep('dns');
                         }}
@@ -47,6 +49,7 @@ function SignupInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
             {step === 'dns' && (
                 <ClaimStatus
                     domain={domain}
+                    cnameName={cnameName}
                     cnameTarget={cnameTarget}
                     onDone={() => setStep('auth')}
                 />
@@ -76,6 +79,8 @@ function SignupInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
                 <ProvisionAndFinalize
                     claimId={claimId}
                     domain={domain}
+                    cnameName={cnameName}
+                    cnameTarget={cnameTarget}
                     provisionerBaseUrl={provisionerBaseUrl}
                     onDone={() => setStep('done')}
                 />
@@ -99,9 +104,11 @@ function SignupInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
     );
 }
 
-function ProvisionAndFinalize({ claimId, domain, provisionerBaseUrl, onDone }: {
+function ProvisionAndFinalize({ claimId, domain, cnameName, cnameTarget, provisionerBaseUrl, onDone }: {
     claimId: string;
     domain: string;
+    cnameName: string;
+    cnameTarget: string;
     provisionerBaseUrl: string;
     onDone: () => void;
 }) {
@@ -208,8 +215,8 @@ function ProvisionAndFinalize({ claimId, domain, provisionerBaseUrl, onDone }: {
                 {status === 'finalizing' && 'Finalizing...'}
             </h1>
             <p style={{ color: '#52525b', marginBottom: '1.5rem', lineHeight: 1.6 }}>
-                {status === 'provisioning' && `Setting up letsident.${domain}...`}
-                {status === 'waiting' && `Verifying letsident.${domain}. This may take a few minutes.`}
+                {status === 'provisioning' && `Setting up ${cnameName}.${domain}...`}
+                {status === 'waiting' && `Verifying ${cnameName}.${domain}. This may take a few minutes.`}
                 {status === 'finalizing' && 'Almost there...'}
             </p>
 
@@ -219,26 +226,24 @@ function ProvisionAndFinalize({ claimId, domain, provisionerBaseUrl, onDone }: {
                         <p style={{ fontSize: '0.875rem', color: '#52525b', marginBottom: '0.75rem' }}>
                             Verify your CNAME is set up correctly:
                         </p>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
-                            <thead>
-                                <tr style={{ textAlign: 'left', borderBottom: '1px solid #e4e4e7' }}>
-                                    <th style={{ padding: '0.5rem 0.5rem 0.5rem 0', color: '#71717a', fontWeight: 600 }}>Type</th>
-                                    <th style={{ padding: '0.5rem', color: '#71717a', fontWeight: 600 }}>Name</th>
-                                    <th style={{ padding: '0.5rem', color: '#71717a', fontWeight: 600 }}>Target</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td style={{ padding: '0.75rem 0.5rem 0.75rem 0' }}>CNAME</td>
-                                    <td style={{ padding: '0.75rem 0.5rem' }}>
-                                        <span style={codeStyle}>letsident</span>
-                                    </td>
-                                    <td style={{ padding: '0.75rem 0.5rem' }}>
-                                        <span style={codeStyle}>cname.letsident.net</span>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
+                        <div style={{ fontSize: '0.875rem' }}>
+                            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                                <span style={{ color: '#71717a', fontWeight: 600, minWidth: '3rem' }}>Type</span>
+                                <span>CNAME</span>
+                            </div>
+                            <div style={{ marginBottom: '0.75rem' }}>
+                                <div style={{ color: '#71717a', fontWeight: 600, marginBottom: '0.25rem' }}>Name</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                    <span style={{ ...codeStyle, wordBreak: 'break-all' as const }}>{cnameName}</span>
+                                </div>
+                            </div>
+                            <div>
+                                <div style={{ color: '#71717a', fontWeight: 600, marginBottom: '0.25rem' }}>Target</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                    <span style={{ ...codeStyle, wordBreak: 'break-all' as const }}>{cnameTarget}</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>

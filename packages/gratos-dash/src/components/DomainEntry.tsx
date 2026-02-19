@@ -3,7 +3,7 @@ import { useState } from 'preact/hooks';
 
 export function DomainEntry({ provisionerBaseUrl, onClaimed }: {
     provisionerBaseUrl: string;
-    onClaimed: (claimId: string, domain: string, cnameTarget: string) => void;
+    onClaimed: (claimId: string, domain: string, cnameName: string, cnameTarget: string) => void;
 }) {
     const [domain, setDomain] = useState('');
     const [error, setError] = useState('');
@@ -45,7 +45,7 @@ export function DomainEntry({ provisionerBaseUrl, onClaimed }: {
                 return;
             }
 
-            onClaimed(data.id, trimmed, data.cname_target);
+            onClaimed(data.id, trimmed, data.cname_name, data.cname_target);
         } catch (err) {
             setError('Network error. Please try again.');
         } finally {
@@ -59,7 +59,7 @@ export function DomainEntry({ provisionerBaseUrl, onClaimed }: {
                 Your domain
             </label>
             <p style={{ color: '#71717a', fontSize: '0.8rem', marginBottom: '0.5rem' }}>
-                We'll create <strong>letsident.yourdomain.com</strong> as your auth endpoint.
+                We'll set up <strong>letsident.yourdomain.com</strong> as your auth endpoint.
             </p>
             <input
                 type="text"

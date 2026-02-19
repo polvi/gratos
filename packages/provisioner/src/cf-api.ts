@@ -52,6 +52,17 @@ export class CloudflareCustomHostnames {
         return this.request<CustomHostname>('GET', `/custom_hostnames/${hostnameId}`);
     }
 
+    async findByHostname(hostname: string): Promise<CustomHostname | null> {
+        const result = await this.request<CustomHostname[]>(
+            'GET',
+            `/custom_hostnames?hostname=${encodeURIComponent(hostname)}`
+        );
+        if (result.success && result.result.length > 0) {
+            return result.result[0];
+        }
+        return null;
+    }
+
     async delete(hostnameId: string): Promise<CFResponse<{ id: string }>> {
         return this.request<{ id: string }>('DELETE', `/custom_hostnames/${hostnameId}`);
     }
