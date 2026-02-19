@@ -6,7 +6,7 @@
 		"nodejs_compat"
 	],
 	"vars": {
-		"CF_ZONE_ID": "55ba510e429ec4305a3cf947aef59e41",
+		"CF_ZONE_ID": "DIFF",
 		"CORS_ALLOW_ORIGIN": "http://localhost:4322",
 		"AUTH_TENANT": "localhost"
 	},

@@ -112,79 +112,49 @@ function ProvisionAndFinalize({ claimId, domain, cnameName, cnameTarget, provisi
     provisionerBaseUrl: string;
     onDone: () => void;
 }) {
-    const [status, setStatus] = useState<'provisioning' | 'waiting' | 'finalizing' | 'error'>('provisioning');
-    const [cfStatus, setCfStatus] = useState('');
+    const [phase, setPhase] = useState<'waiting_for_dns' | 'provisioning' | 'error'>('waiting_for_dns');
     const [error, setError] = useState('');
 
-    // Step 1: Provision CF hostname (fires on mount)
-    useEffect(() => {
-        (async () => {
-            try {
-                const res = await fetch(`${provisionerBaseUrl}/claims/${claimId}/provision`, {
-                    method: 'POST',
-                    credentials: 'include',
-                });
-                if (!res.ok) {
-                    const data = await res.json();
-                    // Already provisioned is fine, continue to polling
-                    if (res.status !== 409) {
-                        setError(data.error || 'Failed to provision');
-                        setStatus('error');
-                        return;
-                    }
-                }
-                setStatus('waiting');
-            } catch {
-                setError('Network error during provisioning');
-                setStatus('error');
-            }
-        })();
-    }, [claimId, provisionerBaseUrl]);
-
-    // Step 2: Poll for CF validation
-    const pollValidation = useCallback(async () => {
+    // Poll /activate — drives the full state machine server-side
+    const pollActivate = useCallback(async () => {
         try {
-            const res = await fetch(`${provisionerBaseUrl}/claims/${claimId}`, {
+            const res = await fetch(`${provisionerBaseUrl}/claims/${claimId}/activate`, {
+                method: 'POST',
                 credentials: 'include',
             });
-            if (!res.ok) return;
             const data = await res.json();
-            setCfStatus(data.cf_status || 'pending');
 
-            if (data.cf_status === 'active') {
-                // Step 3: Finalize
-                setStatus('finalizing');
-                const finalRes = await fetch(`${provisionerBaseUrl}/claims/${claimId}/finalize`, {
-                    method: 'POST',
-                    credentials: 'include',
-                });
-                if (!finalRes.ok) {
-                    const finalData = await finalRes.json();
-                    setError(finalData.error || 'Failed to finalize');
-                    setStatus('error');
-                    return;
-                }
+            if (!res.ok) {
+                setError(data.error || 'Activation failed');
+                setPhase('error');
+                return;
+            }
+
+            if (data.status === 'claimed') {
                 onDone();
+                return;
+            }
+
+            if (data.status === 'waiting_for_dns') {
+                setPhase('waiting_for_dns');
+            } else if (data.status === 'provisioning') {
+                setPhase('provisioning');
             }
         } catch {
             // Ignore transient poll errors
         }
     }, [claimId, provisionerBaseUrl, onDone]);
 
+    // Start polling on mount
     useEffect(() => {
-        if (status !== 'waiting') return;
-        pollValidation();
-        const interval = setInterval(pollValidation, 5000);
+        pollActivate();
+        const interval = setInterval(pollActivate, 5000);
         return () => clearInterval(interval);
-    }, [status, pollValidation]);
+    }, [pollActivate]);
 
-    const containerStyle = {
-        textAlign: 'center' as const,
-    };
-
-    if (status === 'error') {
+    if (phase === 'error') {
         return (
-            <div style={containerStyle}>
+            <div style={{ textAlign: 'center' as const }}>
                 <p style={{ color: '#ef4444', marginBottom: '1rem' }}>{error}</p>
                 <a href="/signup" style={{ color: '#18181b' }}>Start over</a>
             </div>
@@ -210,73 +180,70 @@ function ProvisionAndFinalize({ claimId, domain, cnameName, cnameTarget, provisi
     return (
         <div>
             <h1 style={{ fontSize: '1.75rem', fontWeight: 700, marginBottom: '0.5rem' }}>
-                {status === 'provisioning' && 'Provisioning...'}
-                {status === 'waiting' && 'Waiting for DNS validation'}
-                {status === 'finalizing' && 'Finalizing...'}
+                {phase === 'waiting_for_dns' && 'Waiting for DNS'}
+                {phase === 'provisioning' && 'Activating domain'}
             </h1>
             <p style={{ color: '#52525b', marginBottom: '1.5rem', lineHeight: 1.6 }}>
-                {status === 'provisioning' && `Setting up ${cnameName}.${domain}...`}
-                {status === 'waiting' && `Verifying ${cnameName}.${domain}. This may take a few minutes.`}
-                {status === 'finalizing' && 'Almost there...'}
+                {phase === 'waiting_for_dns' && `Checking for CNAME record on ${cnameName}.${domain}.`}
+                {phase === 'provisioning' && `DNS verified. Setting up ${cnameName}.${domain}...`}
             </p>
 
-            {status === 'waiting' && (
-                <>
-                    <div style={cardStyle}>
-                        <p style={{ fontSize: '0.875rem', color: '#52525b', marginBottom: '0.75rem' }}>
-                            Verify your CNAME is set up correctly:
-                        </p>
-                        <div style={{ fontSize: '0.875rem' }}>
-                            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                                <span style={{ color: '#71717a', fontWeight: 600, minWidth: '3rem' }}>Type</span>
-                                <span>CNAME</span>
+            {phase === 'waiting_for_dns' && (
+                <div style={cardStyle}>
+                    <p style={{ fontSize: '0.875rem', color: '#52525b', marginBottom: '0.75rem' }}>
+                        Ensure your CNAME record is set up:
+                    </p>
+                    <div style={{ fontSize: '0.875rem' }}>
+                        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                            <span style={{ color: '#71717a', fontWeight: 600, minWidth: '3rem' }}>Type</span>
+                            <span>CNAME</span>
+                        </div>
+                        <div style={{ marginBottom: '0.75rem' }}>
+                            <div style={{ color: '#71717a', fontWeight: 600, marginBottom: '0.25rem' }}>Name</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                <span style={{ ...codeStyle, wordBreak: 'break-all' as const }}>{cnameName}</span>
                             </div>
-                            <div style={{ marginBottom: '0.75rem' }}>
-                                <div style={{ color: '#71717a', fontWeight: 600, marginBottom: '0.25rem' }}>Name</div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                    <span style={{ ...codeStyle, wordBreak: 'break-all' as const }}>{cnameName}</span>
-                                </div>
-                            </div>
-                            <div>
-                                <div style={{ color: '#71717a', fontWeight: 600, marginBottom: '0.25rem' }}>Target</div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                    <span style={{ ...codeStyle, wordBreak: 'break-all' as const }}>{cnameTarget}</span>
-                                </div>
+                        </div>
+                        <div>
+                            <div style={{ color: '#71717a', fontWeight: 600, marginBottom: '0.25rem' }}>Target</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                <span style={{ ...codeStyle, wordBreak: 'break-all' as const }}>{cnameTarget}</span>
                             </div>
                         </div>
                     </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                        <span style={{
-                            padding: '0.25rem 0.75rem',
-                            borderRadius: '9999px',
-                            fontSize: '0.75rem',
-                            fontWeight: 600,
-                            background: '#fef9c3',
-                            color: '#854d0e',
-                        }}>
-                            {cfStatus ? `Status: ${cfStatus}` : 'Checking...'}
-                        </span>
-                        <button
-                            onClick={() => pollValidation()}
-                            style={{
-                                padding: '0.375rem 0.75rem',
-                                background: '#f4f4f5',
-                                border: '1px solid #d4d4d8',
-                                borderRadius: '0.375rem',
-                                fontSize: '0.8rem',
-                                cursor: 'pointer',
-                            }}
-                        >
-                            Refresh
-                        </button>
-                    </div>
-
-                    <p style={{ color: '#a1a1aa', fontSize: '0.75rem' }}>
-                        Auto-checking every 5 seconds.
-                    </p>
-                </>
+                </div>
             )}
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                <span style={{
+                    padding: '0.25rem 0.75rem',
+                    borderRadius: '9999px',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    background: phase === 'provisioning' ? '#dbeafe' : '#fef9c3',
+                    color: phase === 'provisioning' ? '#1e40af' : '#854d0e',
+                }}>
+                    {phase === 'waiting_for_dns' && 'Waiting for CNAME...'}
+                    {phase === 'provisioning' && 'Activating...'}
+                </span>
+                <button
+                    onClick={() => pollActivate()}
+                    style={{
+                        padding: '0.375rem 0.75rem',
+                        background: '#f4f4f5',
+                        border: '1px solid #d4d4d8',
+                        borderRadius: '0.375rem',
+                        fontSize: '0.8rem',
+                        cursor: 'pointer',
+                    }}
+                >
+                    Refresh
+                </button>
+            </div>
+
+            <p style={{ color: '#a1a1aa', fontSize: '0.75rem' }}>
+                Auto-checking every 5 seconds.
+            </p>
         </div>
     );
 }

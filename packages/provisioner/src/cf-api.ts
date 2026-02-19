@@ -17,6 +17,7 @@ interface CFResponse<T> {
     success: boolean;
     errors: Array<{ code: number; message: string }>;
     result: T;
+    result_info?: { page: number; per_page: number; total_pages: number; count: number; total_count: number };
 }
 
 export class CloudflareCustomHostnames {
@@ -65,5 +66,18 @@ export class CloudflareCustomHostnames {
 
     async delete(hostnameId: string): Promise<CFResponse<{ id: string }>> {
         return this.request<{ id: string }>('DELETE', `/custom_hostnames/${hostnameId}`);
+    }
+
+    async listAll(): Promise<CustomHostname[]> {
+        const all: CustomHostname[] = [];
+        let page = 1;
+        while (true) {
+            const res = await this.request<CustomHostname[]>('GET', `/custom_hostnames?page=${page}&per_page=50`);
+            if (!res.success || !res.result || res.result.length === 0) break;
+            all.push(...res.result);
+            if (!res.result_info || page >= res.result_info.total_pages) break;
+            page++;
+        }
+        return all;
     }
 }

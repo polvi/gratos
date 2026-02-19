@@ -71,35 +71,38 @@ Authenticate(s, id) ==
     /\ authed' = authed \cup {[session |-> s, identity |-> id]}
     /\ UNCHANGED <<sessions, pendingClaims, claimed, cfProvisioned, cfValidated>>
 
-\* Authenticated session provisions CF custom hostname letsident.{domain}.
-\* The CF hostname is shared across all claims for the same domain.
-\* If already provisioned, this is a no-op (idempotent).
-ProvisionCF(s, d) ==
-    /\ HasPendingClaim(s, d)
-    /\ IsAuthed(s)
-    /\ d \notin cfProvisioned
-    /\ cfProvisioned' = cfProvisioned \cup {d}
-    /\ UNCHANGED <<sessions, authed, pendingClaims, claimed, cfValidated>>
-
 \* External event: DNS owner sets CNAME target to a specific claim's token.
 \* letsident.{d} CNAME {token}.cname.letsident.net
 \* Since DNS CNAME is single-valued, this replaces any previous validation.
 \* Only the DNS owner can set this, so it proves domain control.
-ValidateCF(s, d) ==
-    /\ d \in cfProvisioned
+\* DNS happens independently — no CF provisioning required yet.
+ValidateDNS(s, d) ==
     /\ HasPendingClaim(s, d)
     \* Replace any existing validation for this domain (CNAME is single-valued)
     /\ cfValidated' = (cfValidated \ {r \in cfValidated : r.domain = d})
                        \cup {[domain |-> d, session |-> s]}
     /\ UNCHANGED <<sessions, authed, pendingClaims, claimed, cfProvisioned>>
 
-\* Claim a domain. Requires: authenticated, CNAME target matches this claim,
+\* Authenticated session provisions CF custom hostname letsident.{domain}.
+\* Only happens AFTER DNS CNAME is verified for this claim.
+\* The CF hostname is shared across all claims for the same domain.
+\* If already provisioned, this is a no-op (idempotent).
+ProvisionCF(s, d) ==
+    /\ HasPendingClaim(s, d)
+    /\ IsAuthed(s)
+    /\ [domain |-> d, session |-> s] \in cfValidated
+    /\ d \notin cfProvisioned
+    /\ cfProvisioned' = cfProvisioned \cup {d}
+    /\ UNCHANGED <<sessions, authed, pendingClaims, claimed, cfValidated>>
+
+\* Claim a domain. Requires: authenticated, DNS validated, CF provisioned,
 \* and domain not yet claimed by anyone.
 \* On success: removes ALL pending claims for this domain and cleans up losers.
 ClaimDomain(s, d) ==
     /\ HasPendingClaim(s, d)
     /\ IsAuthed(s)
     /\ [domain |-> d, session |-> s] \in cfValidated
+    /\ d \in cfProvisioned
     /\ ~IsClaimed(d)
     /\ claimed' = claimed \cup {[domain |-> d, owner |-> IdentityOf(s)]}
     \* Remove all pending claims for this domain
@@ -132,8 +135,8 @@ ExpireClaim(s, d) ==
 Next ==
     \/ \E s \in Sessions, d \in Domains : EnterDomain(s, d)
     \/ \E s \in Sessions, id \in Identities : Authenticate(s, id)
+    \/ \E s \in Sessions, d \in Domains : ValidateDNS(s, d)
     \/ \E s \in Sessions, d \in Domains : ProvisionCF(s, d)
-    \/ \E s \in Sessions, d \in Domains : ValidateCF(s, d)
     \/ \E s \in Sessions, d \in Domains : ClaimDomain(s, d)
     \/ \E s \in Sessions : ExpireSession(s)
     \/ \E s \in Sessions, d \in Domains : ExpireClaim(s, d)
@@ -150,10 +153,6 @@ AuthedImpliesLiveSession ==
 NoPendingAndClaimed ==
     \A d \in Domains : IsClaimed(d) =>
         ~\E r \in pendingClaims : r.domain = d
-
-\* CF validation implies CF provisioned
-ValidatedImpliesProvisioned ==
-    \A r \in cfValidated : r.domain \in cfProvisioned
 
 \* No orphaned CF resources: every provisioned domain is either
 \* pending (mid-claim) or claimed (completed)

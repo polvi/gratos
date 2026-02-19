@@ -137,27 +137,13 @@ app.get('/claims/:id', async (c) => {
     ).bind(claimId).first() as any;
 
     if (pending) {
-        let cfStatus = null;
-        let validationRecords = null;
-
-        if (pending.cf_hostname_id) {
-            const cf = new CloudflareCustomHostnames(c.env.CF_API_TOKEN, c.env.CF_ZONE_ID);
-            const result = await cf.get(pending.cf_hostname_id);
-            if (result.success) {
-                cfStatus = result.result.status;
-                validationRecords = result.result.ssl?.validation_records || null;
-            }
-        }
-
         return c.json({
             id: pending.id,
             domain: pending.domain,
             token: pending.token,
             cname_name: 'letsident',
             cname_target: `${pending.token}.cname.letsident.net`,
-            status: pending.cf_hostname_id ? 'provisioned' : 'pending',
-            cf_status: cfStatus,
-            validation_records: validationRecords,
+            status: 'pending',
             has_identity: !!pending.identity_id,
             created_at: pending.created_at,
         });
@@ -173,7 +159,6 @@ app.get('/claims/:id', async (c) => {
             id: claimed.id,
             domain: claimed.domain,
             status: 'claimed',
-            cf_status: 'active',
             has_identity: true,
             claimed_at: claimed.claimed_at,
         });
@@ -186,10 +171,23 @@ app.get('/claims/:id', async (c) => {
 // Authenticated routes
 // =============================================
 
-// --- POST /claims/:id/provision — ProvisionCF: requires auth, creates unique CF hostname ---
-app.post('/claims/:id/provision', authMiddleware, async (c) => {
+// --- POST /claims/:id/activate — Drive the full claim lifecycle ---
+// Client polls this endpoint. It advances through:
+//   1. waiting_for_dns — CNAME not yet detected
+//   2. provisioning    — creating CF custom hostname
+//   3. cf_pending      — CF hostname exists, waiting for validation
+//   4. claimed         — CF active, domain claimed
+app.post('/claims/:id/activate', authMiddleware, async (c) => {
     const identityId = c.get('identityId');
     const claimId = c.req.param('id');
+
+    // Check if already claimed
+    const existingDomain = await c.env.DB.prepare(
+        'SELECT * FROM domains WHERE id = ?'
+    ).bind(claimId).first() as any;
+    if (existingDomain) {
+        return c.json({ status: 'claimed', domain: existingDomain.domain, claimed_at: existingDomain.claimed_at });
+    }
 
     const claim = await c.env.DB.prepare(
         'SELECT * FROM pending_claims WHERE id = ?'
@@ -197,10 +195,6 @@ app.post('/claims/:id/provision', authMiddleware, async (c) => {
 
     if (!claim) {
         return c.json({ error: 'Claim not found' }, 404);
-    }
-
-    if (claim.cf_hostname_id) {
-        return c.json({ error: 'Already provisioned' }, 409);
     }
 
     // Associate identity if not yet bound
@@ -212,69 +206,68 @@ app.post('/claims/:id/provision', authMiddleware, async (c) => {
         return c.json({ error: 'Claim owned by another identity' }, 403);
     }
 
+    // --- Step 1: Check DNS for CNAME ---
+    const expectedTarget = `${claim.token}.cname.letsident.net`;
+    const actualTarget = await resolveCNAME(`letsident.${claim.domain}`);
+
+    if (actualTarget !== expectedTarget) {
+        return c.json({
+            status: 'waiting_for_dns',
+            domain: claim.domain,
+            cname_name: 'letsident',
+            cname_target: expectedTarget,
+            dns_actual: actualTarget,
+        });
+    }
+
+    // --- Step 2: Create CF custom hostname (if not already) ---
     if (!c.env.CF_API_TOKEN || !c.env.CF_ZONE_ID) {
         console.error('CF_API_TOKEN or CF_ZONE_ID not configured');
         return c.json({ error: 'CF API not configured' }, 500);
     }
 
-    // Stable hostname: letsident.{domain}
-    // User sets CNAME target to {token}.cname.letsident.net to prove ownership
     const hostname = `letsident.${claim.domain}`;
-
     const cf = new CloudflareCustomHostnames(c.env.CF_API_TOKEN, c.env.CF_ZONE_ID);
-    let cfHostnameId: string;
 
-    // Idempotent: reuse existing CF hostname if one already exists for this domain
-    const existing = await cf.findByHostname(hostname);
-    if (existing) {
-        cfHostnameId = existing.id;
-    } else {
-        let result;
-        try {
-            result = await cf.create(hostname);
-        } catch (err) {
-            console.error('CF API request failed:', err);
-            return c.json({ error: 'CF API request failed', details: String(err) }, 502);
-        }
-
-        if (!result.success) {
-            console.error('CF API error:', JSON.stringify(result.errors));
-            return c.json({ error: 'CF API error', details: result.errors }, 502);
-        }
-        cfHostnameId = result.result.id;
-    }
-
-    await c.env.DB.prepare(
-        'UPDATE pending_claims SET cf_hostname_id = ? WHERE id = ?'
-    ).bind(cfHostnameId, claimId).run();
-
-    return c.json({
-        id: claimId,
-        domain: claim.domain,
-        hostname,
-        status: 'provisioned',
-        cf_hostname_id: cfHostnameId,
-    });
-});
-
-// --- POST /claims/:id/finalize — ClaimDomain: requires auth + CF validated ---
-// On success, cleans up ALL other pending claims for this domain (losers).
-app.post('/claims/:id/finalize', authMiddleware, async (c) => {
-    const identityId = c.get('identityId');
-    const claimId = c.req.param('id');
-
-    const claim = await c.env.DB.prepare(
-        'SELECT * FROM pending_claims WHERE id = ? AND identity_id = ?'
-    ).bind(claimId, identityId).first() as any;
-
-    if (!claim) {
-        return c.json({ error: 'Claim not found or not associated with your identity' }, 404);
-    }
-
-    // ValidatedImpliesProvisioned
     if (!claim.cf_hostname_id) {
-        return c.json({ error: 'Claim not yet provisioned' }, 400);
+        let cfHostnameId: string;
+
+        // Idempotent: reuse existing CF hostname if one already exists for this domain
+        const existing = await cf.findByHostname(hostname);
+        if (existing) {
+            cfHostnameId = existing.id;
+        } else {
+            let result;
+            try {
+                result = await cf.create(hostname);
+            } catch (err) {
+                console.error('CF API request failed:', err);
+                return c.json({ error: 'CF API request failed', details: String(err) }, 502);
+            }
+
+            if (!result.success) {
+                console.error('CF API error:', JSON.stringify(result.errors));
+                return c.json({ error: 'CF API error', details: result.errors }, 502);
+            }
+            cfHostnameId = result.result.id;
+        }
+
+        await c.env.DB.prepare(
+            'UPDATE pending_claims SET cf_hostname_id = ? WHERE id = ?'
+        ).bind(cfHostnameId, claimId).run();
+        claim.cf_hostname_id = cfHostnameId;
     }
+
+    // --- Step 3: Check CF hostname status ---
+    const cfResult = await cf.get(claim.cf_hostname_id);
+    if (!cfResult.success || cfResult.result.status !== 'active') {
+        return c.json({
+            status: 'provisioning',
+            domain: claim.domain,
+        });
+    }
+
+    // --- Step 4: CF active — finalize and claim domain ---
 
     // OneDomainOneOwner: check no one else claimed it first
     const existingClaimed = await c.env.DB.prepare(
@@ -284,25 +277,13 @@ app.post('/claims/:id/finalize', authMiddleware, async (c) => {
         return c.json({ error: 'Domain already claimed by another identity' }, 409);
     }
 
-    // ClaimedImpliesCFValidated
-    const cf = new CloudflareCustomHostnames(c.env.CF_API_TOKEN, c.env.CF_ZONE_ID);
-    const result = await cf.get(claim.cf_hostname_id);
-
-    if (!result.success || result.result.status !== 'active') {
+    // Re-verify CNAME hasn't changed during provisioning
+    const finalTarget = await resolveCNAME(`letsident.${claim.domain}`);
+    if (finalTarget !== expectedTarget) {
         return c.json({
-            error: 'CF hostname not yet validated',
-            cf_status: result.result?.status || 'unknown',
-        }, 400);
-    }
-
-    // SingleCNAMEPerDomain: verify the CNAME target matches this claim's token
-    const expectedTarget = `${claim.token}.cname.letsident.net`;
-    const actualTarget = await resolveCNAME(`letsident.${claim.domain}`);
-    if (actualTarget !== expectedTarget) {
-        return c.json({
-            error: 'CNAME target does not match this claim',
+            error: 'CNAME target changed during provisioning',
             expected: expectedTarget,
-            actual: actualTarget,
+            actual: finalTarget,
         }, 403);
     }
 
@@ -315,17 +296,14 @@ app.post('/claims/:id/finalize', authMiddleware, async (c) => {
     const domainId = crypto.randomUUID();
     const claimedAt = Date.now();
 
-    const statements = [
+    await c.env.DB.batch([
         c.env.DB.prepare(
             'INSERT INTO domains (id, identity_id, domain, cf_hostname_id, claimed_at) VALUES (?, ?, ?, ?, ?)'
         ).bind(domainId, identityId, claim.domain, claim.cf_hostname_id, claimedAt),
-        // Delete ALL pending claims for this domain (winner + losers)
         c.env.DB.prepare(
             'DELETE FROM pending_claims WHERE domain = ?'
         ).bind(claim.domain),
-    ];
-
-    await c.env.DB.batch(statements);
+    ]);
 
     // Clean up losing claims' CF hostnames (best-effort, after DB commit)
     if (losingClaims) {
@@ -341,9 +319,9 @@ app.post('/claims/:id/finalize', authMiddleware, async (c) => {
     }
 
     return c.json({
+        status: 'claimed',
         id: domainId,
         domain: claim.domain,
-        status: 'claimed',
         claimed_at: claimedAt,
     });
 });
@@ -397,31 +375,70 @@ app.get('/claims', authMiddleware, async (c) => {
     });
 });
 
-// --- Scheduled handler (ExpireClaim) ---
-// Aggressive GC since pending claims don't block anyone
+// --- Scheduled handler (ExpireClaim + Reconcile) ---
+// 1. Expire stale pending claims
+// 2. Reconcile: DB is source of truth — delete any CF custom hostname not in DB
 const CLAIM_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 async function handleScheduled(env: Env) {
+    const cf = new CloudflareCustomHostnames(env.CF_API_TOKEN, env.CF_ZONE_ID);
+
+    // --- Phase 1: Expire stale pending claims ---
     const cutoff = Date.now() - CLAIM_TTL_MS;
 
-    const { results } = await env.DB.prepare(
+    const { results: expired } = await env.DB.prepare(
         'SELECT id, cf_hostname_id FROM pending_claims WHERE created_at < ?'
     ).bind(cutoff).all();
 
-    if (!results || results.length === 0) return;
+    if (expired && expired.length > 0) {
+        for (const claim of expired as any[]) {
+            if (claim.cf_hostname_id) {
+                try {
+                    await cf.delete(claim.cf_hostname_id);
+                } catch (err) {
+                    console.error(`Failed to delete CF hostname for expired claim ${claim.id}:`, err);
+                }
+            }
+            await env.DB.prepare('DELETE FROM pending_claims WHERE id = ?').bind(claim.id).run();
+        }
+    }
 
-    const cf = new CloudflareCustomHostnames(env.CF_API_TOKEN, env.CF_ZONE_ID);
+    // --- Phase 2: Reconcile CF state against DB ---
+    // DB is the source of truth. Any CF custom hostname not tracked in
+    // pending_claims or domains must be deleted.
+    const knownCfIds = new Set<string>();
 
-    for (const claim of results as any[]) {
-        // NoOrphanedCFResources: delete CF hostname before removing claim
-        if (claim.cf_hostname_id) {
+    const { results: pendingRows } = await env.DB.prepare(
+        'SELECT cf_hostname_id FROM pending_claims WHERE cf_hostname_id IS NOT NULL'
+    ).all();
+    for (const r of (pendingRows || []) as any[]) {
+        knownCfIds.add(r.cf_hostname_id);
+    }
+
+    const { results: domainRows } = await env.DB.prepare(
+        'SELECT cf_hostname_id FROM domains WHERE cf_hostname_id IS NOT NULL'
+    ).all();
+    for (const r of (domainRows || []) as any[]) {
+        knownCfIds.add(r.cf_hostname_id);
+    }
+
+    let cfHostnames: import('./cf-api').CustomHostname[];
+    try {
+        cfHostnames = await cf.listAll();
+    } catch (err) {
+        console.error('Failed to list CF custom hostnames for reconciliation:', err);
+        return;
+    }
+
+    for (const h of cfHostnames) {
+        if (!knownCfIds.has(h.id)) {
+            console.log(`Reconcile: deleting orphaned CF hostname ${h.id} (${h.hostname})`);
             try {
-                await cf.delete(claim.cf_hostname_id);
+                await cf.delete(h.id);
             } catch (err) {
-                console.error(`Failed to delete CF hostname for expired claim ${claim.id}:`, err);
+                console.error(`Reconcile: failed to delete CF hostname ${h.id}:`, err);
             }
         }
-        await env.DB.prepare('DELETE FROM pending_claims WHERE id = ?').bind(claim.id).run();
     }
 }
 
