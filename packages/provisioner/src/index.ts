@@ -349,28 +349,57 @@ app.delete('/claims/:id', authMiddleware, async (c) => {
     return c.json({ success: true });
 });
 
-// --- GET /claims — List caller's claims, requires auth ---
-app.get('/claims', authMiddleware, async (c) => {
+// --- DELETE /domains/:id — Remove a claimed domain, requires auth ---
+app.delete('/domains/:id', authMiddleware, async (c) => {
+    const identityId = c.get('identityId');
+    const domainId = c.req.param('id');
+
+    const domain = await c.env.DB.prepare(
+        'SELECT * FROM domains WHERE id = ? AND identity_id = ?'
+    ).bind(domainId, identityId).first() as any;
+
+    if (!domain) {
+        return c.json({ error: 'Domain not found' }, 404);
+    }
+
+    if (domain.cf_hostname_id) {
+        const cf = new CloudflareCustomHostnames(c.env.CF_API_TOKEN, c.env.CF_ZONE_ID);
+        try {
+            await cf.delete(domain.cf_hostname_id);
+        } catch (err) {
+            console.error(`Failed to delete CF hostname for domain ${domain.id}:`, err);
+        }
+    }
+
+    await c.env.DB.prepare('DELETE FROM domains WHERE id = ?').bind(domainId).run();
+
+    return c.json({ success: true });
+});
+
+// --- GET /domains — List caller's domains, requires auth ---
+app.get('/domains', authMiddleware, async (c) => {
     const identityId = c.get('identityId');
 
     const { results: pending } = await c.env.DB.prepare(
-        'SELECT id, domain, token, cf_hostname_id, created_at FROM pending_claims WHERE identity_id = ?'
+        'SELECT id, domain, token, created_at FROM pending_claims WHERE identity_id = ?'
     ).bind(identityId).all();
 
     const { results: claimed } = await c.env.DB.prepare(
-        'SELECT id, domain, cf_hostname_id, claimed_at FROM domains WHERE identity_id = ?'
+        'SELECT id, domain, claimed_at FROM domains WHERE identity_id = ?'
     ).bind(identityId).all();
 
     return c.json({
         pending: (pending || []).map((r: any) => ({
-            ...r,
-            cname_name: 'letsident',
-            cname_target: `${r.token}.cname.letsident.net`,
-            status: r.cf_hostname_id ? 'provisioned' : 'pending',
+            id: r.id,
+            domain: r.domain,
+            status: 'pending',
+            created_at: r.created_at,
         })),
         claimed: (claimed || []).map((r: any) => ({
-            ...r,
-            status: 'claimed',
+            id: r.id,
+            domain: r.domain,
+            status: 'active',
+            claimed_at: r.claimed_at,
         })),
     });
 });
