@@ -4,7 +4,7 @@
     "type": "module",
     "scripts": {
         "dev": "wrangler dev --compatibility-flags nodejs_compat --port 8789",
-        "deploy": "wrangler deploy --minify src/index.ts"
+        "deploy": "wrangler deploy --minify src/index.ts --env=prod"
     },
     "dependencies": {
         "@simplewebauthn/server": "^13.2.2",

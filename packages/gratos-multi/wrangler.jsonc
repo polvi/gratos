@@ -9,14 +9,36 @@
 		{
 			"binding": "DB",
 			"database_name": "gratos-multi-db",
-			"database_id": "LOCALLY-GENERATED-ID"
+			"database_id": "389751d6-783e-44f4-904e-d4bac628d36e"
 		}
 	],
 	"kv_namespaces": [
 		{
 			"binding": "KV",
-			"id": "LOCALLY-GENERATED-ID",
-			"preview_id": "LOCALLY-GENERATED-ID"
+			"id": "4a69a0c80e604ac19285eec842682190"
 		}
-	]
+	],
+	"env": {
+		"prod": {
+			"routes": [
+				{
+					"pattern": "letsident.letsident.org",
+					"custom_domain": true
+				}
+			],
+			"d1_databases": [
+				{
+					"binding": "DB",
+					"database_name": "gratos-multi-db",
+					"database_id": "389751d6-783e-44f4-904e-d4bac628d36e"
+				}
+			],
+			"kv_namespaces": [
+				{
+					"binding": "KV",
+					"id": "4a69a0c80e604ac19285eec842682190"
+				}
+			]
+		}
+	}
 }

@@ -1,14 +1,29 @@
 {
 	"name": "gratos-dash",
+	"main": "./dist/_worker.js/index.js",
 	"compatibility_date": "2026-02-18",
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
-	"services": [
-		{
-			"binding": "AUTH",
-			"service": "gratos-multi",
-			"entrypoint": "AuthRPC"
+	"assets": {
+		"directory": "./dist"
+	},
+	"vars": {
+		"PUBLIC_GRATOS_SERVER": "http://localhost:8789",
+		"PUBLIC_PROVISIONER_SERVER": "http://localhost:8788"
+	},
+	"env": {
+		"prod": {
+			"vars": {
+				"PUBLIC_GRATOS_SERVER": "https://letsident.letsident.org",
+				"PUBLIC_PROVISIONER_SERVER": "https://provision.api.letsident.org"
+			},
+			"routes": [
+				{
+					"pattern": "dash.letsident.org",
+					"custom_domain": true
+				}
+			]
 		}
-	]
+	}
 }

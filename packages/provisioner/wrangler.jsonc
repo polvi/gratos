@@ -26,5 +26,34 @@
 	],
 	"triggers": {
 		"crons": ["*/5 * * * *"]
+	},
+	"env": {
+		"prod": {
+			"vars": {
+				"CF_ZONE_ID": "55ba510e429ec4305a3cf947aef59e41",
+				"CORS_ALLOW_ORIGIN": "https://dash.letsident.org",
+				"AUTH_TENANT": "letsident.org"
+			},
+			"routes": [
+				{
+					"pattern": "provision.api.letsident.org",
+					"custom_domain": true
+				}
+			],
+			"services": [
+				{
+					"binding": "AUTH",
+					"service": "gratos-multi",
+					"entrypoint": "AuthRPC"
+				}
+			],
+			"d1_databases": [
+				{
+					"binding": "DB",
+					"database_name": "gratos-provisioner-db",
+					"database_id": "9b8a870c-6642-41c5-9534-3fde97180681"
+				}
+			]
+		}
 	}
 }

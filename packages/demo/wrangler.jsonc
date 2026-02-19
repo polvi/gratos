@@ -31,13 +31,7 @@
         "PUBLIC_GRATOS_SERVER": "https://id.letsident.org",
         "PUBLIC_GRATOS_DOMAIN_SERVER": "https://id.letsident.org",
         "PUBLIC_CLIENT_ID": "15ec252b-4cdc-40a7-8936-741f4457c055"
-      },
-      "routes": [
-        {
-          "pattern": "dash.letsident.org",
-          "custom_domain": true
-        }
-      ]
+      }
     }
   }
 }
