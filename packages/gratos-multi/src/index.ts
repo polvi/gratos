@@ -68,6 +68,130 @@ app.use('/*', async (c, next) => {
 // Health check
 app.get('/', (c) => c.json({ status: 'ok' }));
 
+// Demo page — self-contained auth demo served from the letsident subdomain
+app.get('/demo', (c) => {
+    const url = new URL(c.req.url);
+    const apiBaseUrl = url.origin;
+    return c.html(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gratos Auth Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; background: #fafafa; color: #18181b; }
+    .container { max-width: 480px; margin: 3rem auto; padding: 0 1.5rem; }
+    h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: 0.5rem; }
+    p { color: #52525b; line-height: 1.6; margin-bottom: 1.5rem; }
+    .card { background: #fff; border: 1px solid #e4e4e7; border-radius: 0.5rem; padding: 1.5rem; margin-bottom: 1rem; }
+    .card h2 { font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; }
+    #auth-root button {
+      display: block; width: 100%; padding: 0.625rem; margin-bottom: 0.5rem;
+      border: 1px solid #d4d4d8; border-radius: 0.375rem;
+      font-size: 1rem; font-weight: 600; cursor: pointer; background: #fff;
+    }
+    #auth-root button:hover { background: #f4f4f5; }
+    .user-info { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 0.5rem; padding: 1rem; }
+    .user-info p { color: #15803d; margin: 0; }
+    code { background: #f4f4f5; padding: 0.125rem 0.375rem; border-radius: 0.25rem; font-size: 0.875rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Auth Demo</h1>
+    <p>This page is served from <code>${url.hostname}</code>. Try registering a passkey or signing in.</p>
+    <div id="auth-root"></div>
+  </div>
+  <script type="module">
+    import { render, h } from 'https://esm.sh/preact@10.28.2';
+    import { useState, useEffect } from 'https://esm.sh/preact@10.28.2/hooks';
+    import { startRegistration, startAuthentication } from 'https://esm.sh/@simplewebauthn/browser@13.2.2';
+
+    const API = '${apiBaseUrl}';
+
+    function App() {
+      const [user, setUser] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState('');
+
+      const checkSession = async () => {
+        try {
+          const res = await fetch(API + '/whoami', { credentials: 'include' });
+          if (res.ok) {
+            const data = await res.json();
+            setUser(data);
+          }
+        } catch {}
+        setLoading(false);
+      };
+
+      useEffect(() => { checkSession(); }, []);
+
+      const register = async () => {
+        setError('');
+        try {
+          const optRes = await fetch(API + '/register/options', { credentials: 'include' });
+          const opts = await optRes.json();
+          const cred = await startRegistration({ optionsJSON: opts });
+          const verRes = await fetch(API + '/register/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(cred),
+          });
+          if (verRes.ok) { await checkSession(); }
+          else { const d = await verRes.json(); setError(d.error || 'Registration failed'); }
+        } catch (e) { setError(String(e)); }
+      };
+
+      const login = async () => {
+        setError('');
+        try {
+          const optRes = await fetch(API + '/login/options', { credentials: 'include' });
+          const opts = await optRes.json();
+          const cred = await startAuthentication({ optionsJSON: opts });
+          const verRes = await fetch(API + '/login/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(cred),
+          });
+          if (verRes.ok) { await checkSession(); }
+          else { const d = await verRes.json(); setError(d.error || 'Login failed'); }
+        } catch (e) { setError(String(e)); }
+      };
+
+      const logout = async () => {
+        await fetch(API + '/logout', { method: 'POST', credentials: 'include' });
+        setUser(null);
+      };
+
+      if (loading) return h('p', null, 'Loading...');
+
+      if (user) return h('div', { class: 'card' },
+        h('div', { class: 'user-info' },
+          h('p', null, 'Signed in as ', h('strong', null, user.user_id || user.id)),
+        ),
+        h('button', { onClick: logout, style: 'margin-top: 1rem' }, 'Sign Out'),
+      );
+
+      return h('div', null,
+        h('div', { class: 'card' },
+          h('h2', null, 'Get started'),
+          h('button', { onClick: register }, 'Register a Passkey'),
+          h('button', { onClick: login }, 'Sign In'),
+        ),
+        error && h('p', { style: 'color: #ef4444; font-size: 0.875rem; margin-top: 0.5rem;' }, error),
+      );
+    }
+
+    render(h(App), document.getElementById('auth-root'));
+  </script>
+</body>
+</html>`);
+});
+
 // Mount tenant-scoped routes per request
 app.all('/*', async (c, next) => {
     const url = new URL(c.req.url);

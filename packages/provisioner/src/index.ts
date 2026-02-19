@@ -92,7 +92,8 @@ async function lookupDNS(hostname: string): Promise<DnsLookupResult> {
         }
     } catch { /* continue */ }
 
-    // No CNAME — check for A/AAAA records
+    // No direct CNAME — check A/AAAA which may include CNAME chain hops
+    const seen = new Set<string>();
     for (const qtype of ['A', 'AAAA']) {
         try {
             const res = await fetch(
@@ -100,17 +101,33 @@ async function lookupDNS(hostname: string): Promise<DnsLookupResult> {
                 { headers: { 'Accept': 'application/dns-json' } }
             );
             if (res.ok) {
-                const data = await res.json() as { Answer?: { type: number; data: string }[] };
+                const data = await res.json() as { Answer?: { type: number; data: string; name: string }[] };
                 if (data.Answer) {
                     for (const r of data.Answer) {
-                        result.other.push({
-                            type: DNS_TYPE_NAMES[r.type] || `TYPE${r.type}`,
-                            value: r.data.replace(/\.$/, ''),
-                        });
+                        const value = r.data.replace(/\.$/, '');
+                        // A/AAAA responses include CNAME hops in the chain
+                        if (r.type === 5 && !result.cname) {
+                            result.cname = value;
+                        } else {
+                            const key = `${r.type}:${value}`;
+                            if (!seen.has(key)) {
+                                seen.add(key);
+                                result.other.push({
+                                    type: DNS_TYPE_NAMES[r.type] || `TYPE${r.type}`,
+                                    value,
+                                });
+                            }
+                        }
                     }
                 }
             }
         } catch { /* continue */ }
+    }
+
+    // If we found a CNAME in the chain, clear the other records
+    // since they're just the resolved values of the CNAME target
+    if (result.cname) {
+        result.other = [];
     }
 
     return result;
@@ -159,7 +176,6 @@ async function advanceClaim(claim: any, env: Env): Promise<AdvanceResult> {
         return { status: 'error', error: 'CF API not configured', code: 500 };
     }
 
-    const hostname = `letsident.${claim.domain}`;
     const cf = new CloudflareCustomHostnames(env.CF_API_TOKEN, env.CF_ZONE_ID);
 
     if (!claim.cf_hostname_id) {

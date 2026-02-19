@@ -88,16 +88,132 @@ function SignupInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
 
             {/* Step 5: Done */}
             {step === 'done' && (
-                <div style={{
-                    background: '#f0fdf4',
-                    border: '1px solid #bbf7d0',
-                    borderRadius: '0.5rem',
-                    padding: '1.5rem',
-                }}>
-                    <h2 style={{ color: '#166534', marginBottom: '0.5rem' }}>Domain Active</h2>
-                    <p style={{ color: '#15803d', fontSize: '0.875rem' }}>
-                        <strong>{domain}</strong> is live with Gratos passkey authentication.
-                    </p>
+                <div>
+                    <div style={{
+                        background: '#f0fdf4',
+                        border: '1px solid #bbf7d0',
+                        borderRadius: '0.5rem',
+                        padding: '1.5rem',
+                        marginBottom: '1.5rem',
+                    }}>
+                        <h2 style={{ color: '#166534', marginBottom: '0.5rem' }}>Domain Active</h2>
+                        <p style={{ color: '#15803d', fontSize: '0.875rem' }}>
+                            <strong>{domain}</strong> is live with Gratos passkey authentication.
+                        </p>
+                    </div>
+
+                    <div style={{
+                        background: '#fff',
+                        border: '1px solid #e4e4e7',
+                        borderRadius: '0.5rem',
+                        padding: '1.5rem',
+                        marginBottom: '1rem',
+                    }}>
+                        <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem' }}>
+                            Try the demo
+                        </h3>
+                        <p style={{ color: '#52525b', fontSize: '0.875rem', lineHeight: 1.6, marginBottom: '0.75rem' }}>
+                            See passkey auth in action on your domain:
+                        </p>
+                        <a
+                            href={`https://${cnameName}.${domain}/demo`}
+                            target="_blank"
+                            rel="noopener"
+                            style={{
+                                display: 'inline-block',
+                                padding: '0.5rem 1rem',
+                                background: '#18181b',
+                                color: '#fff',
+                                textDecoration: 'none',
+                                borderRadius: '0.375rem',
+                                fontSize: '0.875rem',
+                                fontWeight: 600,
+                            }}
+                        >
+                            Open Demo
+                        </a>
+                    </div>
+
+                    <div style={{
+                        background: '#fff',
+                        border: '1px solid #e4e4e7',
+                        borderRadius: '0.5rem',
+                        padding: '1.5rem',
+                        marginBottom: '1rem',
+                    }}>
+                        <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem' }}>
+                            Add to your app
+                        </h3>
+                        <p style={{ color: '#52525b', fontSize: '0.875rem', lineHeight: 1.6, marginBottom: '1rem' }}>
+                            Install the Preact widget library and add passkey auth to your app.
+                        </p>
+
+                        <div style={{ marginBottom: '1rem' }}>
+                            <div style={{ color: '#71717a', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.375rem' }}>
+                                Install
+                            </div>
+                            <pre style={{
+                                background: '#f4f4f5',
+                                padding: '0.75rem',
+                                borderRadius: '0.375rem',
+                                fontSize: '0.8rem',
+                                fontFamily: 'monospace',
+                                overflowX: 'auto',
+                            }}>
+                                <code>npm install @gratos/preact</code>
+                            </pre>
+                        </div>
+
+                        <div>
+                            <div style={{ color: '#71717a', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.375rem' }}>
+                                Usage
+                            </div>
+                            <pre style={{
+                                background: '#f4f4f5',
+                                padding: '0.75rem',
+                                borderRadius: '0.375rem',
+                                fontSize: '0.8rem',
+                                fontFamily: 'monospace',
+                                overflowX: 'auto',
+                                whiteSpace: 'pre',
+                                lineHeight: 1.5,
+                            }}>
+                                <code>{`import { AuthProvider, LoginButton,
+  RegisterButton, LogoutButton,
+  useAuth } from '@gratos/preact';
+
+function App() {
+  return (
+    <AuthProvider
+      apiBaseUrl="https://${cnameName}.${domain}"
+    >
+      <RegisterButton />
+      <LoginButton />
+      <LogoutButton />
+    </AuthProvider>
+  );
+}`}</code>
+                            </pre>
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.75rem' }}>
+                        <a
+                            href="/domains"
+                            style={{
+                                padding: '0.5rem 1rem',
+                                background: '#f4f4f5',
+                                border: '1px solid #d4d4d8',
+                                borderRadius: '0.375rem',
+                                fontSize: '0.875rem',
+                                color: '#18181b',
+                                textDecoration: 'none',
+                                fontWeight: 600,
+                            }}
+                        >
+                            My Domains
+                        </a>
+                    </div>
                 </div>
             )}
         </div>
