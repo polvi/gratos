@@ -31,7 +31,7 @@
 		"prod": {
 			"vars": {
 				"CF_ZONE_ID": "55ba510e429ec4305a3cf947aef59e41",
-				"CORS_ALLOW_ORIGIN": "https://dash.letsident.org",
+				"CORS_ALLOW_ORIGIN": "https://letsident.org",
 				"AUTH_TENANT": "letsident.org"
 			},
 			"routes": [

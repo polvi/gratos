@@ -20,7 +20,7 @@
 			},
 			"routes": [
 				{
-					"pattern": "dash.letsident.org",
+					"pattern": "letsident.org",
 					"custom_domain": true
 				}
 			]
