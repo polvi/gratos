@@ -2,6 +2,8 @@
 
 Per-app passkey authentication via CNAME. No shared identity, no passwords, no usernames on the server. Each domain pointing to Gratos is its own isolated tenant.
 
+Currently powering letsident.org
+
 Inspired by [Ory Kratos](https://www.ory.sh/kratos/), built on [WebAuthn](https://webauthn.guide/).
 
 ## How It Works
