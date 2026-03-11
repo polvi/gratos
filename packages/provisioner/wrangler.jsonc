@@ -43,7 +43,7 @@
 			"services": [
 				{
 					"binding": "AUTH",
-					"service": "gratos-multi",
+					"service": "gratos-multi-prod",
 					"entrypoint": "AuthRPC"
 				}
 			],
