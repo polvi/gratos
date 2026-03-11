@@ -7,7 +7,7 @@
         "start": "astro dev --port 4322",
         "build": "astro build",
         "preview": "astro preview",
-        "deploy": "astro build && wrangler deploy --env prod",
+        "deploy": "bun run --cwd ../preact build && astro build && wrangler deploy --env prod",
         "astro": "astro"
     },
     "dependencies": {
