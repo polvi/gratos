@@ -98,7 +98,7 @@ function SignupInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
                     }}>
                         <h2 style={{ color: '#166534', marginBottom: '0.5rem' }}>Domain Active</h2>
                         <p style={{ color: '#15803d', fontSize: '0.875rem' }}>
-                            <strong>{domain}</strong> is live with Gratos passkey authentication.
+                            <strong>{domain}</strong> is live with passkey authentication.
                         </p>
                     </div>
 
