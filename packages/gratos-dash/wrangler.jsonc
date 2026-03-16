@@ -1,6 +1,6 @@
 {
 	"name": "gratos-dash",
-	"main": "./dist/_worker.js/index.js",
+	"main": "@astrojs/cloudflare/entrypoints/server",
 	"compatibility_date": "2026-02-18",
 	"compatibility_flags": [
 		"nodejs_compat"

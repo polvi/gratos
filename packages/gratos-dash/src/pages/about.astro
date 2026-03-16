@@ -1,0 +1,131 @@
+---
+import Layout from "../layouts/Layout.astro";
+---
+
+<Layout title="About — Let's Ident">
+  <style>
+    .about {
+      margin: 2rem 0 4rem;
+    }
+    .about h1 {
+      font-size: 2rem;
+      font-weight: 800;
+      margin-bottom: 1.5rem;
+    }
+    .about h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-top: 2rem;
+      margin-bottom: 1rem;
+    }
+    .about h3 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-top: 1.5rem;
+      margin-bottom: 0.75rem;
+    }
+    .about p {
+      font-size: 1.05rem;
+      color: #52525b;
+      line-height: 1.7;
+      margin-bottom: 1.25rem;
+    }
+    .about a {
+      color: #2563eb;
+      text-decoration: none;
+      transition: color 0.15s ease;
+      font-weight: 500;
+    }
+    .about a:hover {
+      color: #1d4ed8;
+      text-decoration: underline;
+    }
+  </style>
+
+  <div class="about">
+    <h1>About</h1>
+
+    <p>
+      Let's Ident is zero-knowledge, serverless, headless passkey
+      authentication. Powered by the open source <a
+        href="https://github.com/polvi/gratos">Gratos</a
+      > project, it stores only public key material. User identity lives in your application;
+      we handle the complexity of WebAuthn credential storage and session management.
+    </p>
+
+    <p>
+      Let's Ident is inspired by <a
+        href="https://letsencrypt.org"
+        target="_blank"
+        rel="noopener">Let's Encrypt</a
+      >, but for authentication. It is not affiliated with the <a
+        href="https://www.abetterinternet.org"
+        target="_blank"
+        rel="noopener">ISRG</a
+      > in any way. The goal is simple, make it really easy to add a one click authentication
+      experience to any website. This includes static websites.
+    </p>
+
+    <p>
+      Sessions are becoming increasingly more important because of automated
+      scraping. However right now sessions are a pain to implement, because they
+      are heavy weight and generally require users to disclose their name,
+      email, and likely more information.
+    </p>
+
+    <p>
+      We leverage WebAuthn and passkeys to provide the most secure and
+      frictionless experience available today. Built around Public Key
+      Infrastructure (PKI), passkeys allow you to create secure sessions without
+      requiring users to disclose sensitive personal information. It's not just
+      the most secure option—it's also the easiest to use, letting you get
+      straight to building your core product.
+    </p>
+
+    <h2>FAQ</h2>
+
+    <h3>What is zero knowledge identity (ZKI)?</h3>
+    <p>
+      ZKI is when you have a stable authentication method, but you do not know
+      who the user is. You just know you have the same returning user. This
+      works by leveraging the public key infrastructure (PKI) of webauthn. Let's
+      Ident manages the passkey ceremonies and provides sessions on your own
+      domain.
+    </p>
+
+    <h3>How can I identify my user if I do not have their email?</h3>
+    <p>
+      You will eventually get your users' information, however it will happen
+      when the user wants to give it, not when you force them to hand it to you.
+      For example, if they want to buy your service, they will go through a
+      checkout process and disclose their information then. You keep this data
+      in your database. Let's Ident is just serving you a stable UUID that you
+      can use on your side.
+    </p>
+
+    <h3>What is progressive disclosure?</h3>
+    <p>
+      Progressive disclosure is the principle that users shouldn't be forced to
+      share their data until it's absolutely necessary. With Let's Ident, you
+      can authenticate users and create accounts instantly. You only request
+      sensitive information (like name or email) when there's a clear reason to
+      provide it. This data lives where it belongs: in your database, not ours.
+    </p>
+
+    <h3>Aren’t passkeys meant for second-factor authentication?</h3>
+    <p>
+      Passkeys are popularly used as a second factor authenication method,
+      however they do not need to be. Infact, if you have a passkey enabled with
+      Google, it will now use it as a first factor. Let's Ident shifts passkeys
+      to be first factor by default.
+    </p>
+    <h3>How do you make money?</h3>
+    <p>
+      Our service is free to use. Our software is free and open source and
+      available on <a href="https://github.com/polvi/gratos">GitHub</a>. It is
+      licensed under the AGPLv3. You are free to run this service yourself, as
+      long as any modifications are submitted back to us per the AGPLv3. If you
+      would like an alternative license, we are happy to sell you one.
+    </p>
+  </div>
+</Layout>

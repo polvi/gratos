@@ -1,0 +1,85 @@
+---
+interface Props {
+  title: string;
+}
+
+const { title } = Astro.props;
+const pathname = Astro.url.pathname;
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width" />
+    <title>{title}</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: system-ui, sans-serif;
+        background: #fafafa;
+        color: #18181b;
+      }
+      .container {
+        max-width: 640px;
+        margin: 0 auto;
+        padding: 0 2rem;
+      }
+      nav {
+        padding: 2rem 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      nav .logo {
+        font-weight: 800;
+        font-size: 1.1rem;
+        text-decoration: none;
+        color: #18181b;
+      }
+      nav .links {
+        display: flex;
+        gap: 1.5rem;
+      }
+      nav .links a {
+        text-decoration: none;
+        color: #52525b;
+        font-size: 0.9rem;
+        font-weight: 500;
+      }
+      nav .links a:hover {
+        color: #18181b;
+      }
+      nav .links a.active {
+        color: #18181b;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <nav>
+        <a href="/" class="logo">Let's Ident</a>
+        <div class="links">
+          <a
+            href="/signup"
+            class:list={[
+              { active: pathname === "/signup" || pathname === "/signup/" },
+            ]}>Get Started</a
+          >
+          <a
+            href="/about"
+            class:list={[
+              { active: pathname === "/about" || pathname === "/about/" },
+            ]}>About</a
+          >
+        </div>
+      </nav>
+      <slot />
+    </div>
+  </body>
+</html>

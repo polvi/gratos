@@ -4,10 +4,5 @@ import cloudflare from '@astrojs/cloudflare';
 
 export default defineConfig({
     integrations: [preact()],
-    adapter: cloudflare(),
-    image: {
-        service: {
-            entrypoint: 'astro/assets/services/noop'
-        }
-    }
+    adapter: cloudflare()
 });

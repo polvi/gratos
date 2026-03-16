@@ -1,62 +1,56 @@
 ---
+import Layout from "../layouts/Layout.astro";
 ---
 
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width" />
-    <title>Let's Ident — Passwordless Auth for Your Domain</title>
-    <style>
-      * { margin: 0; padding: 0; box-sizing: border-box; }
-      body { font-family: system-ui, sans-serif; background: #fafafa; color: #18181b; }
-      .hero {
-        max-width: 640px;
-        margin: 6rem auto;
-        padding: 0 2rem;
-        text-align: center;
-      }
-      .hero h1 {
-        font-size: 2.5rem;
-        font-weight: 800;
-        margin-bottom: 1rem;
-      }
-      .hero p {
-        font-size: 1.15rem;
-        color: #52525b;
-        line-height: 1.7;
-        margin-bottom: 2rem;
-      }
-      .cta {
-        display: inline-block;
-        padding: 0.75rem 2rem;
-        background: #18181b;
-        color: #fff;
-        text-decoration: none;
-        border-radius: 0.5rem;
-        font-weight: 600;
-        font-size: 1rem;
-      }
-      .cta:hover { background: #27272a; }
-      .cta.secondary {
-        background: transparent;
-        color: #18181b;
-        border: 1px solid #d4d4d8;
-        margin-left: 0.75rem;
-      }
-      .cta.secondary:hover { background: #f4f4f5; }
-    </style>
-  </head>
-  <body>
-    <div class="hero">
-      <h1>Passwordless auth for your domain</h1>
-      <p>
-        Let's Ident provisions passkey authentication on your custom domain.
-        No passwords, no usernames stored on the server. Just point your
-        CNAME and you're live.
-      </p>
-      <a href="/signup" class="cta">Get Started</a>
-      <a href="/domains" class="cta secondary">My Domains</a>
-    </div>
-  </body>
-</html>
+<Layout title="Let's Ident — Passwordless Auth for Your Domain">
+  <style>
+    .hero {
+      margin: 4rem 0 6rem;
+      text-align: left;
+    }
+    .hero h1 {
+      font-size: 2.5rem;
+      font-weight: 800;
+      margin-bottom: 1rem;
+    }
+    .hero p {
+      font-size: 1.15rem;
+      color: #52525b;
+      line-height: 1.7;
+      margin-bottom: 2rem;
+    }
+    .cta {
+      display: inline-block;
+      padding: 0.75rem 2rem;
+      background: #18181b;
+      color: #fff;
+      text-decoration: none;
+      border-radius: 0.5rem;
+      font-weight: 600;
+      font-size: 1rem;
+    }
+    .cta:hover {
+      background: #27272a;
+    }
+    .cta.secondary {
+      background: transparent;
+      color: #18181b;
+      border: 1px solid #d4d4d8;
+      margin-left: 0.75rem;
+    }
+    .cta.secondary:hover {
+      background: #f4f4f5;
+    }
+  </style>
+
+  <div class="hero">
+    <h1>Zero Knowledge Identity</h1>
+    <p>
+      Let's Ident is a hosted, free and open source, first-party authentication
+      service for the post-password era. It provides modern, privacy-focused
+      user authentication using passkeys.
+    </p>
+    <a href="/signup" class="cta">Get Started</a>
+    <a href="/domains" class="cta secondary">My Domains</a>
+  </div>
+</Layout>
