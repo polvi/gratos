@@ -34,6 +34,8 @@ const pathname = Astro.url.pathname;
         display: flex;
         align-items: center;
         justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 1rem;
       }
       nav .logo {
         font-weight: 800;
@@ -43,7 +45,9 @@ const pathname = Astro.url.pathname;
       }
       nav .links {
         display: flex;
-        gap: 1.5rem;
+        gap: 1rem;
+        align-items: center;
+        flex-wrap: wrap;
       }
       nav .links a {
         text-decoration: none;
@@ -51,10 +55,20 @@ const pathname = Astro.url.pathname;
         font-size: 0.9rem;
         font-weight: 500;
       }
-      nav .links a:hover {
+      nav .links a.nav-button {
+        background: #18181b;
+        color: #fff;
+        padding: 0.4rem 0.8rem;
+        border-radius: 0.375rem;
+        font-weight: 600;
+      }
+      nav .links a.nav-button:hover {
+        background: #27272a;
+      }
+      nav .links a:hover:not(.nav-button) {
         color: #18181b;
       }
-      nav .links a.active {
+      nav .links a.active:not(.nav-button) {
         color: #18181b;
         font-weight: 600;
       }
@@ -66,16 +80,23 @@ const pathname = Astro.url.pathname;
         <a href="/" class="logo">Let's Ident</a>
         <div class="links">
           <a
+            href="/about"
+            class:list={[
+              { active: pathname === "/about" || pathname === "/about/" },
+            ]}>About</a
+          >
+          <a
             href="/signup"
             class:list={[
               { active: pathname === "/signup" || pathname === "/signup/" },
             ]}>Get Started</a
           >
           <a
-            href="/about"
+            href="/login"
+            class="nav-button"
             class:list={[
-              { active: pathname === "/about" || pathname === "/about/" },
-            ]}>About</a
+              { active: pathname === "/login" || pathname === "/login/" },
+            ]}>Log In</a
           >
         </div>
       </nav>
