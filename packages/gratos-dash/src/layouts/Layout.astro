@@ -1,10 +1,14 @@
 ---
+import { env } from "cloudflare:workers";
+import { NavButton } from '../components/NavButton';
+
 interface Props {
   title: string;
 }
 
 const { title } = Astro.props;
 const pathname = Astro.url.pathname;
+const apiBaseUrl = env.PUBLIC_GRATOS_SERVER || import.meta.env.PUBLIC_GRATOS_SERVER;
 ---
 
 <html lang="en">
@@ -58,14 +62,21 @@ const pathname = Astro.url.pathname;
         font-size: 0.9rem;
         font-weight: 500;
       }
-      nav .links a.nav-button {
+      nav .links :global(.nav-button) {
         background: #18181b;
         color: #fff;
         padding: 0.4rem 0.8rem;
         border-radius: 0.375rem;
         font-weight: 600;
+        border: none;
+        cursor: pointer;
+        font-family: inherit;
+        font-size: 0.9rem;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
       }
-      nav .links a.nav-button:hover {
+      nav .links :global(.nav-button:hover) {
         background: #27272a;
       }
       nav .links a:hover:not(.nav-button) {
@@ -110,13 +121,7 @@ const pathname = Astro.url.pathname;
               { active: pathname === "/signup" || pathname === "/signup/" },
             ]}>Get Started</a
           >
-          <a
-            href="/login"
-            class="nav-button"
-            class:list={[
-              { active: pathname === "/login" || pathname === "/login/" },
-            ]}>Log In</a
-          >
+          <NavButton client:load apiBaseUrl={apiBaseUrl} currentPath={pathname} />
         </div>
       </nav>
       <slot />

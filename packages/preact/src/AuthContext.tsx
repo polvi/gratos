@@ -11,7 +11,7 @@ interface AuthContextType {
     isLoading: boolean;
     isAuthenticated: boolean;
     login: (user: User) => void;
-    logout: () => void;
+    logout: () => Promise<void>;
     apiBaseUrl: string;
 }
 
@@ -57,11 +57,15 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
         setUser(finalUser);
     };
 
-    const logout = () => {
+    const logout = async () => {
         setUser(null);
         // also call server logout
         if (apiBaseUrl) {
-            fetch(`${apiBaseUrl}/logout`, { method: 'POST', credentials: 'include' }).catch(console.error);
+            try {
+                await fetch(`${apiBaseUrl}/logout`, { method: 'POST', credentials: 'include' });
+            } catch (error) {
+                console.error('Failed to log out on server:', error);
+            }
         }
     };
 

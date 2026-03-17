@@ -14,7 +14,7 @@ function LoginInner() {
     }, [isAuthenticated]);
 
     return (
-        <div style={{ maxWidth: '400px', margin: '4rem auto', padding: '0 1.5rem', textAlign: 'left' }}>
+        <div style={{ width: '100%', margin: '2rem 0', textAlign: 'left' }}>
             <h1 style={{ fontSize: '1.75rem', fontWeight: 700, marginBottom: '0.75rem' }}>
                 Welcome Back
             </h1>

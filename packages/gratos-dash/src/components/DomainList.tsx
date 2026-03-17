@@ -75,33 +75,19 @@ function DomainListInner({ provisionerBaseUrl }: { provisionerBaseUrl: string })
     };
 
     if (!isAuthenticated) {
-        return (
-            <div style={{ maxWidth: '480px', margin: '3rem auto', padding: '0 1.5rem' }}>
-                <h1 style={{ fontSize: '1.75rem', fontWeight: 700, marginBottom: '0.5rem' }}>
-                    Your Domains
-                </h1>
-                <p style={{ color: '#52525b', marginBottom: '2rem', lineHeight: 1.6 }}>
-                    Sign in to manage your connected domains.
-                </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    <LoginButton />
-                    <div style={{ textAlign: 'center', color: '#a1a1aa', fontSize: '0.875rem' }}>or</div>
-                    <RegisterButton />
-                </div>
-            </div>
-        );
+        return null; // Handled by middleware redirect
     }
 
     if (loading) {
         return (
-            <div style={{ maxWidth: '480px', margin: '3rem auto', padding: '0 1.5rem', textAlign: 'center' }}>
+            <div style={{ margin: '2rem 0', textAlign: 'center' }}>
                 <p style={{ color: '#71717a' }}>Loading...</p>
             </div>
         );
     }
 
     return (
-        <div style={{ maxWidth: '480px', margin: '3rem auto', padding: '0 1.5rem' }}>
+        <div style={{ width: '100%', margin: '2rem 0' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <h1 style={{ fontSize: '1.75rem', fontWeight: 700 }}>Your Domains</h1>
                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -119,20 +105,6 @@ function DomainListInner({ provisionerBaseUrl }: { provisionerBaseUrl: string })
                     >
                         Add Domain
                     </a>
-                    <button
-                        onClick={() => logout()}
-                        style={{
-                            padding: '0.5rem 0.75rem',
-                            background: 'none',
-                            border: '1px solid #d4d4d8',
-                            borderRadius: '0.375rem',
-                            fontSize: '0.875rem',
-                            color: '#71717a',
-                            cursor: 'pointer',
-                        }}
-                    >
-                        Log out
-                    </button>
                 </div>
             </div>
 

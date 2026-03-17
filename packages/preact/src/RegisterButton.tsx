@@ -124,6 +124,9 @@ export function RegisterButton() {
                     {status || 'Register'}
                 </button>
             </div>
+            <div style={{ fontSize: '0.75rem', color: '#a1a1aa', marginTop: '0.5rem', lineHeight: 1.4 }}>
+                Your username is only used locally to label your passkey. It is never sent to or stored by the server.
+            </div>
             {!window.isSecureContext && (
                 <div style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: '6px', textAlign: 'center', background: '#fee2e2', padding: '4px', borderRadius: '4px' }}>
                     ⚠️ Not Secure Context. HTTPS required.

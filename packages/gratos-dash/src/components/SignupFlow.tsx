@@ -22,7 +22,7 @@ function SignupInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
     }, [step, isAuthenticated, claimId]);
 
     return (
-        <div style={{ maxWidth: '480px', margin: '3rem auto', padding: '0 1.5rem' }}>
+        <div style={{ width: '100%', margin: '2rem 0' }}>
             {/* Step 1: EnterDomain — anon, DB only */}
             {step === 'domain' && (
                 <>
