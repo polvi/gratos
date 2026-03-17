@@ -8,10 +8,6 @@
 	"assets": {
 		"directory": "./dist"
 	},
-	"vars": {
-		"PUBLIC_GRATOS_SERVER": "http://localhost:8789",
-		"PUBLIC_PROVISIONER_SERVER": "http://localhost:8788"
-	},
 	"env": {
 		"prod": {
 			"vars": {
