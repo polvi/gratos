@@ -2,11 +2,14 @@ import { defineMiddleware } from "astro:middleware";
 
 export const onRequest = defineMiddleware(async (context, next) => {
     // Only intercept requests for the /domains path
+    console.log(`[Middleware] in middleware`);
     if (context.url.pathname.startsWith("/domains")) {
         console.log(`[Middleware] Intercepting request for: ${context.url.pathname}`);
         
-        // Read the API URL from environment
-        const apiBaseUrl = import.meta.env.PUBLIC_GRATOS_SERVER;
+        // Read the API URL from environment (Cloudflare runtime fallback to build-time)
+        // @ts-ignore - runtime is injected by Astro Cloudflare adapter
+        const env = context.locals.runtime?.env || import.meta.env;
+        const apiBaseUrl = env.PUBLIC_GRATOS_SERVER;
         console.log(`[Middleware] Using API Server: ${apiBaseUrl}`);
         
         // Grab the cookie header from the inbound request
