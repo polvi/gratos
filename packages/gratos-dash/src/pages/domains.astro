@@ -1,15 +1,16 @@
 ---
 import Layout from "../layouts/Layout.astro";
 import { DomainList } from "../components/DomainList";
+import { env } from "cloudflare:workers";
 
-// Allow reading from Cloudflare runtime for dynamic variables
-const env = (Astro.locals as any).runtime?.env || import.meta.env;
+const apiBaseUrl = env.PUBLIC_GRATOS_SERVER || import.meta.env.PUBLIC_GRATOS_SERVER;
+const provisionerBaseUrl = env.PUBLIC_PROVISIONER_SERVER || import.meta.env.PUBLIC_PROVISIONER_SERVER;
 ---
 
 <Layout title="Domains">
   <DomainList
     client:only="preact"
-    apiBaseUrl={env.PUBLIC_GRATOS_SERVER}
-    provisionerBaseUrl={env.PUBLIC_PROVISIONER_SERVER}
+    apiBaseUrl={apiBaseUrl}
+    provisionerBaseUrl={provisionerBaseUrl}
   />
 </Layout>

@@ -1,14 +1,14 @@
 ---
 import Layout from "../../layouts/Layout.astro";
 import { LoginFlow } from "../../components/LoginFlow";
+import { env } from "cloudflare:workers";
 
-// Allow reading from Cloudflare runtime for dynamic variables
-const env = (Astro.locals as any).runtime?.env || import.meta.env;
+const apiBaseUrl = env.PUBLIC_GRATOS_SERVER || import.meta.env.PUBLIC_GRATOS_SERVER;
 ---
 
 <Layout title="Log In">
   <LoginFlow
     client:only="preact"
-    apiBaseUrl={env.PUBLIC_GRATOS_SERVER}
+    apiBaseUrl={apiBaseUrl}
   />
 </Layout>

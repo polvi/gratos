@@ -1,25 +1,29 @@
 {
-	"name": "gratos-dash",
-	"main": "@astrojs/cloudflare/entrypoints/server",
-	"compatibility_date": "2026-02-18",
-	"compatibility_flags": [
-		"nodejs_compat"
-	],
-	"assets": {
-		"directory": "./dist"
-	},
-	"env": {
-		"prod": {
-			"vars": {
-				"PUBLIC_GRATOS_SERVER": "https://letsident.letsident.org",
-				"PUBLIC_PROVISIONER_SERVER": "https://provision.api.letsident.org"
-			},
-			"routes": [
-				{
-					"pattern": "letsident.org",
-					"custom_domain": true
-				}
-			]
-		}
-	}
+  "name": "gratos-dash",
+  "main": "@astrojs/cloudflare/entrypoints/server",
+  "compatibility_date": "2026-02-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist",
+  },
+  "observability": {
+    "logs": {
+      "enabled": false,
+      "invocation_logs": true,
+    },
+  },
+  "env": {
+    "prod": {
+      "vars": {
+        "PUBLIC_GRATOS_SERVER": "https://letsident.letsident.org",
+        "PUBLIC_PROVISIONER_SERVER": "https://provision.api.letsident.org",
+      },
+      "routes": [
+        {
+          "pattern": "letsident.org",
+          "custom_domain": true,
+        },
+      ],
+    },
+  },
 }
