@@ -5,6 +5,8 @@ import { env } from "cloudflare:workers";
 
 const apiBaseUrl = env.PUBLIC_GRATOS_SERVER || import.meta.env.PUBLIC_GRATOS_SERVER;
 const provisionerBaseUrl = env.PUBLIC_PROVISIONER_SERVER || import.meta.env.PUBLIC_PROVISIONER_SERVER;
+
+export const prerender = false;
 ---
 
 <Layout title="Domains">
