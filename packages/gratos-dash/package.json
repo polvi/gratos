@@ -13,6 +13,7 @@
     "dependencies": {
         "@astrojs/cloudflare": "13.1.2",
         "@astrojs/preact": "5.0.1",
+        "@astrojs/sitemap": "^3.7.1",
         "@gratos/preact": "workspace:*",
         "@simplewebauthn/browser": "^13.3.0",
         "astro": "6.0.5",
