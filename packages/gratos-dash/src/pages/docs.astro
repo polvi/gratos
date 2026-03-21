@@ -44,7 +44,7 @@ const verRes = await fetch(API + '/register/verify', {
 });
 const result = await verRes.json();
 // result: { verified: true, user: { id: "&lt;uuid&gt;" } }
-// A session_id cookie is now set.`;
+// A session_id cookie is now set on your domain.`;
 
 const loginCodeExample = `import { startAuthentication } from '@simplewebauthn/browser';
 
@@ -66,7 +66,7 @@ const verRes = await fetch(API + '/login/verify', {
 });
 const result = await verRes.json();
 // result: { verified: true, user: { id: "&lt;uuid&gt;" } }
-// A session_id cookie is now set.`;
+// A session_id cookie is now set on your domain.`;
 
 const checkAuthExample = `const res = await fetch('https://authgravity.myapp.com/whoami', {
   credentials: 'include',
@@ -99,6 +99,89 @@ export const onRequest = defineMiddleware(async (context, next) =&gt; {
   }
 
   return next();
+});`;
+
+const schemaExample = `CREATE TABLE users (
+  id TEXT PRIMARY KEY,        -- the UUID from AuthGravity
+  email TEXT,                 -- collected later, when the user provides it
+  name TEXT,                  -- collected later
+  stripe_customer_id TEXT,    -- set after first purchase
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);`;
+
+const firstSightExample = `// In your backend, after calling /whoami
+const { user_id } = await authRes.json();
+
+let user = await db.get('SELECT * FROM users WHERE id = ?', user_id);
+if (!user) {
+  await db.run('INSERT INTO users (id) VALUES (?)', user_id);
+  user = { id: user_id };
+}`;
+
+const stripeCheckoutExample = `// POST /api/subscribe handler
+app.post('/api/subscribe', async (req, res) =&gt; {
+  // Validate the session via AuthGravity
+  const cookieHeader = req.headers.cookie;
+  const authRes = await fetch('https://authgravity.myapp.com/whoami', {
+    headers: cookieHeader ? { cookie: cookieHeader } : {},
+  });
+
+  if (!authRes.ok) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  const { user_id } = await authRes.json();
+
+  // Ensure user exists in your database
+  let user = await db.get('SELECT * FROM users WHERE id = ?', user_id);
+  if (!user) {
+    await db.run('INSERT INTO users (id) VALUES (?)', user_id);
+    user = { id: user_id };
+  }
+
+  // Create or reuse a Stripe customer
+  let stripeCustomerId = user.stripe_customer_id;
+  if (!stripeCustomerId) {
+    const customer = await stripe.customers.create({
+      metadata: { authgravity_user_id: user_id },
+    });
+    stripeCustomerId = customer.id;
+    await db.run(
+      'UPDATE users SET stripe_customer_id = ? WHERE id = ?',
+      stripeCustomerId, user_id
+    );
+  }
+
+  // Create a Checkout session
+  const session = await stripe.checkout.sessions.create({
+    customer: stripeCustomerId,
+    mode: 'subscription',
+    line_items: [{ price: 'price_xxx', quantity: 1 }],
+    success_url: 'https://myapp.com/dashboard?session_id={CHECKOUT_SESSION_ID}',
+    cancel_url: 'https://myapp.com/pricing',
+  });
+
+  res.json({ url: session.url });
+});`;
+
+const stripeWebhookExample = `// POST /webhooks/stripe handler
+app.post('/webhooks/stripe', async (req, res) =&gt; {
+  const event = stripe.webhooks.constructEvent(
+    req.body, req.headers['stripe-signature'], webhookSecret
+  );
+
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object;
+    const customer = await stripe.customers.retrieve(session.customer);
+
+    // Update your user record with the email Stripe collected
+    await db.run(
+      'UPDATE users SET email = ? WHERE stripe_customer_id = ?',
+      customer.email, session.customer
+    );
+  }
+
+  res.json({ received: true });
 });`;
 
 const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
@@ -177,24 +260,6 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
       font-size: inherit;
       color: inherit;
     }
-    .docs table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 1.25rem;
-      font-size: 0.95rem;
-    }
-    .docs th, .docs td {
-      text-align: left;
-      padding: 0.5rem 0.75rem;
-      border-bottom: 1px solid #e4e4e7;
-    }
-    .docs th {
-      font-weight: 600;
-      color: #18181b;
-    }
-    .docs td {
-      color: #52525b;
-    }
     .docs ul, .docs ol {
       margin-bottom: 1.25rem;
       padding-left: 1.5rem;
@@ -225,6 +290,18 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
       <a href="/llms.txt" class="llms-link">llms.txt - machine-readable version of these docs</a>
     </p>
 
+    <h2>How It Works</h2>
+
+    <p>
+      AuthGravity runs on your domain via a CNAME record. This means:
+    </p>
+
+    <ul>
+      <li><strong>First-party cookies</strong>: the session cookie is set on your own domain (e.g., <code>.myapp.com</code>), not a third-party domain. Your browser sends it automatically on every request to any subdomain.</li>
+      <li><strong>Your own Relying Party (RP)</strong>: the WebAuthn RP ID is your registrable domain (e.g., <code>myapp.com</code>), so passkeys created through AuthGravity work across all your subdomains.</li>
+      <li><strong>Server-side session checks</strong>: because the cookie lives on your domain, your backend can validate sessions by forwarding it to the AuthGravity <code>/whoami</code> endpoint - no tokens to manage, no JWTs to verify.</li>
+    </ul>
+
     <h2>Setup</h2>
 
     <ol>
@@ -235,8 +312,8 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
     <pre><code set:html={cnameExample} /></pre>
 
     <p>
-      The target is a unique token generated for your claim (e.g., <code>ab3kx7.cname.authgravity.net</code>).
-      This proves you control the domain's DNS.
+      The target is a unique per-claim token (e.g., <code>ab3kx7.cname.authgravity.net</code>)
+      that proves you control the domain's DNS.
     </p>
 
     <ol start="3">
@@ -245,16 +322,15 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
     </ol>
 
     <p>
-      Every domain gets its own isolated user pool.
-      A user registered on <code>authgravity.foo.com</code> has no relationship to a user on <code>authgravity.bar.com</code>.
+      Each domain gets its own isolated user pool.
+      A user on <code>authgravity.foo.com</code> has no relationship to a user on <code>authgravity.bar.com</code>.
     </p>
 
     <h2>HTTP API</h2>
 
     <p>
       All endpoints are relative to your auth endpoint (e.g., <code>https://authgravity.myapp.com</code>).
-      Sessions are managed via <code>httpOnly</code>, <code>secure</code>, <code>sameSite=None</code> cookies.
-      Include credentials on every request from the browser.
+      Include <code>credentials: 'include'</code> on every fetch from the browser so the session cookie is sent.
     </p>
 
     <h3>Registration</h3>
@@ -272,7 +348,7 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
 
     <pre><code set:html={registerVerifyExample} /></pre>
 
-    <p>Returns <code set:html={verifiedResult} /> and sets a <code>session_id</code> cookie.</p>
+    <p>Returns <code set:html={verifiedResult} /> and sets a <code>session_id</code> cookie on your domain.</p>
 
     <h3>Authentication (Login)</h3>
 
@@ -288,7 +364,7 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
 
     <pre><code set:html={loginVerifyExample} /></pre>
 
-    <p>Returns <code set:html={verifiedResult} /> and sets a <code>session_id</code> cookie.</p>
+    <p>Returns <code set:html={verifiedResult} /> and sets a <code>session_id</code> cookie on your domain.</p>
 
     <h3>Session Management</h3>
 
@@ -329,16 +405,9 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
     <h2>Server-Side Session Validation</h2>
 
     <p>
-      Your backend can validate the user's session by forwarding the <code>session_id</code> cookie
-      from the incoming request to the <code>/whoami</code> endpoint. This is useful for protecting
-      server-rendered pages or API routes.
-    </p>
-
-    <p>
-      The key detail: forward the raw <code>cookie</code> header from the user's browser request to
-      the AuthGravity <code>/whoami</code> call. The <code>session_id</code> cookie is scoped to the
-      registrable domain (e.g., <code>.myapp.com</code>), so it is sent by the browser on requests
-      to both <code>authgravity.myapp.com</code> and <code>www.myapp.com</code>.
+      Because the <code>session_id</code> cookie is scoped to your registrable domain (e.g., <code>.myapp.com</code>),
+      the browser sends it on requests to both <code>authgravity.myapp.com</code> and <code>www.myapp.com</code>.
+      Your backend can validate the session by forwarding this cookie to the <code>/whoami</code> endpoint.
     </p>
 
     <h3>Astro middleware example</h3>
@@ -349,29 +418,84 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
 
     <pre><code set:html={expressExample} /></pre>
 
-    <h2>Session Model</h2>
+    <h2>Architecting Your App with AuthGravity</h2>
+
+    <p>
+      AuthGravity gives you a stable UUID for each user but stores no personal information.
+      Your app owns the user profile. The pattern is:
+    </p>
+
+    <ol>
+      <li><strong>User registers or logs in</strong> via AuthGravity. You get back a UUID.</li>
+      <li><strong>Your app stores profile data</strong> (name, email, subscription, etc.) in your own database, keyed by that UUID.</li>
+      <li><strong>On each request</strong>, your backend calls <code>/whoami</code> to get the UUID, then looks up the user in your database.</li>
+    </ol>
+
+    <p>
+      This is progressive disclosure: users authenticate instantly with a passkey, and only share
+      personal information when they choose to (e.g., at checkout, when subscribing, when filling out a profile).
+    </p>
+
+    <h3>Your database schema</h3>
+
+    <p>Your users table uses the AuthGravity UUID as the primary key:</p>
+
+    <pre><code set:html={schemaExample} /></pre>
+
+    <p>When a user first authenticates, you may not have a row for them yet. Create one on first sight:</p>
+
+    <pre><code set:html={firstSightExample} /></pre>
+
+    <h3>Example: Stripe Checkout with AuthGravity</h3>
+
+    <p>
+      Here's a complete flow for a SaaS app where a user signs in with a passkey and
+      buys a subscription via Stripe Checkout.
+    </p>
+
+    <p>
+      <strong>Step 1: User lands on your site and authenticates.</strong>
+      The user clicks "Sign in" and completes a passkey ceremony. Your frontend now has a session cookie.
+      No email was required.
+    </p>
+
+    <p>
+      <strong>Step 2: User clicks "Subscribe" - your backend creates a Stripe Checkout session.</strong>
+    </p>
+
+    <pre><code set:html={stripeCheckoutExample} /></pre>
+
+    <p>
+      <strong>Step 3: Stripe collects payment and email.</strong>
+      Stripe Checkout collects the customer's email and payment details. This is where personal
+      information enters your system - from the user's explicit action, not from a forced registration form.
+    </p>
+
+    <p>
+      <strong>Step 4: Stripe webhook updates your database.</strong>
+    </p>
+
+    <pre><code set:html={stripeWebhookExample} /></pre>
+
+    <p>
+      <strong>The result</strong>: the user signed in with zero personal information, browsed your app,
+      decided to buy, and only then shared their email - through Stripe, not through your registration form.
+      Your database now links the AuthGravity UUID to a Stripe customer and an email, all collected progressively.
+    </p>
+
+    <h2>Privacy</h2>
 
     <ul>
-      <li>First-party <code>httpOnly</code>, <code>secure</code> cookie (<code>session_id</code>) scoped to the registrable domain</li>
-      <li>Sessions stored in Cloudflare KV with configurable TTL (default 7 days)</li>
-      <li>Challenges expire after 5 minutes</li>
-      <li>Cookie <code>sameSite=None</code> allows cross-subdomain usage</li>
-      <li>RP ID is the registrable domain (e.g., <code>authgravity.myapp.com</code> -> RP ID <code>myapp.com</code>), so passkeys work across subdomains</li>
-    </ul>
-
-    <h2>Privacy Model</h2>
-
-    <ul>
-      <li>The server generates a UUID for each user and <strong>never stores usernames</strong></li>
+      <li>AuthGravity generates a UUID for each user and <strong>never stores usernames</strong></li>
       <li>Usernames are only used client-side as the WebAuthn authenticator display name</li>
-      <li>The <code>users</code> table contains only <code>id</code> - no email, no name, no PII</li>
-      <li>Credentials table stores the public key, never private key material</li>
+      <li>No email, no name, no PII is stored server-side</li>
+      <li>Only public key material is stored, never private keys</li>
     </ul>
 
     <h2>Source Code</h2>
 
     <p>
-      AuthGravity is powered by <a href="https://github.com/polvi/gratos">Gratos</a>,
+      AuthGravity is powered by the open source <a href="https://github.com/polvi/gratos">Gratos</a> project,
       licensed under the AGPLv3.
     </p>
   </div>

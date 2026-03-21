@@ -2,7 +2,15 @@
 
 > Zero-knowledge, serverless, headless passkey authentication.
 
-AuthGravity is a hosted authentication service powered by the open source Gratos project. It stores only public key material - no passwords, no usernames on the server. User identity lives in your app; AuthGravity handles WebAuthn credential storage and session management via first-party cookies.
+AuthGravity is a hosted passkey authentication service. It stores only public key material - no passwords, no usernames on the server. User identity lives in your app; AuthGravity handles WebAuthn credential storage and session management.
+
+## How It Works
+
+AuthGravity runs on your domain via a CNAME record. This means:
+
+- **First-party cookies**: the session cookie is set on your own domain (e.g., `.myapp.com`), not a third-party domain. Your browser sends it automatically on every request to any subdomain.
+- **Your own Relying Party (RP)**: the WebAuthn RP ID is your registrable domain (e.g., `myapp.com`), so passkeys created through AuthGravity work across all your subdomains.
+- **Server-side session checks**: because the cookie lives on your domain, your backend can validate sessions by forwarding it to the AuthGravity `/whoami` endpoint - no tokens to manage, no JWTs to verify.
 
 ## Setup
 
@@ -15,14 +23,16 @@ Name:   authgravity
 Target: <token>.cname.authgravity.net
 ```
 
-The target is a unique token generated for your claim (e.g., `ab3kx7.cname.authgravity.net`). This proves you control the domain's DNS.
+The target is a unique per-claim token (e.g., `ab3kx7.cname.authgravity.net`) that proves you control the domain's DNS.
 
 3. Add this CNAME record in your DNS provider. AuthGravity polls DNS automatically and activates your domain once the record propagates.
 4. Once active, your auth endpoint is `https://authgravity.myapp.com`.
 
+Each domain gets its own isolated user pool. A user on `authgravity.foo.com` has no relationship to a user on `authgravity.bar.com`.
+
 ## HTTP API
 
-All endpoints are relative to your auth endpoint (e.g., `https://authgravity.myapp.com`). Sessions are managed via `httpOnly`, `secure`, `sameSite=None` cookies. Include credentials on every request from the browser.
+All endpoints are relative to your auth endpoint (e.g., `https://authgravity.myapp.com`). Include `credentials: 'include'` on every fetch from the browser so the session cookie is sent.
 
 ### Registration
 
@@ -48,7 +58,7 @@ Content-Type: application/json
 }
 ```
 
-Returns `{ "verified": true, "user": { "id": "<uuid>" } }` on success. Sets a `session_id` cookie.
+Returns `{ "verified": true, "user": { "id": "<uuid>" } }` on success. Sets a `session_id` cookie on your domain.
 
 ### Authentication (Login)
 
@@ -74,7 +84,7 @@ Content-Type: application/json
 }
 ```
 
-Returns `{ "verified": true, "user": { "id": "<uuid>" } }` on success. Sets a `session_id` cookie.
+Returns `{ "verified": true, "user": { "id": "<uuid>" } }` on success. Sets a `session_id` cookie on your domain.
 
 ### Session Management
 
@@ -114,14 +124,14 @@ import { startRegistration } from '@simplewebauthn/browser';
 const API = 'https://authgravity.myapp.com';
 
 // 1. Fetch options from AuthGravity
-const optRes = await fetch(`${API}/register/options`, { credentials: 'include' });
+const optRes = await fetch(API + '/register/options', { credentials: 'include' });
 const opts = await optRes.json();
 
 // 2. Browser prompts user for passkey (biometric, security key, etc.)
 const attResp = await startRegistration({ optionsJSON: opts });
 
-// 3. Send attestation response back to AuthGravity for verification
-const verRes = await fetch(`${API}/register/verify`, {
+// 3. Send attestation response back for verification
+const verRes = await fetch(API + '/register/verify', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   credentials: 'include',
@@ -129,7 +139,7 @@ const verRes = await fetch(`${API}/register/verify`, {
 });
 const result = await verRes.json();
 // result: { verified: true, user: { id: "<uuid>" } }
-// A session_id cookie is now set.
+// A session_id cookie is now set on your domain.
 ```
 
 ### Login example
@@ -140,14 +150,14 @@ import { startAuthentication } from '@simplewebauthn/browser';
 const API = 'https://authgravity.myapp.com';
 
 // 1. Fetch options from AuthGravity
-const optRes = await fetch(`${API}/login/options`, { credentials: 'include' });
+const optRes = await fetch(API + '/login/options', { credentials: 'include' });
 const opts = await optRes.json();
 
 // 2. Browser prompts user for passkey
 const assertResp = await startAuthentication({ optionsJSON: opts });
 
-// 3. Send assertion response back to AuthGravity for verification
-const verRes = await fetch(`${API}/login/verify`, {
+// 3. Send assertion response back for verification
+const verRes = await fetch(API + '/login/verify', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   credentials: 'include',
@@ -155,7 +165,7 @@ const verRes = await fetch(`${API}/login/verify`, {
 });
 const result = await verRes.json();
 // result: { verified: true, user: { id: "<uuid>" } }
-// A session_id cookie is now set.
+// A session_id cookie is now set on your domain.
 ```
 
 ### Checking auth state from the browser
@@ -174,7 +184,7 @@ if (res.ok) {
 
 ## Server-Side Session Validation
 
-Your backend can validate the user's session by forwarding the `session_id` cookie from the incoming request to the `/whoami` endpoint. This is useful for protecting server-rendered pages or API routes.
+Because the `session_id` cookie is scoped to your registrable domain (e.g., `.myapp.com`), the browser sends it on requests to both `authgravity.myapp.com` and `www.myapp.com`. Your backend can validate the session by forwarding this cookie to the `/whoami` endpoint.
 
 ### Astro middleware example
 
@@ -187,7 +197,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
   if (context.url.pathname.startsWith("/protected")) {
     const cookieHeader = context.request.headers.get("cookie");
 
-    const res = await fetch(`${AUTH_API}/whoami`, {
+    const res = await fetch(AUTH_API + "/whoami", {
       headers: cookieHeader ? { cookie: cookieHeader } : {},
     });
 
@@ -202,8 +212,6 @@ export const onRequest = defineMiddleware(async (context, next) => {
   return next();
 });
 ```
-
-The key detail: forward the raw `cookie` header from the user's browser request to the AuthGravity `/whoami` call. The `session_id` cookie is scoped to the registrable domain (e.g., `.myapp.com`), so it is sent by the browser on requests to both `authgravity.myapp.com` and `www.myapp.com`.
 
 ### Express / Node.js example
 
@@ -225,26 +233,138 @@ app.use('/protected', async (req, res, next) => {
 });
 ```
 
-## Session Model
+## Architecting Your App with AuthGravity
 
-- First-party `httpOnly`, `secure` cookie (`session_id`) scoped to the registrable domain
-- Sessions stored in Cloudflare KV with configurable TTL (default 7 days)
-- Challenges expire after 5 minutes
-- Cookie `sameSite=None` allows cross-subdomain usage
+AuthGravity gives you a stable UUID for each user but stores no personal information. Your app owns the user profile. The pattern is:
 
-## Privacy Model
+1. **User registers or logs in** via AuthGravity. You get back a UUID.
+2. **Your app stores profile data** (name, email, subscription, etc.) in your own database, keyed by that UUID.
+3. **On each request**, your backend calls `/whoami` to get the UUID, then looks up the user in your database.
 
-- The server generates a UUID for each user and never stores usernames
+This is progressive disclosure: users authenticate instantly with a passkey, and only share personal information when they choose to (e.g., at checkout, when subscribing, when filling out a profile).
+
+### Your database schema
+
+Your users table uses the AuthGravity UUID as the primary key:
+
+```sql
+CREATE TABLE users (
+  id TEXT PRIMARY KEY,        -- the UUID from AuthGravity
+  email TEXT,                 -- collected later, when the user provides it
+  name TEXT,                  -- collected later
+  stripe_customer_id TEXT,    -- set after first purchase
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+When a user first authenticates, you may not have a row for them yet. Create one on first sight:
+
+```javascript
+// In your backend, after calling /whoami
+const { user_id } = await authRes.json();
+
+let user = await db.get('SELECT * FROM users WHERE id = ?', user_id);
+if (!user) {
+  await db.run('INSERT INTO users (id) VALUES (?)', user_id);
+  user = { id: user_id };
+}
+```
+
+### Example: Stripe Checkout with AuthGravity
+
+Here's a complete flow for a SaaS app where a user signs in with a passkey and buys a subscription via Stripe Checkout.
+
+**Step 1: User lands on your site and authenticates**
+
+The user clicks "Sign in" and completes a passkey ceremony. Your frontend now has a session cookie. No email was required.
+
+**Step 2: User clicks "Subscribe" - your backend creates a Stripe Checkout session**
+
+```javascript
+// POST /api/subscribe handler
+app.post('/api/subscribe', async (req, res) => {
+  // Validate the session via AuthGravity
+  const cookieHeader = req.headers.cookie;
+  const authRes = await fetch('https://authgravity.myapp.com/whoami', {
+    headers: cookieHeader ? { cookie: cookieHeader } : {},
+  });
+
+  if (!authRes.ok) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  const { user_id } = await authRes.json();
+
+  // Ensure user exists in your database
+  let user = await db.get('SELECT * FROM users WHERE id = ?', user_id);
+  if (!user) {
+    await db.run('INSERT INTO users (id) VALUES (?)', user_id);
+    user = { id: user_id };
+  }
+
+  // Create or reuse a Stripe customer
+  let stripeCustomerId = user.stripe_customer_id;
+  if (!stripeCustomerId) {
+    const customer = await stripe.customers.create({
+      metadata: { authgravity_user_id: user_id },
+    });
+    stripeCustomerId = customer.id;
+    await db.run(
+      'UPDATE users SET stripe_customer_id = ? WHERE id = ?',
+      stripeCustomerId, user_id
+    );
+  }
+
+  // Create a Checkout session
+  const session = await stripe.checkout.sessions.create({
+    customer: stripeCustomerId,
+    mode: 'subscription',
+    line_items: [{ price: 'price_xxx', quantity: 1 }],
+    success_url: 'https://myapp.com/dashboard?session_id={CHECKOUT_SESSION_ID}',
+    cancel_url: 'https://myapp.com/pricing',
+  });
+
+  res.json({ url: session.url });
+});
+```
+
+**Step 3: Stripe collects payment and email**
+
+Stripe Checkout collects the customer's email and payment details. This is where personal information enters your system - from the user's explicit action, not from a forced registration form.
+
+**Step 4: Stripe webhook updates your database**
+
+```javascript
+// POST /webhooks/stripe handler
+app.post('/webhooks/stripe', async (req, res) => {
+  const event = stripe.webhooks.constructEvent(
+    req.body, req.headers['stripe-signature'], webhookSecret
+  );
+
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object;
+    const customer = await stripe.customers.retrieve(session.customer);
+
+    // Update your user record with the email Stripe collected
+    await db.run(
+      'UPDATE users SET email = ? WHERE stripe_customer_id = ?',
+      customer.email, session.customer
+    );
+  }
+
+  res.json({ received: true });
+});
+```
+
+**The result**: the user signed in with zero personal information, browsed your app, decided to buy, and only then shared their email - through Stripe, not through your registration form. Your database now links the AuthGravity UUID to a Stripe customer and an email, all collected progressively.
+
+## Privacy
+
+- AuthGravity generates a UUID for each user and never stores usernames
 - Usernames are only used client-side as the WebAuthn authenticator display name
-- The users table contains only `id` - no email, no name, no PII
-- Credentials table stores the public key, never private key material
-
-## Key Concepts
-
-- **Tenant isolation**: each domain gets its own user pool. A user registered on `authgravity.foo.com` has no relationship to a user on `authgravity.bar.com`.
-- **RP ID**: the registrable domain (e.g., `authgravity.myapp.com` -> RP ID `myapp.com`), so passkeys work across subdomains.
-- **Progressive disclosure**: users authenticate first, share personal info later (e.g., at checkout). AuthGravity gives you a stable UUID; you store profile data in your own database.
+- No email, no name, no PII is stored server-side
+- Only public key material is stored, never private keys
 
 ## Source Code
 
-AuthGravity is powered by Gratos, licensed AGPLv3: https://github.com/polvi/gratos
+AuthGravity is powered by the open source Gratos project, licensed AGPLv3: https://github.com/polvi/gratos
