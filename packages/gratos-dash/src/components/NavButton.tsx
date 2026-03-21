@@ -13,16 +13,23 @@ function NavButtonInner({ currentPath }: { currentPath: string }) {
     }
 
     if (isAuthenticated) {
+        if (currentPath === '/domains') {
+            return (
+                <button
+                    class="nav-button"
+                    onClick={async () => {
+                        await logout();
+                        window.location.href = '/';
+                    }}
+                >
+                    Log Out
+                </button>
+            );
+        }
         return (
-            <button
-                class="nav-button"
-                onClick={async () => {
-                    await logout();
-                    window.location.href = '/';
-                }}
-            >
-                Log Out
-            </button>
+            <a href="/domains" class="nav-button">
+                Dashboard
+            </a>
         );
     }
 

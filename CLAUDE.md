@@ -50,3 +50,7 @@ Four packages in a Bun workspace:
 - `GET /oidc/.well-known/openid-configuration`, `/oidc/jwks`, `/oidc/authorize`, `POST /oidc/token` — OIDC
 - `GET /login`, `/login/prompt`, `/login/success` — Server-rendered auth pages
 - `GET /session/complete` — Cross-domain session establishment
+
+## Docs
+
+Keep packages/gratos-dash/public/llms.txt and packages/gratos-dash/src/pages/docs.astro in sync as the dash features change. 
