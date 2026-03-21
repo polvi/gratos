@@ -470,6 +470,7 @@ app.get('/domains', authMiddleware, async (c) => {
             id: r.id,
             domain: r.domain,
             status: 'active',
+            cname_name: 'authgravity',
             claimed_at: r.claimed_at,
         })),
     });

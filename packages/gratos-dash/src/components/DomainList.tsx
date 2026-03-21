@@ -245,6 +245,92 @@ function PendingDetails({ domain, provisionerBaseUrl, onClaimed }: {
     );
 }
 
+function ActiveDetails({ domain }: { domain: Domain }) {
+    const endpoint = `${domain.cname_name}.${domain.domain}`;
+
+    const cardStyle = {
+        background: '#f9fafb',
+        border: '1px solid #e4e4e7',
+        borderRadius: '0.375rem',
+        padding: '0.75rem',
+        marginBottom: '0.5rem',
+    };
+
+    const codeStyle = {
+        background: '#f4f4f5',
+        padding: '0.125rem 0.375rem',
+        borderRadius: '0.25rem',
+        fontFamily: 'monospace',
+        fontSize: '0.75rem',
+        wordBreak: 'break-all' as const,
+    };
+
+    return (
+        <div style={{ padding: '0.75rem 0 0' }}>
+            <div style={cardStyle}>
+                <div style={{ color: '#71717a', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>
+                    Auth Endpoint
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <span style={codeStyle}>{endpoint}</span>
+                    <CopyButton text={endpoint} />
+                </div>
+            </div>
+
+            <div style={cardStyle}>
+                <div style={{ color: '#71717a', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>
+                    API Base URL
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <span style={codeStyle}>https://{endpoint}</span>
+                    <CopyButton text={`https://${endpoint}`} />
+                </div>
+            </div>
+
+            <div style={cardStyle}>
+                <div style={{ color: '#71717a', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.375rem' }}>
+                    Quick Start
+                </div>
+                <pre style={{
+                    background: '#f4f4f5',
+                    padding: '0.5rem',
+                    borderRadius: '0.25rem',
+                    fontSize: '0.7rem',
+                    fontFamily: 'monospace',
+                    overflowX: 'auto',
+                    whiteSpace: 'pre',
+                    lineHeight: 1.5,
+                    margin: 0,
+                }}>
+                    <code>{`<AuthProvider apiBaseUrl="https://${endpoint}">
+  <RegisterButton />
+  <LoginButton />
+</AuthProvider>`}</code>
+                </pre>
+            </div>
+
+            <a
+                href={`https://${endpoint}/demo`}
+                target="_blank"
+                rel="noopener"
+                style={{
+                    display: 'inline-block',
+                    padding: '0.375rem 0.75rem',
+                    background: '#f4f4f5',
+                    border: '1px solid #d4d4d8',
+                    borderRadius: '0.375rem',
+                    fontSize: '0.75rem',
+                    color: '#18181b',
+                    textDecoration: 'none',
+                    fontWeight: 500,
+                }}
+            >
+                Open Demo
+            </a>
+        </div>
+    );
+}
+
 function DomainListInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
     const { isAuthenticated } = useAuth();
     const [domains, setDomains] = useState<Domain[]>([]);
@@ -401,23 +487,21 @@ function DomainListInner({ provisionerBaseUrl }: { provisionerBaseUrl: string })
                                     </div>
                                 </div>
                                 <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
-                                    {d.status === 'pending' && (
-                                        <button
-                                            onClick={() => setExpandedId(expandedId === d.id ? null : d.id)}
-                                            style={{
-                                                padding: '0.375rem 0.75rem',
-                                                background: expandedId === d.id ? '#18181b' : '#f4f4f5',
-                                                border: '1px solid #d4d4d8',
-                                                borderRadius: '0.375rem',
-                                                color: expandedId === d.id ? '#fff' : '#18181b',
-                                                fontSize: '0.8rem',
-                                                cursor: 'pointer',
-                                                fontWeight: 500,
-                                            }}
-                                        >
-                                            {expandedId === d.id ? 'Hide Details' : 'Details'}
-                                        </button>
-                                    )}
+                                    <button
+                                        onClick={() => setExpandedId(expandedId === d.id ? null : d.id)}
+                                        style={{
+                                            padding: '0.375rem 0.75rem',
+                                            background: expandedId === d.id ? '#18181b' : '#f4f4f5',
+                                            border: '1px solid #d4d4d8',
+                                            borderRadius: '0.375rem',
+                                            color: expandedId === d.id ? '#fff' : '#18181b',
+                                            fontSize: '0.8rem',
+                                            cursor: 'pointer',
+                                            fontWeight: 500,
+                                        }}
+                                    >
+                                        {expandedId === d.id ? 'Hide Details' : 'Details'}
+                                    </button>
                                     <button
                                         onClick={() => handleDelete(d)}
                                         disabled={deleting === d.id}
@@ -437,12 +521,15 @@ function DomainListInner({ provisionerBaseUrl }: { provisionerBaseUrl: string })
                                 </div>
                             </div>
 
-                            {d.status === 'pending' && expandedId === d.id && (
+                            {expandedId === d.id && d.status === 'pending' && (
                                 <PendingDetails
                                     domain={d}
                                     provisionerBaseUrl={provisionerBaseUrl}
                                     onClaimed={fetchDomains}
                                 />
+                            )}
+                            {expandedId === d.id && d.status === 'active' && (
+                                <ActiveDetails domain={d} />
                             )}
                         </div>
                     ))}
