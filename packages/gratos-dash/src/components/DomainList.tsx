@@ -1,21 +1,257 @@
 import { h } from 'preact';
 import { useState, useEffect, useCallback } from 'preact/hooks';
-import { AuthProvider, useAuth, LoginButton, RegisterButton, LogoutButton } from '@gratos/preact';
+import { AuthProvider, useAuth } from '@gratos/preact';
 
 type Domain = {
     id: string;
     domain: string;
     status: 'pending' | 'active';
+    cname_name?: string;
+    cname_target?: string;
     created_at?: number;
     claimed_at?: number;
 };
 
+function CopyButton({ text }: { text: string }) {
+    const [copied, setCopied] = useState(false);
+
+    const handleCopy = async () => {
+        try {
+            await navigator.clipboard.writeText(text);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch { /* fallback */ }
+    };
+
+    return (
+        <button
+            onClick={handleCopy}
+            title="Copy to clipboard"
+            style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '0.125rem 0.25rem',
+                fontSize: '0.75rem',
+                flexShrink: 0,
+                color: copied ? '#16a34a' : '#a1a1aa',
+                verticalAlign: 'middle',
+            }}
+        >
+            {copied ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+            ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+            )}
+        </button>
+    );
+}
+
+function PendingDetails({ domain, provisionerBaseUrl, onClaimed }: {
+    domain: Domain;
+    provisionerBaseUrl: string;
+    onClaimed: () => void;
+}) {
+    const [phase, setPhase] = useState<'waiting_for_dns' | 'dns_mismatch' | 'provisioning' | 'error'>('waiting_for_dns');
+    const [dnsLookup, setDnsLookup] = useState(`${domain.cname_name}.${domain.domain}`);
+    const [dnsExpected, setDnsExpected] = useState(domain.cname_target || '');
+    const [dnsActual, setDnsActual] = useState<string | null>(null);
+    const [dnsFound, setDnsFound] = useState<Array<{ type: string; value: string }>>([]);
+    const [error, setError] = useState('');
+
+    const pollActivate = useCallback(async () => {
+        try {
+            const res = await fetch(`${provisionerBaseUrl}/claims/${domain.id}/activate`, {
+                method: 'POST',
+                credentials: 'include',
+            });
+            const data = await res.json();
+
+            if (!res.ok) {
+                setError(data.error || 'Activation failed');
+                setPhase('error');
+                return;
+            }
+
+            if (data.status === 'claimed') {
+                onClaimed();
+                return;
+            }
+
+            if (data.dns_lookup) setDnsLookup(data.dns_lookup);
+            if (data.dns_expected) setDnsExpected(data.dns_expected);
+            setDnsActual(data.dns_actual ?? null);
+            setDnsFound(data.dns_found || []);
+
+            if (data.status === 'dns_mismatch') {
+                setPhase('dns_mismatch');
+            } else if (data.status === 'waiting_for_dns') {
+                setPhase('waiting_for_dns');
+            } else if (data.status === 'provisioning') {
+                setPhase('provisioning');
+            }
+        } catch {
+            // Ignore transient poll errors
+        }
+    }, [domain.id, provisionerBaseUrl, onClaimed]);
+
+    useEffect(() => {
+        pollActivate();
+        const interval = setInterval(pollActivate, 5000);
+        return () => clearInterval(interval);
+    }, [pollActivate]);
+
+    const cardStyle = {
+        background: '#f9fafb',
+        border: '1px solid #e4e4e7',
+        borderRadius: '0.375rem',
+        padding: '0.75rem',
+        marginBottom: '0.5rem',
+    };
+
+    const codeStyle = {
+        background: '#f4f4f5',
+        padding: '0.125rem 0.375rem',
+        borderRadius: '0.25rem',
+        fontFamily: 'monospace',
+        fontSize: '0.75rem',
+        wordBreak: 'break-all' as const,
+    };
+
+    const labelStyle = {
+        color: '#71717a',
+        fontWeight: 600 as const,
+        fontSize: '0.7rem',
+        textTransform: 'uppercase' as const,
+        letterSpacing: '0.05em',
+        marginBottom: '0.125rem',
+    };
+
+    if (phase === 'error') {
+        return (
+            <div style={{ padding: '0.75rem 0' }}>
+                <p style={{ color: '#ef4444', fontSize: '0.8rem' }}>{error}</p>
+            </div>
+        );
+    }
+
+    const isMismatch = phase === 'dns_mismatch';
+
+    return (
+        <div style={{ padding: '0.75rem 0 0' }}>
+            <div style={{ fontSize: '0.8rem', color: '#52525b', marginBottom: '0.5rem' }}>
+                {phase === 'waiting_for_dns' && (dnsFound.length > 0
+                    ? `Found existing records for ${domain.cname_name}.${domain.domain}, but no CNAME.`
+                    : 'No DNS records found yet. Add the CNAME record below.')}
+                {phase === 'dns_mismatch' && 'A CNAME record exists but points to the wrong target.'}
+                {phase === 'provisioning' && `DNS verified. Setting up ${domain.cname_name}.${domain.domain}...`}
+            </div>
+
+            {phase !== 'provisioning' && (
+                <>
+                    <div style={cardStyle}>
+                        <div style={labelStyle}>Required CNAME</div>
+                        <div style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>
+                            <div style={{ marginBottom: '0.375rem' }}>
+                                <span style={{ color: '#71717a', fontSize: '0.7rem' }}>Name: </span>
+                                <span style={codeStyle}>{domain.cname_name}</span>
+                                <CopyButton text={domain.cname_name || ''} />
+                            </div>
+                            <div>
+                                <span style={{ color: '#71717a', fontSize: '0.7rem' }}>Target: </span>
+                                <span style={codeStyle}>{dnsExpected}</span>
+                                <CopyButton text={dnsExpected} />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style={{
+                        ...cardStyle,
+                        border: isMismatch ? '1px solid #fca5a5' : '1px solid #e4e4e7',
+                        background: isMismatch ? '#fef2f2' : '#f9fafb',
+                    }}>
+                        <div style={labelStyle}>DNS Lookup</div>
+                        <div style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>
+                            <div style={{ marginBottom: '0.25rem' }}>
+                                <span style={{ color: '#71717a', fontSize: '0.7rem' }}>Looking up: </span>
+                                <span style={codeStyle}>{dnsLookup}</span>
+                            </div>
+                            <div>
+                                <span style={{ color: '#71717a', fontSize: '0.7rem' }}>Resolves to: </span>
+                                {dnsActual ? (
+                                    <span style={{ ...codeStyle, background: isMismatch ? '#fee2e2' : '#f4f4f5' }}>
+                                        CNAME {dnsActual}
+                                    </span>
+                                ) : dnsFound.length > 0 ? (
+                                    <span>
+                                        {dnsFound.map((r, i) => (
+                                            <span key={i} style={{ ...codeStyle, background: '#fef9c3', marginRight: '0.25rem' }}>
+                                                {r.type} {r.value}
+                                            </span>
+                                        ))}
+                                    </span>
+                                ) : (
+                                    <span style={{ fontSize: '0.75rem', color: '#a1a1aa', fontStyle: 'italic' }}>
+                                        No records found
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                        {isMismatch && (
+                            <p style={{ fontSize: '0.7rem', color: '#991b1b', marginTop: '0.5rem' }}>
+                                Update the CNAME to match the required target above.
+                            </p>
+                        )}
+                        {!isMismatch && dnsFound.length > 0 && (
+                            <p style={{ fontSize: '0.7rem', color: '#854d0e', marginTop: '0.5rem' }}>
+                                Found existing records but no CNAME. Remove these and add a CNAME instead.
+                            </p>
+                        )}
+                    </div>
+                </>
+            )}
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{
+                    padding: '0.2rem 0.5rem',
+                    borderRadius: '9999px',
+                    fontSize: '0.7rem',
+                    fontWeight: 600,
+                    background: phase === 'provisioning' ? '#dbeafe' : isMismatch ? '#fee2e2' : '#fef9c3',
+                    color: phase === 'provisioning' ? '#1e40af' : isMismatch ? '#991b1b' : '#854d0e',
+                }}>
+                    {phase === 'waiting_for_dns' && 'No CNAME found'}
+                    {phase === 'dns_mismatch' && 'Wrong target'}
+                    {phase === 'provisioning' && 'Activating...'}
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ color: '#a1a1aa', fontSize: '0.7rem' }}>Auto-checking every 5s</span>
+                    <button
+                        onClick={() => pollActivate()}
+                        style={{
+                            padding: '0.25rem 0.5rem',
+                            background: '#f4f4f5',
+                            border: '1px solid #d4d4d8',
+                            borderRadius: '0.375rem',
+                            fontSize: '0.75rem',
+                            cursor: 'pointer',
+                        }}
+                    >
+                        Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function DomainListInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
-    const { isAuthenticated, logout } = useAuth();
+    const { isAuthenticated } = useAuth();
     const [domains, setDomains] = useState<Domain[]>([]);
     const [loading, setLoading] = useState(true);
     const [deleting, setDeleting] = useState<string | null>(null);
     const [error, setError] = useState('');
+    const [expandedId, setExpandedId] = useState<string | null>(null);
 
     const fetchDomains = useCallback(async () => {
         try {
@@ -67,6 +303,7 @@ function DomainListInner({ provisionerBaseUrl }: { provisionerBaseUrl: string })
                 return;
             }
             setDomains(prev => prev.filter(x => x.id !== d.id));
+            if (expandedId === d.id) setExpandedId(null);
         } catch {
             setError('Network error');
         } finally {
@@ -132,52 +369,81 @@ function DomainListInner({ provisionerBaseUrl }: { provisionerBaseUrl: string })
                                 border: '1px solid #e4e4e7',
                                 borderRadius: '0.5rem',
                                 padding: '1rem 1.25rem',
+                            }}
+                        >
+                            <div style={{
                                 display: 'flex',
                                 justifyContent: 'space-between',
                                 alignItems: 'center',
                                 gap: '1rem',
-                            }}
-                        >
-                            <div style={{ minWidth: 0 }}>
-                                <div style={{
-                                    fontWeight: 600,
-                                    fontSize: '0.95rem',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap',
-                                }}>
-                                    {d.domain}
+                            }}>
+                                <div style={{ minWidth: 0 }}>
+                                    <div style={{
+                                        fontWeight: 600,
+                                        fontSize: '0.95rem',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap',
+                                    }}>
+                                        {d.domain}
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
+                                        <span style={{
+                                            display: 'inline-block',
+                                            width: '0.5rem',
+                                            height: '0.5rem',
+                                            borderRadius: '50%',
+                                            background: d.status === 'active' ? '#22c55e' : '#f59e0b',
+                                        }} />
+                                        <span style={{ fontSize: '0.75rem', color: '#71717a' }}>
+                                            {d.status === 'active' ? 'Active' : 'Pending'}
+                                        </span>
+                                    </div>
                                 </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
-                                    <span style={{
-                                        display: 'inline-block',
-                                        width: '0.5rem',
-                                        height: '0.5rem',
-                                        borderRadius: '50%',
-                                        background: d.status === 'active' ? '#22c55e' : '#f59e0b',
-                                    }} />
-                                    <span style={{ fontSize: '0.75rem', color: '#71717a' }}>
-                                        {d.status === 'active' ? 'Active' : 'Pending'}
-                                    </span>
+                                <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
+                                    {d.status === 'pending' && (
+                                        <button
+                                            onClick={() => setExpandedId(expandedId === d.id ? null : d.id)}
+                                            style={{
+                                                padding: '0.375rem 0.75rem',
+                                                background: expandedId === d.id ? '#18181b' : '#f4f4f5',
+                                                border: '1px solid #d4d4d8',
+                                                borderRadius: '0.375rem',
+                                                color: expandedId === d.id ? '#fff' : '#18181b',
+                                                fontSize: '0.8rem',
+                                                cursor: 'pointer',
+                                                fontWeight: 500,
+                                            }}
+                                        >
+                                            {expandedId === d.id ? 'Hide Details' : 'Details'}
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={() => handleDelete(d)}
+                                        disabled={deleting === d.id}
+                                        style={{
+                                            padding: '0.375rem 0.75rem',
+                                            background: 'none',
+                                            border: '1px solid #fca5a5',
+                                            borderRadius: '0.375rem',
+                                            color: '#dc2626',
+                                            fontSize: '0.8rem',
+                                            cursor: deleting === d.id ? 'not-allowed' : 'pointer',
+                                            opacity: deleting === d.id ? 0.5 : 1,
+                                        }}
+                                    >
+                                        {deleting === d.id ? 'Removing...' : 'Remove'}
+                                    </button>
                                 </div>
                             </div>
-                            <button
-                                onClick={() => handleDelete(d)}
-                                disabled={deleting === d.id}
-                                style={{
-                                    padding: '0.375rem 0.75rem',
-                                    background: 'none',
-                                    border: '1px solid #fca5a5',
-                                    borderRadius: '0.375rem',
-                                    color: '#dc2626',
-                                    fontSize: '0.8rem',
-                                    cursor: deleting === d.id ? 'not-allowed' : 'pointer',
-                                    opacity: deleting === d.id ? 0.5 : 1,
-                                    flexShrink: 0,
-                                }}
-                            >
-                                {deleting === d.id ? 'Removing...' : 'Remove'}
-                            </button>
+
+                            {d.status === 'pending' && expandedId === d.id && (
+                                <PendingDetails
+                                    domain={d}
+                                    provisionerBaseUrl={provisionerBaseUrl}
+                                    onClaimed={fetchDomains}
+                                />
+                            )}
                         </div>
                     ))}
                 </div>

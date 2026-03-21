@@ -462,6 +462,8 @@ app.get('/domains', authMiddleware, async (c) => {
             id: r.id,
             domain: r.domain,
             status: 'pending',
+            cname_name: 'authgravity',
+            cname_target: `${r.token}.cname.authgravity.net`,
             created_at: r.created_at,
         })),
         claimed: (claimed || []).map((r: any) => ({
