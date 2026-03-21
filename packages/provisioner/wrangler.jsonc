@@ -31,12 +31,12 @@
 		"prod": {
 			"vars": {
 				"CF_ZONE_ID": "55ba510e429ec4305a3cf947aef59e41",
-				"CORS_ALLOW_ORIGIN": "https://letsident.org",
-				"AUTH_TENANT": "letsident.org"
+				"CORS_ALLOW_ORIGIN": "https://authgravity.org",
+				"AUTH_TENANT": "authgravity.org"
 			},
 			"routes": [
 				{
-					"pattern": "provision.api.letsident.org",
+					"pattern": "provision.api.authgravity.org",
 					"custom_domain": true
 				}
 			],

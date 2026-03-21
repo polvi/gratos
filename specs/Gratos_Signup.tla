@@ -10,7 +10,7 @@ VARIABLES
     authed,         \* Set of [session, identity] — which sessions have authenticated
     pendingClaims,  \* Set of [domain, session] — claim keys in KV (multiple per domain OK)
     claimed,        \* Set of [domain, owner] — permanent (no TTL), at most one per domain
-    cfProvisioned,  \* SUBSET Domains — CF custom hostname letsident.{d} exists
+    cfProvisioned,  \* SUBSET Domains — CF custom hostname authgravity.{d} exists
     cfValidated     \* Set of [domain, session] — CNAME target matches this claim's token
                     \* At most one per domain (DNS CNAME is single-valued)
 
@@ -56,8 +56,8 @@ Init ==
 
 \* Session enters a domain name, starting a pending claim.
 \* Multiple sessions can claim the same domain concurrently.
-\* Each gets a unique CNAME target ({token}.cname.letsident.net).
-\* The CF hostname is always letsident.{domain} (stable).
+\* Each gets a unique CNAME target ({token}.cname.authgravity.net).
+\* The CF hostname is always authgravity.{domain} (stable).
 EnterDomain(s, d) ==
     /\ s \in sessions
     /\ ~IsClaimed(d)
@@ -72,7 +72,7 @@ Authenticate(s, id) ==
     /\ UNCHANGED <<sessions, pendingClaims, claimed, cfProvisioned, cfValidated>>
 
 \* External event: DNS owner sets CNAME target to a specific claim's token.
-\* letsident.{d} CNAME {token}.cname.letsident.net
+\* authgravity.{d} CNAME {token}.cname.authgravity.net
 \* Since DNS CNAME is single-valued, this replaces any previous validation.
 \* Only the DNS owner can set this, so it proves domain control.
 \* DNS happens independently — no CF provisioning required yet.
@@ -83,7 +83,7 @@ ValidateDNS(s, d) ==
                        \cup {[domain |-> d, session |-> s]}
     /\ UNCHANGED <<sessions, authed, pendingClaims, claimed, cfProvisioned>>
 
-\* Authenticated session provisions CF custom hostname letsident.{domain}.
+\* Authenticated session provisions CF custom hostname authgravity.{domain}.
 \* Only happens AFTER DNS CNAME is verified for this claim.
 \* The CF hostname is shared across all claims for the same domain.
 \* If already provisioned, this is a no-op (idempotent).

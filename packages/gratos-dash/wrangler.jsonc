@@ -15,12 +15,12 @@
   "env": {
     "prod": {
       "vars": {
-        "PUBLIC_GRATOS_SERVER": "https://letsident.letsident.org",
-        "PUBLIC_PROVISIONER_SERVER": "https://provision.api.letsident.org",
+        "PUBLIC_GRATOS_SERVER": "https://authgravity.authgravity.org",
+        "PUBLIC_PROVISIONER_SERVER": "https://provision.api.authgravity.org",
       },
       "routes": [
         {
-          "pattern": "letsident.org",
+          "pattern": "authgravity.org",
           "custom_domain": true,
         },
       ],

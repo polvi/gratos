@@ -19,9 +19,9 @@ export function DomainEntry({ provisionerBaseUrl, onClaimed }: {
             return;
         }
 
-        // Strip letsident. prefix if user included it
-        if (trimmed.startsWith('letsident.')) {
-            trimmed = trimmed.slice('letsident.'.length);
+        // Strip authgravity. prefix if user included it
+        if (trimmed.startsWith('authgravity.')) {
+            trimmed = trimmed.slice('authgravity.'.length);
         }
 
         const domainRegex = /^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$/;
@@ -59,7 +59,7 @@ export function DomainEntry({ provisionerBaseUrl, onClaimed }: {
                 Your domain
             </label>
             <p style={{ color: '#71717a', fontSize: '0.8rem', marginBottom: '0.5rem' }}>
-                We'll set up <strong>letsident.yourdomain.com</strong> as your auth endpoint.
+                We'll set up <strong>authgravity.yourdomain.com</strong> as your auth endpoint.
             </p>
             <input
                 type="text"

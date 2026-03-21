@@ -216,7 +216,7 @@ export const registerPage = (returnTo: string | null, clientId: string | null) =
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Create Account - Let's Ident</title>
+    <title>Create Account - AuthGravity</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -288,7 +288,7 @@ export const registerPage = (returnTo: string | null, clientId: string | null) =
 </head>
 <body>
     <div class="card">
-        <h1>Let's Ident</h1>
+        <h1>AuthGravity</h1>
         <p class="tagline">Free, privacy-preserving authentication.<br>No passwords. No tracking.</p>
         <ul class="features">
             <li>Passwordless sign-in with passkeys</li>

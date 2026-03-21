@@ -3,9 +3,9 @@
 Zero-knowledge, serverless, headless passkey authentication. Gratos stores only public key material: no pas
 swords, no usernames on the server. User identity lives in the consuming app; Gratos handles WebAuthn credential storage and session management.
 
-Currently powering letsident.org
+Currently powering authgravity.org
 
-Inspired by [Ory Kratos](https://www.ory.sh/kratos/), built on [WebAuthn](https://webauthn.guide/), hat tip to Let's Encrypt, but not affilated. 
+Inspired by [Ory Kratos](https://www.ory.sh/kratos/), built on [WebAuthn](https://webauthn.guide/), hat tip to Let's Encrypt, but not affiliated.
 
 ## How It Works
 

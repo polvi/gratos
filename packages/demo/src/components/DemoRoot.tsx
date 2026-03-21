@@ -1,5 +1,5 @@
 import { h } from 'preact';
-import { AuthProvider, useAuth, LetsIdent } from '@gratos/preact';
+import { AuthProvider, useAuth, AuthGravity } from '@gratos/preact';
 
 function Header() {
     return (
@@ -112,7 +112,7 @@ export function DemoRoot({ apiBaseUrl, loginBaseUrl, clientId }: { apiBaseUrl: s
             <div style={{ minHeight: '100vh', background: '#fafafa', fontFamily: 'system-ui, sans-serif' }}>
                 <Header />
                 <Hero />
-                {clientId && <LetsIdent loginBaseUrl={loginBaseUrl} apiBaseUrl={apiBaseUrl} clientId={clientId} />}
+                {clientId && <AuthGravity loginBaseUrl={loginBaseUrl} apiBaseUrl={apiBaseUrl} clientId={clientId} />}
             </div>
         </AuthProvider>
     );

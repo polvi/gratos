@@ -1,4 +1,4 @@
--- Add per-claim token for unique CNAME challenges (letsident-{token}.{domain}).
+-- Add per-claim token for unique CNAME challenges (authgravity-{token}.{domain}).
 -- Multiple pending claims per domain are now allowed.
 ALTER TABLE pending_claims ADD COLUMN token TEXT NOT NULL DEFAULT '';
 

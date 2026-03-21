@@ -2,7 +2,7 @@
 import Layout from "../layouts/Layout.astro";
 ---
 
-<Layout title="About — Let's Ident">
+<Layout title="About — AuthGravity">
   <style>
     .about {
       margin: 2rem 0 4rem;
@@ -46,7 +46,7 @@ import Layout from "../layouts/Layout.astro";
     <h1>About</h1>
 
     <p>
-      Let's Ident is zero-knowledge, serverless, headless passkey
+      AuthGravity is zero-knowledge, serverless, headless passkey
       authentication. Powered by the open source <a
         href="https://github.com/polvi/gratos">Gratos</a
       > project, it stores only public key material. User identity lives in your application;
@@ -54,7 +54,7 @@ import Layout from "../layouts/Layout.astro";
     </p>
 
     <p>
-      Let's Ident is inspired by <a
+      AuthGravity is inspired by <a
         href="https://letsencrypt.org"
         target="_blank"
         rel="noopener">Let's Encrypt</a
@@ -84,7 +84,7 @@ import Layout from "../layouts/Layout.astro";
 
     <h2>Usage</h2>
     <p>
-      Let's Ident is designed for modern web development. We ship a lightweight
+      AuthGravity is designed for modern web development. We ship a lightweight
       Preact component (with more coming soon) that can be easily integrated
       into any web application, whether you're using React, Preact, or even
       plain HTML. This component handles the entire passkey ceremony and session
@@ -100,8 +100,8 @@ import Layout from "../layouts/Layout.astro";
     <p>
       ZKI is when you have a stable authentication method, but you do not know
       who the user is. You just know you have the same returning user. This
-      works by leveraging the public key infrastructure (PKI) of webauthn. Let's
-      Ident manages the passkey ceremonies and provides sessions on your own
+      works by leveraging the public key infrastructure (PKI) of webauthn.
+      AuthGravity manages the passkey ceremonies and provides sessions on your own
       domain.
     </p>
 
@@ -111,14 +111,14 @@ import Layout from "../layouts/Layout.astro";
       when the user wants to give it, not when you force them to hand it to you.
       For example, if they want to buy your service, they will go through a
       checkout process and disclose their information then. You keep this data
-      in your database. Let's Ident is just serving you a stable UUID that you
+      in your database. AuthGravity is just serving you a stable UUID that you
       can use on your side.
     </p>
 
     <h3>What is progressive disclosure?</h3>
     <p>
       Progressive disclosure is the principle that users shouldn't be forced to
-      share their data until it's absolutely necessary. With Let's Ident, you
+      share their data until it's absolutely necessary. With AuthGravity, you
       can authenticate users and create accounts instantly. You only request
       sensitive information (like name or email) when there's a clear reason to
       provide it. This data lives where it belongs: in your database, not ours.
@@ -128,7 +128,7 @@ import Layout from "../layouts/Layout.astro";
     <p>
       Passkeys are popularly used as a second factor authentication method,
       however they do not need to be. In fact, if you have a passkey enabled
-      with Google, it will now use it as a first factor. Let's Ident shifts
+      with Google, it will now use it as a first factor. AuthGravity shifts
       passkeys to be first factor by default.
     </p>
 

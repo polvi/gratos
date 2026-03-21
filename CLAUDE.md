@@ -26,7 +26,7 @@ Gratos is a zero-trust, serverless, headless passkey authentication service. It 
 Four packages in a Bun workspace:
 
 - **packages/worker-runtime** — Cloudflare Worker (Hono server). Handles WebAuthn registration/authentication, session management (KV), credential storage (D1), client CRUD, and a basic OIDC provider. Config via wrangler.jsonc bindings.
-- **packages/preact** — Published as `@gratos/preact`. Preact components for auth UI (LoginButton, RegisterButton, LogoutButton, UserProfile, Admin, LetsIdent). All components consume `AuthContext` which provides user state and `apiBaseUrl`.
+- **packages/preact** — Published as `@gratos/preact`. Preact components for auth UI (LoginButton, RegisterButton, LogoutButton, UserProfile, Admin, AuthGravity). All components consume `AuthContext` which provides user state and `apiBaseUrl`.
 - **packages/demo** — Astro SSR app using `@astrojs/preact` and `@astrojs/cloudflare`. Three pages: `/` (main), `/login`, `/admin`. Environment vars in `.env.local` (`PUBLIC_GRATOS_SERVER`, `PUBLIC_GRATOS_DOMAIN_SERVER`, `PUBLIC_CLIENT_ID`).
 - **packages/e2e** — Playwright tests using Chromium's virtual authenticator (CDP) to test full passkey flows.
 
@@ -36,7 +36,7 @@ Four packages in a Bun workspace:
 
 **Session model:** Cookie-based (`session_id`, httpOnly, secure, sameSite=None). Sessions stored in KV with TTL (default 7 days). Challenges expire in 5 minutes.
 
-**Cross-domain auth:** The `LetsIdent` component renders an iframe pointing to the auth server's `/login/prompt` page. On successful login, the worker generates a one-time code, redirects to the client's `/session/complete` endpoint which sets a session cookie scoped to that client's `domain_setting`.
+**Cross-domain auth:** The `AuthGravity` component renders an iframe pointing to the auth server's `/login/prompt` page. On successful login, the worker generates a one-time code, redirects to the client's `/session/complete` endpoint which sets a session cookie scoped to that client's `domain_setting`.
 
 **OIDC:** Basic authorization code flow for CLI tools (e.g., `kubectl oidc-login`). RS256 signing keys auto-generated and stored in KV. Endpoints under `/oidc/`.
 

@@ -22,7 +22,7 @@
 		"prod": {
 			"routes": [
 				{
-					"pattern": "letsident.letsident.org",
+					"pattern": "authgravity.authgravity.org",
 					"custom_domain": true
 				}
 			],

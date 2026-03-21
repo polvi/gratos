@@ -145,8 +145,8 @@ type AdvanceResult =
     | { status: 'error'; error: string; code?: number };
 
 async function advanceClaim(claim: any, env: Env): Promise<AdvanceResult> {
-    const expectedTarget = `${claim.token}.cname.letsident.net`;
-    const hostname = `letsident.${claim.domain}`;
+    const expectedTarget = `${claim.token}.cname.authgravity.net`;
+    const hostname = `authgravity.${claim.domain}`;
     const dns = await lookupDNS(hostname);
 
     if (dns.cname !== expectedTarget) {
@@ -221,7 +221,7 @@ async function advanceClaim(claim: any, env: Env): Promise<AdvanceResult> {
     }
 
     // Re-verify CNAME hasn't changed
-    const finalDns = await lookupDNS(`letsident.${claim.domain}`);
+    const finalDns = await lookupDNS(`authgravity.${claim.domain}`);
     if (finalDns.cname !== expectedTarget) {
         return { status: 'error', error: 'CNAME target changed during provisioning', code: 403 };
     }
@@ -302,8 +302,8 @@ app.post('/claims', async (c) => {
         id,
         domain,
         token,
-        cname_name: 'letsident',
-        cname_target: `${token}.cname.letsident.net`,
+        cname_name: 'authgravity',
+        cname_target: `${token}.cname.authgravity.net`,
         status: 'pending',
         created_at: createdAt,
     }, 201);
@@ -323,8 +323,8 @@ app.get('/claims/:id', async (c) => {
             id: pending.id,
             domain: pending.domain,
             token: pending.token,
-            cname_name: 'letsident',
-            cname_target: `${pending.token}.cname.letsident.net`,
+            cname_name: 'authgravity',
+            cname_target: `${pending.token}.cname.authgravity.net`,
             status: 'pending',
             has_identity: !!pending.identity_id,
             created_at: pending.created_at,

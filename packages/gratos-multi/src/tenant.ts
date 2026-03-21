@@ -7,8 +7,8 @@ export type TenantInfo = {
 
 /**
  * Derive tenant info from the request hostname.
- * e.g. "letsident.example.com" → tenant="example.com", rpId="example.com",
- *      cookieDomain="example.com", origin="https://letsident.example.com"
+ * e.g. "authgravity.example.com" → tenant="example.com", rpId="example.com",
+ *      cookieDomain="example.com", origin="https://authgravity.example.com"
  *
  * For localhost development, tenant is "localhost".
  */
@@ -37,7 +37,7 @@ export function resolveTenant(url: URL): TenantInfo {
         };
     }
 
-    // e.g. "letsident.example.com" → "example.com"
+    // e.g. "authgravity.example.com" → "example.com"
     const tenant = parts.slice(1).join('.');
     return {
         tenant,

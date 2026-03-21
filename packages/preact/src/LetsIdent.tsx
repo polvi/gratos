@@ -1,13 +1,16 @@
 import { h } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 
-interface LetsIdentProps {
+interface AuthGravityProps {
   loginBaseUrl: string;
   apiBaseUrl: string;
   clientId?: string;
 }
 
-export function LetsIdent({ loginBaseUrl, apiBaseUrl, clientId }: LetsIdentProps) {
+/** @deprecated Use AuthGravity instead */
+export const LetsIdent = AuthGravity;
+
+export function AuthGravity({ loginBaseUrl, apiBaseUrl, clientId }: AuthGravityProps) {
   const [idpUser, setIdpUser] = useState<any>(null);
   const [iframeHeight, setIframeHeight] = useState(60);
 
@@ -72,7 +75,7 @@ export function LetsIdent({ loginBaseUrl, apiBaseUrl, clientId }: LetsIdentProps
   return (
     <>
       <style>{`
-        .letsident-card {
+        .authgravity-card {
           position: fixed;
           bottom: 0;
           left: 0;
@@ -88,7 +91,7 @@ export function LetsIdent({ loginBaseUrl, apiBaseUrl, clientId }: LetsIdentProps
           max-width: 100%;
         }
         @media (min-width: 480px) {
-          .letsident-card {
+          .authgravity-card {
             bottom: auto;
             top: 20px;
             right: 20px;
@@ -98,32 +101,32 @@ export function LetsIdent({ loginBaseUrl, apiBaseUrl, clientId }: LetsIdentProps
             box-shadow: 0 2px 12px rgba(0,0,0,0.15);
           }
         }
-        .letsident-header {
+        .authgravity-header {
           padding: 14px 16px;
           display: flex;
           align-items: center;
           border-bottom: 1px solid #e0e0e0;
         }
-        .letsident-header span {
+        .authgravity-header span {
           font-size: 15px;
           font-weight: 600;
           color: #202124;
         }
-        .letsident-body {
+        .authgravity-body {
           padding: 16px;
         }
-        .letsident-subtitle {
+        .authgravity-subtitle {
           margin-bottom: 14px;
           font-size: 13px;
           color: #5f6368;
           line-height: 1.4;
         }
-        .letsident-iframe {
+        .authgravity-iframe {
           width: 100%;
           border: none;
           overflow: hidden;
         }
-        .letsident-signout {
+        .authgravity-signout {
           display: block;
           width: 100%;
           background: none;
@@ -136,17 +139,17 @@ export function LetsIdent({ loginBaseUrl, apiBaseUrl, clientId }: LetsIdentProps
           padding: 10px 0;
           -webkit-tap-highlight-color: transparent;
         }
-        .letsident-signout:active {
+        .authgravity-signout:active {
           background: #f1f3f4;
         }
       `}</style>
-      <div className="letsident-card">
-        <div className="letsident-header">
-          <span>{idpUser ? 'Welcome back' : "Let's Ident"}</span>
+      <div className="authgravity-card">
+        <div className="authgravity-header">
+          <span>{idpUser ? 'Welcome back' : "AuthGravity"}</span>
         </div>
 
-        <div className="letsident-body">
-          <div className="letsident-subtitle">
+        <div className="authgravity-body">
+          <div className="authgravity-subtitle">
             {idpUser
                 ? `Continue as ${idpUser.email || 'User'} to access your account.`
                 : 'Sign in or create an account to continue.'}
@@ -155,15 +158,15 @@ export function LetsIdent({ loginBaseUrl, apiBaseUrl, clientId }: LetsIdentProps
           {!idpUser ? (
               <iframe
                 src={`${loginBaseUrl}/login/prompt?client_id=${clientId}&return_to=${encodeURIComponent(loginBaseUrl + '/login/success')}`}
-                title="Sign in with Let's Ident"
+                title="Sign in with AuthGravity"
                 allow="publickey-credentials-get *"
-                className="letsident-iframe"
+                className="authgravity-iframe"
                 style={{ height: `${iframeHeight}px` }}
               />
           ) : (
               <button
                 onClick={handleLogout}
-                className="letsident-signout"
+                className="authgravity-signout"
               >
                 Sign out
               </button>

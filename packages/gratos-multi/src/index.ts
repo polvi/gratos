@@ -68,7 +68,7 @@ app.use('/*', async (c, next) => {
 // Health check
 app.get('/', (c) => c.json({ status: 'ok' }));
 
-// Demo page — self-contained auth demo served from the letsident subdomain
+// Demo page — self-contained auth demo served from the authgravity subdomain
 app.get('/demo', (c) => {
     const url = new URL(c.req.url);
     const apiBaseUrl = url.origin;

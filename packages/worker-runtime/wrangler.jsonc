@@ -34,17 +34,17 @@
 	"env": {
 		"prod": {
 			"vars": {
-				"ORIGIN": "https://id.letsident.org",
-				"COOKIE_DOMAIN": "letsident.org",
-				"CORS_ALLOW_ORIGIN": "https://letsident.org,https://gratos-demo.proc.io",
+				"ORIGIN": "https://id.authgravity.org",
+				"COOKIE_DOMAIN": "authgravity.org",
+				"CORS_ALLOW_ORIGIN": "https://authgravity.org,https://gratos-demo.proc.io",
 				"OIDC_CLIENT_ID": "kubernetes",
 				"OIDC_REDIRECT_URI": "http://localhost:8000",
-				"LOGIN_URL": "https://letsident.org/login",
-				"RP_ID": "letsident.org"
+				"LOGIN_URL": "https://authgravity.org/login",
+				"RP_ID": "authgravity.org"
 			},
 			"routes": [
 				{
-					"pattern": "id.letsident.org",
+					"pattern": "id.authgravity.org",
 					"custom_domain": true
 				},
 				{

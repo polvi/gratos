@@ -15,7 +15,7 @@
   "env": {
     "proc-io": {
       "vars": {
-        "PUBLIC_GRATOS_SERVER": "https://id.letsident.org",
+        "PUBLIC_GRATOS_SERVER": "https://id.authgravity.org",
         "PUBLIC_GRATOS_DOMAIN_SERVER": "https://id.proc.io",
         "PUBLIC_CLIENT_ID": "15ec252b-4cdc-40a7-8936-741f4457c055"
       },
@@ -28,8 +28,8 @@
     },
     "prod": {
       "vars": {
-        "PUBLIC_GRATOS_SERVER": "https://id.letsident.org",
-        "PUBLIC_GRATOS_DOMAIN_SERVER": "https://id.letsident.org",
+        "PUBLIC_GRATOS_SERVER": "https://id.authgravity.org",
+        "PUBLIC_GRATOS_DOMAIN_SERVER": "https://id.authgravity.org",
         "PUBLIC_CLIENT_ID": "15ec252b-4cdc-40a7-8936-741f4457c055"
       }
     }
