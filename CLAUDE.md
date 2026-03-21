@@ -11,13 +11,10 @@ Gratos is a zero-trust, serverless, headless passkey authentication service. It 
 **Install dependencies:** `bun install`
 
 **Development (run both in separate terminals):**
-- Worker: `bun --cwd packages/worker-runtime dev` (port 8787)
-- Demo: `bun --cwd packages/demo dev` (port 4321)
 
 **Build:**
 - Preact lib: `bun --cwd packages/preact build`
 - Demo (builds preact first): `bun run build-demo`
-- Worker deploy: `bun --cwd packages/worker-runtime deploy`
 
 **E2E tests:** `bun --cwd packages/e2e test` (auto-starts both servers via Playwright)
 
@@ -25,7 +22,6 @@ Gratos is a zero-trust, serverless, headless passkey authentication service. It 
 
 Four packages in a Bun workspace:
 
-- **packages/worker-runtime** — Cloudflare Worker (Hono server). Handles WebAuthn registration/authentication, session management (KV), credential storage (D1), client CRUD, and a basic OIDC provider. Config via wrangler.jsonc bindings.
 - **packages/preact** — Published as `@gratos/preact`. Preact components for auth UI (LoginButton, RegisterButton, LogoutButton, UserProfile, Admin, AuthGravity). All components consume `AuthContext` which provides user state and `apiBaseUrl`.
 - **packages/demo** — Astro SSR app using `@astrojs/preact` and `@astrojs/cloudflare`. Three pages: `/` (main), `/login`, `/admin`. Environment vars in `.env.local` (`PUBLIC_GRATOS_SERVER`, `PUBLIC_GRATOS_DOMAIN_SERVER`, `PUBLIC_CLIENT_ID`).
 - **packages/e2e** — Playwright tests using Chromium's virtual authenticator (CDP) to test full passkey flows.
@@ -44,7 +40,6 @@ Four packages in a Bun workspace:
 
 ## Database (D1)
 
-Three tables: `users(id)`, `public_keys(id, user_id, credential_id, public_key, user_backed_up, transports)`, `clients(id, user_id, origin, domain_setting, created_at)`. Migrations in `packages/worker-runtime/migrations/`.
 
 ## Worker API Endpoints
 

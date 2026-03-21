@@ -1,0 +1,250 @@
+# AuthGravity
+
+> Zero-knowledge, serverless, headless passkey authentication.
+
+AuthGravity is a hosted authentication service powered by the open source Gratos project. It stores only public key material - no passwords, no usernames on the server. User identity lives in your app; AuthGravity handles WebAuthn credential storage and session management via first-party cookies.
+
+## Setup
+
+1. Sign up at authgravity.org with a passkey and enter your domain (e.g., `myapp.com`).
+2. AuthGravity generates a unique CNAME record for your domain:
+
+```
+Type:   CNAME
+Name:   authgravity
+Target: <token>.cname.authgravity.net
+```
+
+The target is a unique token generated for your claim (e.g., `ab3kx7.cname.authgravity.net`). This proves you control the domain's DNS.
+
+3. Add this CNAME record in your DNS provider. AuthGravity polls DNS automatically and activates your domain once the record propagates.
+4. Once active, your auth endpoint is `https://authgravity.myapp.com`.
+
+## HTTP API
+
+All endpoints are relative to your auth endpoint (e.g., `https://authgravity.myapp.com`). Sessions are managed via `httpOnly`, `secure`, `sameSite=None` cookies. Include credentials on every request from the browser.
+
+### Registration
+
+**Step 1: Get registration options**
+
+```
+GET /register/options
+```
+
+Returns WebAuthn `PublicKeyCredentialCreationOptions` plus a `userId` field (a server-generated UUID).
+
+**Step 2: Verify registration**
+
+Pass the WebAuthn attestation response from the browser along with the `userId` from step 1.
+
+```
+POST /register/verify
+Content-Type: application/json
+
+{
+  "userId": "<userId from step 1>",
+  "response": <attestation response from navigator.credentials.create()>
+}
+```
+
+Returns `{ "verified": true, "user": { "id": "<uuid>" } }` on success. Sets a `session_id` cookie.
+
+### Authentication (Login)
+
+**Step 1: Get authentication options**
+
+```
+GET /login/options
+```
+
+Returns WebAuthn `PublicKeyCredentialRequestOptions` plus a `challengeId` field.
+
+**Step 2: Verify authentication**
+
+Pass the WebAuthn assertion response from the browser along with the `challengeId` from step 1.
+
+```
+POST /login/verify
+Content-Type: application/json
+
+{
+  "challengeId": "<challengeId from step 1>",
+  "response": <assertion response from navigator.credentials.get()>
+}
+```
+
+Returns `{ "verified": true, "user": { "id": "<uuid>" } }` on success. Sets a `session_id` cookie.
+
+### Session Management
+
+**Check current session:**
+
+```
+GET /whoami
+```
+
+Returns `{ "user_id": "<uuid>" }` if authenticated, or 401 if not.
+
+The session can be identified two ways:
+- **Cookie** (browser): the `session_id` cookie set automatically by registration/login.
+- **Bearer token** (server-to-server): pass `Authorization: Bearer <session_id>` header.
+
+**Logout:**
+
+```
+POST /logout
+```
+
+Destroys the session and clears the cookie.
+
+## Using @simplewebauthn/browser
+
+The `@simplewebauthn/browser` library handles the browser-side WebAuthn ceremony. Install it:
+
+```
+npm install @simplewebauthn/browser
+```
+
+### Registration example
+
+```javascript
+import { startRegistration } from '@simplewebauthn/browser';
+
+const API = 'https://authgravity.myapp.com';
+
+// 1. Fetch options from AuthGravity
+const optRes = await fetch(`${API}/register/options`, { credentials: 'include' });
+const opts = await optRes.json();
+
+// 2. Browser prompts user for passkey (biometric, security key, etc.)
+const attResp = await startRegistration({ optionsJSON: opts });
+
+// 3. Send attestation response back to AuthGravity for verification
+const verRes = await fetch(`${API}/register/verify`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  credentials: 'include',
+  body: JSON.stringify({ response: attResp, userId: opts.userId }),
+});
+const result = await verRes.json();
+// result: { verified: true, user: { id: "<uuid>" } }
+// A session_id cookie is now set.
+```
+
+### Login example
+
+```javascript
+import { startAuthentication } from '@simplewebauthn/browser';
+
+const API = 'https://authgravity.myapp.com';
+
+// 1. Fetch options from AuthGravity
+const optRes = await fetch(`${API}/login/options`, { credentials: 'include' });
+const opts = await optRes.json();
+
+// 2. Browser prompts user for passkey
+const assertResp = await startAuthentication({ optionsJSON: opts });
+
+// 3. Send assertion response back to AuthGravity for verification
+const verRes = await fetch(`${API}/login/verify`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  credentials: 'include',
+  body: JSON.stringify({ response: assertResp, challengeId: opts.challengeId }),
+});
+const result = await verRes.json();
+// result: { verified: true, user: { id: "<uuid>" } }
+// A session_id cookie is now set.
+```
+
+### Checking auth state from the browser
+
+```javascript
+const res = await fetch('https://authgravity.myapp.com/whoami', {
+  credentials: 'include',
+});
+if (res.ok) {
+  const data = await res.json();
+  console.log('Authenticated user:', data.user_id);
+} else {
+  console.log('Not authenticated');
+}
+```
+
+## Server-Side Session Validation
+
+Your backend can validate the user's session by forwarding the `session_id` cookie from the incoming request to the `/whoami` endpoint. This is useful for protecting server-rendered pages or API routes.
+
+### Astro middleware example
+
+```typescript
+import { defineMiddleware } from "astro:middleware";
+
+const AUTH_API = "https://authgravity.myapp.com";
+
+export const onRequest = defineMiddleware(async (context, next) => {
+  if (context.url.pathname.startsWith("/protected")) {
+    const cookieHeader = context.request.headers.get("cookie");
+
+    const res = await fetch(`${AUTH_API}/whoami`, {
+      headers: cookieHeader ? { cookie: cookieHeader } : {},
+    });
+
+    if (!res.ok) {
+      return context.redirect("/login");
+    }
+
+    // Optionally read the user ID
+    // const { user_id } = await res.json();
+  }
+
+  return next();
+});
+```
+
+The key detail: forward the raw `cookie` header from the user's browser request to the AuthGravity `/whoami` call. The `session_id` cookie is scoped to the registrable domain (e.g., `.myapp.com`), so it is sent by the browser on requests to both `authgravity.myapp.com` and `www.myapp.com`.
+
+### Express / Node.js example
+
+```javascript
+app.use('/protected', async (req, res, next) => {
+  const cookieHeader = req.headers.cookie;
+
+  const authRes = await fetch('https://authgravity.myapp.com/whoami', {
+    headers: cookieHeader ? { cookie: cookieHeader } : {},
+  });
+
+  if (!authRes.ok) {
+    return res.redirect('/login');
+  }
+
+  const { user_id } = await authRes.json();
+  req.userId = user_id;
+  next();
+});
+```
+
+## Session Model
+
+- First-party `httpOnly`, `secure` cookie (`session_id`) scoped to the registrable domain
+- Sessions stored in Cloudflare KV with configurable TTL (default 7 days)
+- Challenges expire after 5 minutes
+- Cookie `sameSite=None` allows cross-subdomain usage
+
+## Privacy Model
+
+- The server generates a UUID for each user and never stores usernames
+- Usernames are only used client-side as the WebAuthn authenticator display name
+- The users table contains only `id` - no email, no name, no PII
+- Credentials table stores the public key, never private key material
+
+## Key Concepts
+
+- **Tenant isolation**: each domain gets its own user pool. A user registered on `authgravity.foo.com` has no relationship to a user on `authgravity.bar.com`.
+- **RP ID**: the registrable domain (e.g., `authgravity.myapp.com` -> RP ID `myapp.com`), so passkeys work across subdomains.
+- **Progressive disclosure**: users authenticate first, share personal info later (e.g., at checkout). AuthGravity gives you a stable UUID; you store profile data in your own database.
+
+## Source Code
+
+AuthGravity is powered by Gratos, licensed AGPLv3: https://github.com/polvi/gratos

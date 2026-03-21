@@ -1,0 +1,378 @@
+---
+import Layout from "../layouts/Layout.astro";
+
+const cnameExample = `Type:   CNAME
+Name:   authgravity
+Target: &lt;token&gt;.cname.authgravity.net`;
+
+const registerVerifyExample = `POST /register/verify
+Content-Type: application/json
+
+{
+  "userId": "&lt;userId from step 1&gt;",
+  "response": &lt;attestation response from navigator.credentials.create()&gt;
+}`;
+
+const loginVerifyExample = `POST /login/verify
+Content-Type: application/json
+
+{
+  "challengeId": "&lt;challengeId from step 1&gt;",
+  "response": &lt;assertion response from navigator.credentials.get()&gt;
+}`;
+
+const verifiedResult = `{ "verified": true, "user": { "id": "&lt;uuid&gt;" } }`;
+const whoamiResult = `{ "user_id": "&lt;uuid&gt;" }`;
+
+const registerCodeExample = `import { startRegistration } from '@simplewebauthn/browser';
+
+const API = 'https://authgravity.myapp.com';
+
+// 1. Fetch options from AuthGravity
+const optRes = await fetch(API + '/register/options', { credentials: 'include' });
+const opts = await optRes.json();
+
+// 2. Browser prompts user for passkey (biometric, security key, etc.)
+const attResp = await startRegistration({ optionsJSON: opts });
+
+// 3. Send attestation response back for verification
+const verRes = await fetch(API + '/register/verify', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  credentials: 'include',
+  body: JSON.stringify({ response: attResp, userId: opts.userId }),
+});
+const result = await verRes.json();
+// result: { verified: true, user: { id: "&lt;uuid&gt;" } }
+// A session_id cookie is now set.`;
+
+const loginCodeExample = `import { startAuthentication } from '@simplewebauthn/browser';
+
+const API = 'https://authgravity.myapp.com';
+
+// 1. Fetch options from AuthGravity
+const optRes = await fetch(API + '/login/options', { credentials: 'include' });
+const opts = await optRes.json();
+
+// 2. Browser prompts user for passkey
+const assertResp = await startAuthentication({ optionsJSON: opts });
+
+// 3. Send assertion response back for verification
+const verRes = await fetch(API + '/login/verify', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  credentials: 'include',
+  body: JSON.stringify({ response: assertResp, challengeId: opts.challengeId }),
+});
+const result = await verRes.json();
+// result: { verified: true, user: { id: "&lt;uuid&gt;" } }
+// A session_id cookie is now set.`;
+
+const checkAuthExample = `const res = await fetch('https://authgravity.myapp.com/whoami', {
+  credentials: 'include',
+});
+if (res.ok) {
+  const data = await res.json();
+  console.log('Authenticated user:', data.user_id);
+} else {
+  console.log('Not authenticated');
+}`;
+
+const astroMiddlewareExample = `import { defineMiddleware } from "astro:middleware";
+
+const AUTH_API = "https://authgravity.myapp.com";
+
+export const onRequest = defineMiddleware(async (context, next) =&gt; {
+  if (context.url.pathname.startsWith("/protected")) {
+    const cookieHeader = context.request.headers.get("cookie");
+
+    const res = await fetch(AUTH_API + "/whoami", {
+      headers: cookieHeader ? { cookie: cookieHeader } : {},
+    });
+
+    if (!res.ok) {
+      return context.redirect("/login");
+    }
+
+    // Optionally read the user ID
+    // const { user_id } = await res.json();
+  }
+
+  return next();
+});`;
+
+const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
+  const cookieHeader = req.headers.cookie;
+
+  const authRes = await fetch('https://authgravity.myapp.com/whoami', {
+    headers: cookieHeader ? { cookie: cookieHeader } : {},
+  });
+
+  if (!authRes.ok) {
+    return res.redirect('/login');
+  }
+
+  const { user_id } = await authRes.json();
+  req.userId = user_id;
+  next();
+});`;
+---
+
+<Layout title="Docs — AuthGravity">
+  <style>
+    .docs {
+      margin: 2rem 0 4rem;
+    }
+    .docs h1 {
+      font-size: 2rem;
+      font-weight: 800;
+      margin-bottom: 1.5rem;
+    }
+    .docs h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-top: 2.5rem;
+      margin-bottom: 1rem;
+    }
+    .docs h3 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-top: 1.5rem;
+      margin-bottom: 0.75rem;
+    }
+    .docs p {
+      font-size: 1.05rem;
+      color: #52525b;
+      line-height: 1.7;
+      margin-bottom: 1.25rem;
+    }
+    .docs a {
+      color: #2563eb;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .docs a:hover {
+      color: #1d4ed8;
+      text-decoration: underline;
+    }
+    .docs code {
+      background: #f4f4f5;
+      padding: 0.15rem 0.4rem;
+      border-radius: 0.25rem;
+      font-size: 0.9em;
+    }
+    .docs pre {
+      background: #18181b;
+      color: #e4e4e7;
+      padding: 1.25rem;
+      border-radius: 0.5rem;
+      overflow-x: auto;
+      margin-bottom: 1.25rem;
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+    .docs pre code {
+      background: none;
+      padding: 0;
+      font-size: inherit;
+      color: inherit;
+    }
+    .docs table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1.25rem;
+      font-size: 0.95rem;
+    }
+    .docs th, .docs td {
+      text-align: left;
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid #e4e4e7;
+    }
+    .docs th {
+      font-weight: 600;
+      color: #18181b;
+    }
+    .docs td {
+      color: #52525b;
+    }
+    .docs ul, .docs ol {
+      margin-bottom: 1.25rem;
+      padding-left: 1.5rem;
+    }
+    .docs li {
+      font-size: 1.05rem;
+      color: #52525b;
+      line-height: 1.7;
+      margin-bottom: 0.5rem;
+    }
+    .docs .llms-link {
+      display: inline-block;
+      margin-top: 0.5rem;
+      font-size: 0.85rem;
+      color: #a1a1aa;
+    }
+  </style>
+
+  <div class="docs">
+    <h1>Documentation</h1>
+
+    <p>
+      AuthGravity provides passwordless authentication for your domain using passkeys.
+      Integrate by calling the HTTP API directly from any language or framework.
+    </p>
+
+    <p>
+      <a href="/llms.txt" class="llms-link">llms.txt - machine-readable version of these docs</a>
+    </p>
+
+    <h2>Setup</h2>
+
+    <ol>
+      <li><a href="/signup">Sign up</a> with a passkey and enter your domain (e.g., <code>example.com</code>).</li>
+      <li>AuthGravity will generate a unique CNAME record for your domain:</li>
+    </ol>
+
+    <pre><code set:html={cnameExample} /></pre>
+
+    <p>
+      The target is a unique token generated for your claim (e.g., <code>ab3kx7.cname.authgravity.net</code>).
+      This proves you control the domain's DNS.
+    </p>
+
+    <ol start="3">
+      <li>Add this CNAME record in your DNS provider. AuthGravity polls DNS automatically and activates your domain once the record propagates.</li>
+      <li>Once active, your auth endpoint is <code>https://authgravity.example.com</code>.</li>
+    </ol>
+
+    <p>
+      Every domain gets its own isolated user pool.
+      A user registered on <code>authgravity.foo.com</code> has no relationship to a user on <code>authgravity.bar.com</code>.
+    </p>
+
+    <h2>HTTP API</h2>
+
+    <p>
+      All endpoints are relative to your auth endpoint (e.g., <code>https://authgravity.myapp.com</code>).
+      Sessions are managed via <code>httpOnly</code>, <code>secure</code>, <code>sameSite=None</code> cookies.
+      Include credentials on every request from the browser.
+    </p>
+
+    <h3>Registration</h3>
+
+    <p><strong>Step 1:</strong> Get registration options.</p>
+
+    <pre><code>GET /register/options</code></pre>
+
+    <p>
+      Returns WebAuthn <code>PublicKeyCredentialCreationOptions</code> plus a <code>userId</code> field
+      (a server-generated UUID).
+    </p>
+
+    <p><strong>Step 2:</strong> Pass the WebAuthn attestation response along with the <code>userId</code> from step 1.</p>
+
+    <pre><code set:html={registerVerifyExample} /></pre>
+
+    <p>Returns <code set:html={verifiedResult} /> and sets a <code>session_id</code> cookie.</p>
+
+    <h3>Authentication (Login)</h3>
+
+    <p><strong>Step 1:</strong> Get authentication options.</p>
+
+    <pre><code>GET /login/options</code></pre>
+
+    <p>
+      Returns WebAuthn <code>PublicKeyCredentialRequestOptions</code> plus a <code>challengeId</code> field.
+    </p>
+
+    <p><strong>Step 2:</strong> Pass the WebAuthn assertion response along with the <code>challengeId</code> from step 1.</p>
+
+    <pre><code set:html={loginVerifyExample} /></pre>
+
+    <p>Returns <code set:html={verifiedResult} /> and sets a <code>session_id</code> cookie.</p>
+
+    <h3>Session Management</h3>
+
+    <pre><code>GET /whoami</code></pre>
+
+    <p>Returns <code set:html={whoamiResult} /> if authenticated, or 401 if not.</p>
+
+    <p>The session can be identified two ways:</p>
+    <ul>
+      <li><strong>Cookie</strong> (browser): the <code>session_id</code> cookie set automatically by registration/login.</li>
+      <li><strong>Bearer token</strong> (server-to-server): pass <code>Authorization: Bearer &lt;session_id&gt;</code> header.</li>
+    </ul>
+
+    <pre><code>POST /logout</code></pre>
+
+    <p>Destroys the session and clears the cookie.</p>
+
+    <h2>Using @simplewebauthn/browser</h2>
+
+    <p>
+      The <code>@simplewebauthn/browser</code> library handles the browser-side WebAuthn ceremony.
+    </p>
+
+    <pre><code>npm install @simplewebauthn/browser</code></pre>
+
+    <h3>Registration example</h3>
+
+    <pre><code set:html={registerCodeExample} /></pre>
+
+    <h3>Login example</h3>
+
+    <pre><code set:html={loginCodeExample} /></pre>
+
+    <h3>Checking auth state from the browser</h3>
+
+    <pre><code set:html={checkAuthExample} /></pre>
+
+    <h2>Server-Side Session Validation</h2>
+
+    <p>
+      Your backend can validate the user's session by forwarding the <code>session_id</code> cookie
+      from the incoming request to the <code>/whoami</code> endpoint. This is useful for protecting
+      server-rendered pages or API routes.
+    </p>
+
+    <p>
+      The key detail: forward the raw <code>cookie</code> header from the user's browser request to
+      the AuthGravity <code>/whoami</code> call. The <code>session_id</code> cookie is scoped to the
+      registrable domain (e.g., <code>.myapp.com</code>), so it is sent by the browser on requests
+      to both <code>authgravity.myapp.com</code> and <code>www.myapp.com</code>.
+    </p>
+
+    <h3>Astro middleware example</h3>
+
+    <pre><code set:html={astroMiddlewareExample} /></pre>
+
+    <h3>Express / Node.js example</h3>
+
+    <pre><code set:html={expressExample} /></pre>
+
+    <h2>Session Model</h2>
+
+    <ul>
+      <li>First-party <code>httpOnly</code>, <code>secure</code> cookie (<code>session_id</code>) scoped to the registrable domain</li>
+      <li>Sessions stored in Cloudflare KV with configurable TTL (default 7 days)</li>
+      <li>Challenges expire after 5 minutes</li>
+      <li>Cookie <code>sameSite=None</code> allows cross-subdomain usage</li>
+      <li>RP ID is the registrable domain (e.g., <code>authgravity.myapp.com</code> -> RP ID <code>myapp.com</code>), so passkeys work across subdomains</li>
+    </ul>
+
+    <h2>Privacy Model</h2>
+
+    <ul>
+      <li>The server generates a UUID for each user and <strong>never stores usernames</strong></li>
+      <li>Usernames are only used client-side as the WebAuthn authenticator display name</li>
+      <li>The <code>users</code> table contains only <code>id</code> - no email, no name, no PII</li>
+      <li>Credentials table stores the public key, never private key material</li>
+    </ul>
+
+    <h2>Source Code</h2>
+
+    <p>
+      AuthGravity is powered by <a href="https://github.com/polvi/gratos">Gratos</a>,
+      licensed under the AGPLv3.
+    </p>
+  </div>
+</Layout>

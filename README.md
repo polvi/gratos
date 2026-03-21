@@ -9,14 +9,14 @@ Inspired by [Ory Kratos](https://www.ory.sh/kratos/), built on [WebAuthn](https:
 
 ## How It Works
 
-Point a CNAME at the Gratos worker. The tenant is auto-derived from the request hostname — no registration step, no admin panel. Users, credentials, and sessions are all isolated per tenant.
+Sign up at [authgravity.org](https://authgravity.org), claim your domain, and add the CNAME record provided. The tenant is auto-derived from the request hostname. Users, credentials, and sessions are all isolated per tenant.
 
 ```
-your-app.com  ──CNAME──►  gratos worker
-                           (tenant = your-app.com)
+authgravity.myapp.com  ──CNAME──►  <token>.cname.authgravity.net
+                                    (tenant = authgravity.myapp.com)
 ```
 
-Every domain that resolves to the Gratos worker gets its own user pool. A user who registers on `auth.foo.com` has no relationship to a user on `auth.bar.com`.
+Every domain gets its own user pool. A user who registers on `authgravity.foo.com` has no relationship to a user on `authgravity.bar.com`.
 
 ## Architecture
 
@@ -25,7 +25,7 @@ Browser
   ├─ @gratos/preact (LoginButton, RegisterButton, etc.)
   │    └─ @simplewebauthn/browser
   │
-  └─ auth.myapp.com (CNAME → Gratos Worker)
+  └─ authgravity.myapp.com (CNAME → Gratos Worker)
        ├─ Hono server on Cloudflare Workers
        ├─ @simplewebauthn/server
        ├─ D1 (users, credentials — scoped by tenant)
@@ -37,12 +37,12 @@ Browser
 Because the auth server lives on your domain (via CNAME), everything is same-origin. No iframes, no popups, no cross-domain redirects.
 
 1. User clicks **Register** or **Sign In** in your app
-2. `@gratos/preact` calls `auth.myapp.com` for WebAuthn options
+2. `@gratos/preact` calls `authgravity.myapp.com` for WebAuthn options
 3. Browser prompts for passkey (biometric, security key, etc.)
-4. `@gratos/preact` sends the response back to `auth.myapp.com` for verification
+4. `@gratos/preact` sends the response back to `authgravity.myapp.com` for verification
 5. Worker verifies the credential, creates a session, sets an `httpOnly` cookie
 
-RP ID is the registrable domain (e.g., `auth.myapp.com` → RP ID `myapp.com`), so passkeys work across subdomains.
+RP ID is the registrable domain (e.g., `authgravity.myapp.com` → RP ID `myapp.com`), so passkeys work across subdomains.
 
 ## Session Model
 
@@ -61,21 +61,23 @@ RP ID is the registrable domain (e.g., `auth.myapp.com` → RP ID `myapp.com`), 
 
 ```
 packages/
-  worker-runtime/   Cloudflare Worker: WebAuthn + sessions
+  gratos-multi/     Cloudflare Worker — WebAuthn, sessions, multi-tenant
   preact/           @gratos/preact: LoginButton, RegisterButton, AuthContext
-  demo/             Astro SSR app on Cloudflare Workers
-  e2e/              Playwright tests with virtual authenticator
+  gratos-dash/      AuthGravity dashboard and docs site (Astro)
+  provisioner/      Domain provisioning service
 ```
 
 ## Getting Started
 
-### 1. Add Gratos to your domain
+### 1. Claim your domain
 
-Create a CNAME record pointing to the Gratos worker:
+Sign up at [authgravity.org](https://authgravity.org) and enter your domain. Add the CNAME record provided:
 
 ```
-auth.myapp.com  CNAME  your-gratos-worker.workers.dev
+authgravity  CNAME  <token>.cname.authgravity.net
 ```
+
+The target is a unique per-claim token (e.g., `ab3kx7.cname.authgravity.net`) that proves DNS ownership. AuthGravity polls and activates automatically.
 
 ### 2. Embed the auth components
 
@@ -84,7 +86,7 @@ import { AuthProvider, LoginButton, RegisterButton } from '@gratos/preact';
 
 function App() {
   return (
-    <AuthProvider apiBaseUrl="https://auth.myapp.com">
+    <AuthProvider apiBaseUrl="https://authgravity.myapp.com">
       <LoginButton />
       <RegisterButton />
     </AuthProvider>
@@ -111,7 +113,6 @@ function Profile() {
 bun install
 
 # Run both in separate terminals:
-bun --cwd packages/worker-runtime dev    # Worker on :8787
 bun --cwd packages/demo dev              # Demo on :4321
 ```
 
@@ -120,7 +121,6 @@ bun --cwd packages/demo dev              # Demo on :4321
 ```bash
 bun --cwd packages/preact build          # Build preact lib
 bun run build-demo                       # Build demo (builds preact first)
-bun --cwd packages/worker-runtime deploy # Deploy worker
 ```
 
 ## E2E Tests
@@ -139,6 +139,12 @@ bun --cwd packages/e2e test    # Starts both servers, runs Playwright with virtu
 | POST | `/login/verify` | Verify authentication + create session |
 | GET | `/whoami` | Get current user from session |
 | POST | `/logout` | Destroy session |
+
+## Full API Documentation
+
+See the [AuthGravity docs](https://authgravity.org/docs) for complete integration guides covering both the `@gratos/preact` component library and the native HTTP API (registration, login, session management, client CRUD).
+
+A machine-readable version is available at [authgravity.org/llms.txt](https://authgravity.org/llms.txt).
 
 ## Key Dependencies
 

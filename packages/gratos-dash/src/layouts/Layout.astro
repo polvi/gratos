@@ -123,6 +123,12 @@ const apiBaseUrl = env.PUBLIC_GRATOS_SERVER || import.meta.env.PUBLIC_GRATOS_SER
         <a href="/" class="logo">AuthGravity</a>
         <div class="links">
           <a
+            href="/docs"
+            class:list={[
+              { active: pathname === "/docs" || pathname === "/docs/" },
+            ]}>Docs</a
+          >
+          <a
             href="/about"
             class:list={[
               { active: pathname === "/about" || pathname === "/about/" },
