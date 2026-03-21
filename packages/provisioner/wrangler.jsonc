@@ -30,7 +30,7 @@
 	"env": {
 		"prod": {
 			"vars": {
-				"CF_ZONE_ID": "55ba510e429ec4305a3cf947aef59e41",
+				"CF_ZONE_ID": "41c4bbe52929912d59f87e7d200ba557",
 				"CORS_ALLOW_ORIGIN": "https://authgravity.org",
 				"AUTH_TENANT": "authgravity.org"
 			},
