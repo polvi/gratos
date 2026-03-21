@@ -1,8 +1,11 @@
 import { h } from 'preact';
+import { useState } from 'preact/hooks';
 import { AuthProvider, useAuth } from '@gratos/preact';
+import { startAuthentication } from '@simplewebauthn/browser';
 
 function NavButtonInner({ currentPath }: { currentPath: string }) {
-    const { isAuthenticated, logout, isLoading } = useAuth();
+    const { isAuthenticated, login, logout, apiBaseUrl, isLoading } = useAuth();
+    const [status, setStatus] = useState('');
 
     if (isLoading) {
         // Placeholder to prevent layout shift during initial auth check
@@ -23,13 +26,46 @@ function NavButtonInner({ currentPath }: { currentPath: string }) {
         );
     }
 
+    const handleLogin = async () => {
+        try {
+            setStatus('Logging in...');
+            const resp = await fetch(`${apiBaseUrl}/login/options`);
+            const options = await resp.json();
+
+            const asseResp = await startAuthentication({ optionsJSON: options });
+
+            const verifyResp = await fetch(`${apiBaseUrl}/login/verify`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    challengeId: options.challengeId,
+                    response: asseResp,
+                }),
+                credentials: 'include',
+            });
+
+            const verifyJSON = await verifyResp.json();
+
+            if (verifyJSON && verifyJSON.verified) {
+                setStatus('');
+                login(verifyJSON.user);
+                window.location.href = '/domains';
+            } else {
+                setStatus('');
+            }
+        } catch {
+            setStatus('');
+        }
+    };
+
     return (
-        <a
-            href="/login"
-            class={`nav-button ${currentPath === '/login' || currentPath === '/login/' ? 'active' : ''}`}
+        <button
+            class="nav-button"
+            onClick={handleLogin}
+            disabled={!!status}
         >
-            Log In
-        </a>
+            {status || 'Log In'}
+        </button>
     );
 }
 
