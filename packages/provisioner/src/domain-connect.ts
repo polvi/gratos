@@ -74,7 +74,7 @@ export function buildApplyUrl(
     redirectUri: string,
 ): string {
     const providerName = 'authgravity.org';
-    const serviceName = 'authgravity';
+    const serviceName = 'auth';
 
     const params = new URLSearchParams({
         domain,

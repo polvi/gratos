@@ -3,7 +3,7 @@ import { useState } from 'preact/hooks';
 
 export function DomainEntry({ provisionerBaseUrl, onClaimed }: {
     provisionerBaseUrl: string;
-    onClaimed: (claimId: string, domain: string, cnameName: string, cnameTarget: string) => void;
+    onClaimed: (claimId: string, domain: string) => void;
 }) {
     const [domain, setDomain] = useState('');
     const [error, setError] = useState('');
@@ -45,7 +45,7 @@ export function DomainEntry({ provisionerBaseUrl, onClaimed }: {
                 return;
             }
 
-            onClaimed(data.id, trimmed, data.cname_name, data.cname_target);
+            onClaimed(data.id, trimmed);
         } catch (err) {
             setError('Network error. Please try again.');
         } finally {

@@ -4,11 +4,13 @@ import { LoginFlow } from "../../components/LoginFlow";
 import { env } from "cloudflare:workers";
 
 const apiBaseUrl = env.PUBLIC_GRATOS_SERVER || import.meta.env.PUBLIC_GRATOS_SERVER;
+const provisionerBaseUrl = env.PUBLIC_PROVISIONER_SERVER || import.meta.env.PUBLIC_PROVISIONER_SERVER;
 ---
 
 <Layout title="Log In">
   <LoginFlow
     client:only="preact"
     apiBaseUrl={apiBaseUrl}
+    provisionerBaseUrl={provisionerBaseUrl}
   />
 </Layout>

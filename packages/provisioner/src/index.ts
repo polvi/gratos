@@ -53,18 +53,9 @@ const authMiddleware = async (c: any, next: any) => {
     await next();
 };
 
-/** Generate a short random token for unique CNAME challenges */
-function generateToken(): string {
-    const bytes = new Uint8Array(6);
-    crypto.getRandomValues(bytes);
-    // Base32-like encoding: lowercase alphanumeric, no ambiguous chars
-    const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
-    let token = '';
-    for (const b of bytes) {
-        token += alphabet[b % alphabet.length];
-    }
-    return token;
-}
+const CNAME_TARGET = 'cname.authgravity.net';
+const CNAME_NAME = 'authgravity';
+const CLAIM_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 type DnsLookupResult = {
     cname: string | null;
@@ -149,8 +140,8 @@ type AdvanceResult =
     | { status: 'error'; error: string; code?: number };
 
 async function advanceClaim(claim: any, env: Env): Promise<AdvanceResult> {
-    const expectedTarget = `${claim.token}.cname.authgravity.net`;
-    const hostname = `authgravity.${claim.domain}`;
+    const expectedTarget = CNAME_TARGET;
+    const hostname = `${CNAME_NAME}.${claim.domain}`;
     const dns = await lookupDNS(hostname);
 
     if (dns.cname !== expectedTarget) {
@@ -225,7 +216,7 @@ async function advanceClaim(claim: any, env: Env): Promise<AdvanceResult> {
     }
 
     // Re-verify CNAME hasn't changed
-    const finalDns = await lookupDNS(`authgravity.${claim.domain}`);
+    const finalDns = await lookupDNS(`${CNAME_NAME}.${claim.domain}`);
     if (finalDns.cname !== expectedTarget) {
         return { status: 'error', error: 'CNAME target changed during provisioning', code: 403 };
     }
@@ -269,9 +260,8 @@ app.get('/', (c) => c.text('Gratos Provisioner Running'));
 // Anonymous routes — claim ID is the bearer token
 // =============================================
 
-// --- POST /claims — EnterDomain: create pending claim with unique CNAME token ---
-// Multiple claims for the same domain can coexist (different tokens).
-// Only DNS owner can set the right CNAME, so only they progress.
+// --- POST /claims — EnterDomain: create pending claim ---
+// One pending claim per domain. Claims expire after 4 hours.
 app.post('/claims', async (c) => {
     const { domain } = await c.req.json();
 
@@ -284,7 +274,7 @@ app.post('/claims', async (c) => {
         return c.json({ error: 'Invalid domain format' }, 400);
     }
 
-    // OneDomainOneOwner: reject if already claimed
+    // Reject if already claimed
     const existingClaimed = await c.env.DB.prepare(
         'SELECT id FROM domains WHERE domain = ?'
     ).bind(domain).first();
@@ -292,22 +282,31 @@ app.post('/claims', async (c) => {
         return c.json({ error: 'Domain already claimed' }, 409);
     }
 
-    // No check for existing pending claims — multiple allowed per spec
+    // Reject if there's already an active pending claim (not yet expired)
+    const existingPending = await c.env.DB.prepare(
+        'SELECT id, created_at FROM pending_claims WHERE domain = ?'
+    ).bind(domain).first() as any;
+    if (existingPending) {
+        const age = Date.now() - existingPending.created_at;
+        if (age < CLAIM_TTL_MS) {
+            return c.json({ error: 'Domain already has a pending claim' }, 409);
+        }
+        // Expired — clean it up
+        await c.env.DB.prepare('DELETE FROM pending_claims WHERE id = ?').bind(existingPending.id).run();
+    }
 
     const id = crypto.randomUUID();
-    const token = generateToken();
     const createdAt = Date.now();
 
     await c.env.DB.prepare(
-        'INSERT INTO pending_claims (id, domain, token, created_at) VALUES (?, ?, ?, ?)'
-    ).bind(id, domain, token, createdAt).run();
+        'INSERT INTO pending_claims (id, domain, created_at) VALUES (?, ?, ?)'
+    ).bind(id, domain, createdAt).run();
 
     return c.json({
         id,
         domain,
-        token,
-        cname_name: 'authgravity',
-        cname_target: `${token}.cname.authgravity.net`,
+        cname_name: CNAME_NAME,
+        cname_target: CNAME_TARGET,
         status: 'pending',
         created_at: createdAt,
     }, 201);
@@ -326,9 +325,8 @@ app.get('/claims/:id', async (c) => {
         return c.json({
             id: pending.id,
             domain: pending.domain,
-            token: pending.token,
-            cname_name: 'authgravity',
-            cname_target: `${pending.token}.cname.authgravity.net`,
+            cname_name: CNAME_NAME,
+            cname_target: CNAME_TARGET,
             status: 'pending',
             has_identity: !!pending.identity_id,
             created_at: pending.created_at,
@@ -370,7 +368,7 @@ app.get('/claims/:id/domain-connect', async (c) => {
         return c.json({ supported: false });
     }
 
-    const target = `${claim.token}.cname.authgravity.net`;
+    const target = CNAME_TARGET;
     const provisionerBase = c.env.PROVISIONER_BASE_URL || `https://${c.req.header('host')}`;
     const redirectUri = `${provisionerBase}/claims/${claimId}/domain-connect/callback`;
 
@@ -514,7 +512,7 @@ app.get('/domains', authMiddleware, async (c) => {
     const identityId = c.get('identityId');
 
     const { results: pending } = await c.env.DB.prepare(
-        'SELECT id, domain, token, created_at FROM pending_claims WHERE identity_id = ?'
+        'SELECT id, domain, created_at FROM pending_claims WHERE identity_id = ?'
     ).bind(identityId).all();
 
     const { results: claimed } = await c.env.DB.prepare(
@@ -526,15 +524,15 @@ app.get('/domains', authMiddleware, async (c) => {
             id: r.id,
             domain: r.domain,
             status: 'pending',
-            cname_name: 'authgravity',
-            cname_target: `${r.token}.cname.authgravity.net`,
+            cname_name: CNAME_NAME,
+            cname_target: CNAME_TARGET,
             created_at: r.created_at,
         })),
         claimed: (claimed || []).map((r: any) => ({
             id: r.id,
             domain: r.domain,
             status: 'active',
-            cname_name: 'authgravity',
+            cname_name: CNAME_NAME,
             claimed_at: r.claimed_at,
         })),
     });
@@ -542,9 +540,8 @@ app.get('/domains', authMiddleware, async (c) => {
 
 // --- Scheduled handler ---
 // 1. Advance claims that have an identity bound (DNS verified → provision → claim)
-// 2. Expire stale unbound claims (no identity = anonymous, never authenticated)
+// 2. Expire stale claims (4 hours TTL)
 // 3. Reconcile: DB is source of truth — delete any CF custom hostname not in DB
-const UNBOUND_CLAIM_TTL_MS = 60 * 60 * 1000; // 1 hour for claims without an identity
 
 async function handleScheduled(env: Env) {
     const cf = new CloudflareCustomHostnames(env.CF_API_TOKEN, env.CF_ZONE_ID);
@@ -570,12 +567,12 @@ async function handleScheduled(env: Env) {
         }
     }
 
-    // --- Phase 2: Expire stale unbound claims ---
-    // Claims without an identity (user never authenticated) get cleaned up.
-    const cutoff = Date.now() - UNBOUND_CLAIM_TTL_MS;
+    // --- Phase 2: Expire stale claims ---
+    // All pending claims expire after 4 hours regardless of identity binding.
+    const cutoff = Date.now() - CLAIM_TTL_MS;
 
     const { results: expired } = await env.DB.prepare(
-        'SELECT id, cf_hostname_id FROM pending_claims WHERE identity_id IS NULL AND created_at < ?'
+        'SELECT id, cf_hostname_id FROM pending_claims WHERE created_at < ?'
     ).bind(cutoff).all();
 
     if (expired && expired.length > 0) {

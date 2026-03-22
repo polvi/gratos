@@ -2,12 +2,13 @@ import { h } from 'preact';
 import { useState, useEffect, useCallback } from 'preact/hooks';
 import { AuthProvider, useAuth } from '@gratos/preact';
 
+const CNAME_NAME = 'authgravity';
+const CNAME_TARGET = 'cname.authgravity.net';
+
 type Domain = {
     id: string;
     domain: string;
     status: 'pending' | 'active';
-    cname_name?: string;
-    cname_target?: string;
     created_at?: number;
     claimed_at?: number;
 };
@@ -53,8 +54,8 @@ function PendingDetails({ domain, provisionerBaseUrl, onClaimed }: {
     onClaimed: () => void;
 }) {
     const [phase, setPhase] = useState<'waiting_for_dns' | 'dns_mismatch' | 'provisioning' | 'error'>('waiting_for_dns');
-    const [dnsLookup, setDnsLookup] = useState(`${domain.cname_name}.${domain.domain}`);
-    const [dnsExpected, setDnsExpected] = useState(domain.cname_target || '');
+    const [dnsLookup, setDnsLookup] = useState(`${CNAME_NAME}.${domain.domain}`);
+    const [dnsExpected, setDnsExpected] = useState(CNAME_TARGET);
     const [dnsActual, setDnsActual] = useState<string | null>(null);
     const [dnsFound, setDnsFound] = useState<Array<{ type: string; value: string }>>([]);
     const [error, setError] = useState('');
@@ -141,10 +142,10 @@ function PendingDetails({ domain, provisionerBaseUrl, onClaimed }: {
         <div style={{ padding: '0.75rem 0 0' }}>
             <div style={{ fontSize: '0.8rem', color: '#52525b', marginBottom: '0.5rem' }}>
                 {phase === 'waiting_for_dns' && (dnsFound.length > 0
-                    ? `Found existing records for ${domain.cname_name}.${domain.domain}, but no CNAME.`
+                    ? `Found existing records for ${CNAME_NAME}.${domain.domain}, but no CNAME.`
                     : 'No DNS records found yet. Add the CNAME record below.')}
                 {phase === 'dns_mismatch' && 'A CNAME record exists but points to the wrong target.'}
-                {phase === 'provisioning' && `DNS verified. Setting up ${domain.cname_name}.${domain.domain}...`}
+                {phase === 'provisioning' && `DNS verified. Setting up ${CNAME_NAME}.${domain.domain}...`}
             </div>
 
             {phase !== 'provisioning' && (
@@ -154,8 +155,8 @@ function PendingDetails({ domain, provisionerBaseUrl, onClaimed }: {
                         <div style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>
                             <div style={{ marginBottom: '0.375rem' }}>
                                 <span style={{ color: '#71717a', fontSize: '0.7rem' }}>Name: </span>
-                                <span style={codeStyle}>{domain.cname_name}</span>
-                                <CopyButton text={domain.cname_name || ''} />
+                                <span style={codeStyle}>{CNAME_NAME}</span>
+                                <CopyButton text={CNAME_NAME || ''} />
                             </div>
                             <div>
                                 <span style={{ color: '#71717a', fontSize: '0.7rem' }}>Target: </span>
@@ -246,7 +247,7 @@ function PendingDetails({ domain, provisionerBaseUrl, onClaimed }: {
 }
 
 function ActiveDetails({ domain }: { domain: Domain }) {
-    const endpoint = `${domain.cname_name}.${domain.domain}`;
+    const endpoint = `${CNAME_NAME}.${domain.domain}`;
 
     const cardStyle = {
         background: '#f9fafb',

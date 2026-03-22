@@ -1,18 +1,18 @@
 import { h } from 'preact';
 import { useState, useEffect, useCallback } from 'preact/hooks';
-import { AuthProvider, useAuth, LoginButton, RegisterButton } from '@gratos/preact';
+import { AuthProvider } from '@gratos/preact';
 import { DomainEntry } from './DomainEntry';
 import { ClaimStatus } from './ClaimStatus';
 
-type Step = 'domain' | 'dns' | 'auth' | 'provisioning' | 'done';
+type Step = 'domain' | 'dns' | 'provisioning' | 'done';
+
+const CNAME_NAME = 'authgravity';
+const CNAME_TARGET = 'cname.authgravity.net';
 
 function SignupInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
     const [step, setStep] = useState<Step>('domain');
     const [claimId, setClaimId] = useState<string | null>(null);
     const [domain, setDomain] = useState('');
-    const [cnameName, setCnameName] = useState('');
-    const [cnameTarget, setCnameTarget] = useState('');
-    const { isAuthenticated } = useAuth();
 
     // Restore state after Domain Connect redirect
     useEffect(() => {
@@ -29,9 +29,7 @@ function SignupInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
                         if (data.status === 'pending') {
                             setClaimId(data.id);
                             setDomain(data.domain);
-                            setCnameName(data.cname_name);
-                            setCnameTarget(data.cname_target);
-                            setStep('auth');
+                            setStep('provisioning');
                         }
                     }
                 } catch {
@@ -46,13 +44,6 @@ function SignupInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
         }
     }, [provisionerBaseUrl]);
 
-    // When user authenticates on the auth step, auto-advance to provisioning
-    useEffect(() => {
-        if (step === 'auth' && isAuthenticated && claimId) {
-            setStep('provisioning');
-        }
-    }, [step, isAuthenticated, claimId]);
-
     return (
         <div style={{ width: '100%', margin: '2rem 0' }}>
             {/* Step 1: EnterDomain — anon, DB only */}
@@ -66,11 +57,9 @@ function SignupInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
                     </p>
                     <DomainEntry
                         provisionerBaseUrl={provisionerBaseUrl}
-                        onClaimed={(id, dom, name, target) => {
+                        onClaimed={(id, dom) => {
                             setClaimId(id);
                             setDomain(dom);
-                            setCnameName(name);
-                            setCnameTarget(target);
                             setStep('dns');
                         }}
                     />
@@ -81,40 +70,17 @@ function SignupInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
             {step === 'dns' && claimId && (
                 <ClaimStatus
                     domain={domain}
-                    cnameName={cnameName}
-                    cnameTarget={cnameTarget}
                     claimId={claimId}
                     provisionerBaseUrl={provisionerBaseUrl}
-                    onDone={() => setStep('auth')}
+                    onDone={() => setStep('provisioning')}
                 />
             )}
 
-            {/* Step 3: Authenticate */}
-            {step === 'auth' && !isAuthenticated && (
-                <>
-                    <h1 style={{ fontSize: '1.75rem', fontWeight: 700, marginBottom: '0.5rem' }}>
-                        Create your account
-                    </h1>
-                    <p style={{ color: '#52525b', marginBottom: '2rem', lineHeight: 1.6 }}>
-                        Register or sign in to complete your domain claim.
-                    </p>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                        <RegisterButton />
-                        <div style={{ textAlign: 'center', color: '#a1a1aa', fontSize: '0.875rem' }}>
-                            or
-                        </div>
-                        <LoginButton />
-                    </div>
-                </>
-            )}
-
-            {/* Step 4: ProvisionCF + poll ValidateCF + ClaimDomain */}
+            {/* Step 3: ProvisionCF + poll ValidateCF + ClaimDomain */}
             {step === 'provisioning' && claimId && (
                 <ProvisionAndFinalize
                     claimId={claimId}
                     domain={domain}
-                    cnameName={cnameName}
-                    cnameTarget={cnameTarget}
                     provisionerBaseUrl={provisionerBaseUrl}
                     onDone={() => setStep('done')}
                 />
@@ -150,7 +116,7 @@ function SignupInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
                             See passkey auth in action on your domain:
                         </p>
                         <a
-                            href={`https://${cnameName}.${domain}/demo`}
+                            href={`https://${CNAME_NAME}.${domain}/demo`}
                             target="_blank"
                             rel="noopener"
                             style={{
@@ -219,7 +185,7 @@ function SignupInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
 function App() {
   return (
     <AuthProvider
-      apiBaseUrl="https://${cnameName}.${domain}"
+      apiBaseUrl="https://${CNAME_NAME}.${domain}"
     >
       <RegisterButton />
       <LoginButton />
@@ -254,17 +220,15 @@ function App() {
     );
 }
 
-function ProvisionAndFinalize({ claimId, domain, cnameName, cnameTarget, provisionerBaseUrl, onDone }: {
+function ProvisionAndFinalize({ claimId, domain, provisionerBaseUrl, onDone }: {
     claimId: string;
     domain: string;
-    cnameName: string;
-    cnameTarget: string;
     provisionerBaseUrl: string;
     onDone: () => void;
 }) {
     const [phase, setPhase] = useState<'waiting_for_dns' | 'dns_mismatch' | 'provisioning' | 'error'>('waiting_for_dns');
-    const [dnsLookup, setDnsLookup] = useState(`${cnameName}.${domain}`);
-    const [dnsExpected, setDnsExpected] = useState(cnameTarget);
+    const [dnsLookup, setDnsLookup] = useState(`${CNAME_NAME}.${domain}`);
+    const [dnsExpected, setDnsExpected] = useState(CNAME_TARGET);
     const [dnsActual, setDnsActual] = useState<string | null>(null);
     const [dnsFound, setDnsFound] = useState<Array<{ type: string; value: string }>>([]);
     const [error, setError] = useState('');
@@ -361,10 +325,10 @@ function ProvisionAndFinalize({ claimId, domain, cnameName, cnameTarget, provisi
             </h1>
             <p style={{ color: '#52525b', marginBottom: '1.5rem', lineHeight: 1.6 }}>
                 {phase === 'waiting_for_dns' && (dnsFound.length > 0
-                    ? `Found existing records for ${cnameName}.${domain}, but no CNAME. See details below.`
+                    ? `Found existing records for ${CNAME_NAME}.${domain}, but no CNAME. See details below.`
                     : 'No DNS records found yet. Add the CNAME record below in your DNS provider.')}
                 {phase === 'dns_mismatch' && 'A CNAME record exists but points to the wrong target. Update it to match.'}
-                {phase === 'provisioning' && `DNS verified. Setting up ${cnameName}.${domain}...`}
+                {phase === 'provisioning' && `DNS verified. Setting up ${CNAME_NAME}.${domain}...`}
             </p>
 
             {/* DNS diagnostic panel — always visible unless provisioning */}
@@ -376,7 +340,7 @@ function ProvisionAndFinalize({ claimId, domain, cnameName, cnameTarget, provisi
                         <div style={{ fontSize: '0.875rem', marginTop: '0.5rem' }}>
                             <div style={{ marginBottom: '0.5rem' }}>
                                 <div style={{ color: '#71717a', fontSize: '0.75rem', marginBottom: '0.125rem' }}>Name</div>
-                                <span style={codeStyle}>{cnameName}</span>
+                                <span style={codeStyle}>{CNAME_NAME}</span>
                             </div>
                             <div>
                                 <div style={{ color: '#71717a', fontSize: '0.75rem', marginBottom: '0.125rem' }}>Target</div>

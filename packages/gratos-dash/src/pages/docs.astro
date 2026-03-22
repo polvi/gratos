@@ -3,7 +3,7 @@ import Layout from "../layouts/Layout.astro";
 
 const cnameExample = `Type:   CNAME
 Name:   authgravity
-Target: &lt;token&gt;.cname.authgravity.net`;
+Target: cname.authgravity.net`;
 
 const registerVerifyExample = `POST /register/verify
 Content-Type: application/json
@@ -305,19 +305,14 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
     <h2>Setup</h2>
 
     <ol>
-      <li><a href="/signup">Sign up</a> with a passkey and enter your domain (e.g., <code>example.com</code>).</li>
-      <li>AuthGravity will generate a unique CNAME record for your domain:</li>
+      <li><a href="/login">Sign up</a> with a passkey and enter your domain (e.g., <code>example.com</code>).</li>
+      <li>Add a CNAME record to your domain:</li>
     </ol>
 
     <pre><code set:html={cnameExample} /></pre>
 
-    <p>
-      The target is a unique per-claim token (e.g., <code>ab3kx7.cname.authgravity.net</code>)
-      that proves you control the domain's DNS.
-    </p>
-
     <ol start="3">
-      <li>Add this CNAME record in your DNS provider. AuthGravity polls DNS automatically and activates your domain once the record propagates.</li>
+      <li>AuthGravity polls DNS automatically and activates your domain once the record propagates. Claims expire after 4 hours if DNS is not configured.</li>
       <li>Once active, your auth endpoint is <code>https://authgravity.example.com</code>.</li>
     </ol>
 

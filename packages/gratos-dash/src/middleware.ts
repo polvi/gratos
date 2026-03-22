@@ -2,8 +2,9 @@ import { defineMiddleware } from "astro:middleware";
 import { env } from "cloudflare:workers";
 
 export const onRequest = defineMiddleware(async (context, next) => {
-    // Only intercept requests for the /domains path
-    if (context.url.pathname.startsWith("/domains")) {
+    // Protect authenticated routes
+    const path = context.url.pathname;
+    if (path.startsWith("/domains") || path.startsWith("/signup")) {
         // Read the API URL from environment (Cloudflare runtime fallback to build-time)
         const apiBaseUrl = env.PUBLIC_GRATOS_SERVER || import.meta.env.PUBLIC_GRATOS_SERVER;
         

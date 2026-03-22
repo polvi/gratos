@@ -10,6 +10,7 @@ interface Props {
 const { title } = Astro.props;
 const pathname = Astro.url.pathname;
 const apiBaseUrl = env.PUBLIC_GRATOS_SERVER || import.meta.env.PUBLIC_GRATOS_SERVER;
+const provisionerBaseUrl = env.PUBLIC_PROVISIONER_SERVER || import.meta.env.PUBLIC_PROVISIONER_SERVER;
 ---
 
 <html lang="en">
@@ -19,6 +20,13 @@ const apiBaseUrl = env.PUBLIC_GRATOS_SERVER || import.meta.env.PUBLIC_GRATOS_SER
     <meta name="viewport" content="width=device-width" />
     <title>{title}</title>
     <style>
+      @font-face {
+        font-family: 'Chakra Petch';
+        src: url('/fonts/ChakraPetch-Bold.ttf') format('truetype');
+        font-weight: 700;
+        font-style: normal;
+        font-display: swap;
+      }
       * {
         margin: 0;
         padding: 0;
@@ -26,7 +34,7 @@ const apiBaseUrl = env.PUBLIC_GRATOS_SERVER || import.meta.env.PUBLIC_GRATOS_SER
       }
       body {
         font-family: system-ui, sans-serif;
-        background: #fafafa;
+        background: #fff;
         color: #18181b;
       }
       .container {
@@ -46,8 +54,9 @@ const apiBaseUrl = env.PUBLIC_GRATOS_SERVER || import.meta.env.PUBLIC_GRATOS_SER
         gap: 1rem;
       }
       nav .logo {
-        font-weight: 800;
-        font-size: 1.1rem;
+        font-family: 'Chakra Petch', system-ui, sans-serif;
+        font-weight: 700;
+        font-size: 2rem;
         text-decoration: none;
         color: #18181b;
       }
@@ -136,12 +145,12 @@ const apiBaseUrl = env.PUBLIC_GRATOS_SERVER || import.meta.env.PUBLIC_GRATOS_SER
             ]}>About</a
           >
           <a
-            href="/signup"
+            href="/login"
             class:list={[
-              { active: pathname === "/signup" || pathname === "/signup/" },
+              { active: pathname === "/login" || pathname === "/login/" },
             ]}>Get Started</a
           >
-          <NavButton client:load apiBaseUrl={apiBaseUrl} currentPath={pathname} />
+          <NavButton client:load apiBaseUrl={apiBaseUrl} provisionerBaseUrl={provisionerBaseUrl} currentPath={pathname} />
         </div>
       </nav>
       <main>

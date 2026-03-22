@@ -38,14 +38,17 @@ function CopyButton({ text }: { text: string }) {
     );
 }
 
-export function ClaimStatus({ domain, cnameName, cnameTarget, claimId, provisionerBaseUrl, onDone }: {
+const CNAME_NAME = 'authgravity';
+const CNAME_TARGET = 'cname.authgravity.net';
+
+export function ClaimStatus({ domain, claimId, provisionerBaseUrl, onDone }: {
     domain: string;
-    cnameName: string;
-    cnameTarget: string;
     claimId: string;
     provisionerBaseUrl: string;
     onDone: () => void;
 }) {
+    const cnameName = CNAME_NAME;
+    const cnameTarget = CNAME_TARGET;
     const [dcLoading, setDcLoading] = useState(true);
     const [dcSupported, setDcSupported] = useState(false);
     const [dcApplyUrl, setDcApplyUrl] = useState('');

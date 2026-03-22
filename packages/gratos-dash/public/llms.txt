@@ -14,18 +14,16 @@ AuthGravity runs on your domain via a CNAME record. This means:
 
 ## Setup
 
-1. Sign up at authgravity.org with a passkey and enter your domain (e.g., `myapp.com`).
-2. AuthGravity generates a unique CNAME record for your domain:
+1. Log in at authgravity.org with a passkey (or create an account) and enter your domain (e.g., `myapp.com`).
+2. Add a CNAME record to your domain:
 
 ```
 Type:   CNAME
 Name:   authgravity
-Target: <token>.cname.authgravity.net
+Target: cname.authgravity.net
 ```
 
-The target is a unique per-claim token (e.g., `ab3kx7.cname.authgravity.net`) that proves you control the domain's DNS.
-
-3. Add this CNAME record in your DNS provider. AuthGravity polls DNS automatically and activates your domain once the record propagates.
+3. AuthGravity polls DNS automatically and activates your domain once the record propagates. Claims expire after 4 hours if DNS is not configured.
 4. Once active, your auth endpoint is `https://authgravity.myapp.com`.
 
 Each domain gets its own isolated user pool. A user on `authgravity.foo.com` has no relationship to a user on `authgravity.bar.com`.
