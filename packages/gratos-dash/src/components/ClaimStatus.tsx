@@ -1,5 +1,5 @@
 import { h } from 'preact';
-import { useState } from 'preact/hooks';
+import { useState, useEffect } from 'preact/hooks';
 
 function CopyButton({ text }: { text: string }) {
     const [copied, setCopied] = useState(false);
@@ -38,12 +38,38 @@ function CopyButton({ text }: { text: string }) {
     );
 }
 
-export function ClaimStatus({ domain, cnameName, cnameTarget, onDone }: {
+export function ClaimStatus({ domain, cnameName, cnameTarget, claimId, provisionerBaseUrl, onDone }: {
     domain: string;
     cnameName: string;
     cnameTarget: string;
+    claimId: string;
+    provisionerBaseUrl: string;
     onDone: () => void;
 }) {
+    const [dcLoading, setDcLoading] = useState(true);
+    const [dcSupported, setDcSupported] = useState(false);
+    const [dcApplyUrl, setDcApplyUrl] = useState('');
+    const [dcProvider, setDcProvider] = useState('');
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const res = await fetch(`${provisionerBaseUrl}/claims/${claimId}/domain-connect`);
+                if (res.ok) {
+                    const data = await res.json() as any;
+                    if (data.supported) {
+                        setDcSupported(true);
+                        setDcApplyUrl(data.apply_url);
+                        setDcProvider(data.provider_name || 'your DNS provider');
+                    }
+                }
+            } catch {
+                // Domain Connect not available — fall through to manual
+            } finally {
+                setDcLoading(false);
+            }
+        })();
+    }, [claimId, provisionerBaseUrl]);
     const cardStyle = {
         background: '#fff',
         border: '1px solid #e4e4e7',
@@ -68,6 +94,47 @@ export function ClaimStatus({ domain, cnameName, cnameTarget, onDone }: {
             <p style={{ color: '#52525b', marginBottom: '1.5rem', lineHeight: 1.6 }}>
                 Add a CNAME record to <strong>{domain}</strong> in your DNS provider.
             </p>
+
+            {/* Domain Connect auto-setup */}
+            {!dcLoading && dcSupported && (
+                <div style={{
+                    background: '#eff6ff',
+                    border: '1px solid #bfdbfe',
+                    borderRadius: '0.5rem',
+                    padding: '1.25rem',
+                    marginBottom: '1.5rem',
+                }}>
+                    <a
+                        href={dcApplyUrl}
+                        style={{
+                            display: 'block',
+                            width: '100%',
+                            padding: '0.625rem',
+                            background: '#2563eb',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '0.375rem',
+                            fontSize: '1rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            textAlign: 'center',
+                            textDecoration: 'none',
+                            boxSizing: 'border-box',
+                        }}
+                    >
+                        Set up automatically with {dcProvider}
+                    </a>
+                    <p style={{ color: '#1e40af', fontSize: '0.8rem', marginTop: '0.75rem', textAlign: 'center' }}>
+                        You'll be redirected to approve the DNS change, then sent back here.
+                    </p>
+                </div>
+            )}
+
+            {!dcLoading && dcSupported && (
+                <p style={{ color: '#a1a1aa', fontSize: '0.8rem', marginBottom: '1rem', textAlign: 'center' }}>
+                    Or configure manually
+                </p>
+            )}
 
             <div style={cardStyle}>
                 <div style={{ fontSize: '0.875rem' }}>

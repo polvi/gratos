@@ -8,7 +8,9 @@
 	"vars": {
 		"CF_ZONE_ID": "DIFF",
 		"CORS_ALLOW_ORIGIN": "http://localhost:4322",
-		"AUTH_TENANT": "localhost"
+		"AUTH_TENANT": "localhost",
+		"PROVISIONER_BASE_URL": "http://localhost:8787",
+		"SIGNUP_BASE_URL": "http://localhost:4322"
 	},
 	"services": [
 		{
@@ -32,7 +34,9 @@
 			"vars": {
 				"CF_ZONE_ID": "41c4bbe52929912d59f87e7d200ba557",
 				"CORS_ALLOW_ORIGIN": "https://authgravity.org",
-				"AUTH_TENANT": "authgravity.org"
+				"AUTH_TENANT": "authgravity.org",
+				"PROVISIONER_BASE_URL": "https://provision.api.authgravity.org",
+				"SIGNUP_BASE_URL": "https://authgravity.org"
 			},
 			"routes": [
 				{

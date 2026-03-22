@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { getCookie } from 'hono/cookie';
 import { CloudflareCustomHostnames } from './cf-api';
+import { discoverDomainConnect, buildApplyUrl, signDomainConnectRequest } from './domain-connect';
 
 import type { AuthRPC } from '../../gratos-multi/src/index';
 
@@ -12,6 +13,9 @@ type Env = {
     CORS_ALLOW_ORIGIN?: string;
     AUTH: Service<AuthRPC>;
     AUTH_TENANT: string;
+    DC_SIGNING_KEY?: string;
+    PROVISIONER_BASE_URL?: string;
+    SIGNUP_BASE_URL?: string;
 };
 
 type Variables = {
@@ -347,6 +351,66 @@ app.get('/claims/:id', async (c) => {
     }
 
     return c.json({ error: 'Claim not found' }, 404);
+});
+
+// --- GET /claims/:id/domain-connect — Check if Domain Connect is available ---
+app.get('/claims/:id/domain-connect', async (c) => {
+    const claimId = c.req.param('id');
+
+    const claim = await c.env.DB.prepare(
+        'SELECT * FROM pending_claims WHERE id = ?'
+    ).bind(claimId).first() as any;
+
+    if (!claim) {
+        return c.json({ error: 'Claim not found' }, 404);
+    }
+
+    const discovery = await discoverDomainConnect(claim.domain);
+    if (!discovery.supported) {
+        return c.json({ supported: false });
+    }
+
+    const target = `${claim.token}.cname.authgravity.net`;
+    const provisionerBase = c.env.PROVISIONER_BASE_URL || `https://${c.req.header('host')}`;
+    const redirectUri = `${provisionerBase}/claims/${claimId}/domain-connect/callback`;
+
+    let applyUrl = buildApplyUrl(discovery.settings, claim.domain, target, redirectUri);
+
+    // Sign the request if we have a signing key
+    if (c.env.DC_SIGNING_KEY) {
+        try {
+            const urlObj = new URL(applyUrl);
+            const sig = await signDomainConnectRequest(urlObj.search.slice(1), c.env.DC_SIGNING_KEY);
+            urlObj.searchParams.set('sig', sig);
+            urlObj.searchParams.set('key', 'domainconnect.authgravity.org');
+            applyUrl = urlObj.toString();
+        } catch (err) {
+            console.error('Failed to sign Domain Connect request:', err);
+            // Continue without signature — unsigned flow still works for many providers
+        }
+    }
+
+    return c.json({
+        supported: true,
+        apply_url: applyUrl,
+        provider_name: discovery.settings.providerName,
+    });
+});
+
+// --- GET /claims/:id/domain-connect/callback — DNS provider redirects here after approval ---
+app.get('/claims/:id/domain-connect/callback', async (c) => {
+    const claimId = c.req.param('id');
+
+    const claim = await c.env.DB.prepare(
+        'SELECT * FROM pending_claims WHERE id = ?'
+    ).bind(claimId).first() as any;
+
+    if (!claim) {
+        return c.text('Claim not found', 404);
+    }
+
+    const signupBase = c.env.SIGNUP_BASE_URL || 'https://authgravity.org';
+    return c.redirect(`${signupBase}/signup?claim_id=${claimId}&dc=success`);
 });
 
 // =============================================

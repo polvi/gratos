@@ -1,0 +1,14 @@
+{
+  "providerId": "authgravity.org",
+  "providerName": "AuthGravity",
+  "serviceId": "authgravity",
+  "serviceName": "AuthGravity Domain",
+  "name": "AuthGravity Authentication",
+  "description": "Enables a domain to work with AuthGravity",
+  "syncBlock": false,
+  "shared": false,
+  "syncPubKeyDomain": "domainconnect.authgravity.org",
+  "records": [
+    { "type": "CNAME", "host": "authgravity", "pointsTo": "%target%", "ttl": 3600 }
+  ]
+}

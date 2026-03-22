@@ -14,6 +14,38 @@ function SignupInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
     const [cnameTarget, setCnameTarget] = useState('');
     const { isAuthenticated } = useAuth();
 
+    // Restore state after Domain Connect redirect
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const dcClaimId = params.get('claim_id');
+        const dcStatus = params.get('dc');
+        if (dcClaimId && dcStatus === 'success') {
+            // Fetch claim details to restore state
+            (async () => {
+                try {
+                    const res = await fetch(`${provisionerBaseUrl}/claims/${dcClaimId}`);
+                    if (res.ok) {
+                        const data = await res.json() as any;
+                        if (data.status === 'pending') {
+                            setClaimId(data.id);
+                            setDomain(data.domain);
+                            setCnameName(data.cname_name);
+                            setCnameTarget(data.cname_target);
+                            setStep('auth');
+                        }
+                    }
+                } catch {
+                    // Fall through to normal flow
+                }
+            })();
+            // Clean URL
+            const url = new URL(window.location.href);
+            url.searchParams.delete('claim_id');
+            url.searchParams.delete('dc');
+            window.history.replaceState({}, '', url.pathname);
+        }
+    }, [provisionerBaseUrl]);
+
     // When user authenticates on the auth step, auto-advance to provisioning
     useEffect(() => {
         if (step === 'auth' && isAuthenticated && claimId) {
@@ -46,11 +78,13 @@ function SignupInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
             )}
 
             {/* Step 2: Show CNAME instructions, "Done" button */}
-            {step === 'dns' && (
+            {step === 'dns' && claimId && (
                 <ClaimStatus
                     domain={domain}
                     cnameName={cnameName}
                     cnameTarget={cnameTarget}
+                    claimId={claimId}
+                    provisionerBaseUrl={provisionerBaseUrl}
                     onDone={() => setStep('auth')}
                 />
             )}
