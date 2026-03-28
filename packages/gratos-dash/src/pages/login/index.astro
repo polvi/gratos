@@ -3,6 +3,8 @@ import Layout from "../../layouts/Layout.astro";
 import { LoginFlow } from "../../components/LoginFlow";
 import { env } from "cloudflare:workers";
 
+export const prerender = false;
+
 const apiBaseUrl = env.PUBLIC_GRATOS_SERVER || import.meta.env.PUBLIC_GRATOS_SERVER;
 const provisionerBaseUrl = env.PUBLIC_PROVISIONER_SERVER || import.meta.env.PUBLIC_PROVISIONER_SERVER;
 ---
