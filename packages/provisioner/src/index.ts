@@ -139,31 +139,34 @@ type AdvanceResult =
     | { status: 'claimed'; id: string; domain: string; claimed_at: number }
     | { status: 'error'; error: string; code?: number };
 
-async function advanceClaim(claim: any, env: Env): Promise<AdvanceResult> {
+async function advanceClaim(claim: any, env: Env, opts?: { skipDns?: boolean }): Promise<AdvanceResult> {
     const expectedTarget = CNAME_TARGET;
     const hostname = `${CNAME_NAME}.${claim.domain}`;
-    const dns = await lookupDNS(hostname);
 
-    if (dns.cname !== expectedTarget) {
-        if (dns.cname) {
-            // CNAME exists but points to wrong target
+    if (!opts?.skipDns) {
+        const dns = await lookupDNS(hostname);
+
+        if (dns.cname !== expectedTarget) {
+            if (dns.cname) {
+                // CNAME exists but points to wrong target
+                return {
+                    status: 'dns_mismatch',
+                    domain: claim.domain,
+                    dns_lookup: hostname,
+                    dns_expected: expectedTarget,
+                    dns_actual: dns.cname,
+                };
+            }
+            // No CNAME — return whatever records we did find
             return {
-                status: 'dns_mismatch',
+                status: 'waiting_for_dns',
                 domain: claim.domain,
                 dns_lookup: hostname,
                 dns_expected: expectedTarget,
-                dns_actual: dns.cname,
+                dns_actual: null,
+                dns_found: dns.other,
             };
         }
-        // No CNAME — return whatever records we did find
-        return {
-            status: 'waiting_for_dns',
-            domain: claim.domain,
-            dns_lookup: hostname,
-            dns_expected: expectedTarget,
-            dns_actual: null,
-            dns_found: dns.other,
-        };
     }
 
     // --- Create CF custom hostname (if not already) ---
@@ -454,7 +457,15 @@ app.post('/claims/:id/activate', authMiddleware, async (c) => {
         return c.json({ error: 'Claim owned by another identity' }, 403);
     }
 
-    const result = await advanceClaim(claim, c.env);
+    let skipDns = false;
+    try {
+        const body = await c.req.json();
+        skipDns = !!body?.skip_dns;
+    } catch {
+        // No body or not JSON — that's fine
+    }
+
+    const result = await advanceClaim(claim, c.env, { skipDns });
 
     if (result.status === 'error') {
         return c.json({ error: result.error }, result.code || 500);
