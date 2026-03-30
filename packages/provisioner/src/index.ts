@@ -372,7 +372,7 @@ app.get('/claims/:id/domain-connect', async (c) => {
     const provisionerBase = c.env.PROVISIONER_BASE_URL || `https://${c.req.header('host')}`;
     const redirectUri = `${provisionerBase}/claims/${claimId}/domain-connect/callback`;
 
-    let applyUrl = buildApplyUrl(discovery.settings, claim.domain, target, redirectUri);
+    let applyUrl = buildApplyUrl(discovery.settings, claim.domain, CNAME_NAME, target, redirectUri);
 
     // Sign the request if we have a signing key
     if (c.env.DC_SIGNING_KEY) {

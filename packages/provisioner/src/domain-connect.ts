@@ -70,6 +70,7 @@ export async function discoverDomainConnect(
 export function buildApplyUrl(
     settings: DomainConnectSettings,
     domain: string,
+    host: string,
     target: string,
     redirectUri: string,
 ): string {
@@ -78,6 +79,7 @@ export function buildApplyUrl(
 
     const params = new URLSearchParams({
         domain,
+        host,
         providerName,
         serviceName,
         target,
