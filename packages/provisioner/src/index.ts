@@ -136,7 +136,7 @@ type AdvanceResult =
     | { status: 'waiting_for_dns'; domain: string; dns_lookup: string; dns_expected: string; dns_actual: string | null; dns_found: Array<{ type: string; value: string }> }
     | { status: 'dns_mismatch'; domain: string; dns_lookup: string; dns_expected: string; dns_actual: string }
     | { status: 'provisioning'; domain: string }
-    | { status: 'claimed'; id: string; domain: string; claimed_at: number }
+    | { status: 'claimed'; id: string; domain: string; claimed_at: number; ssl_status: string }
     | { status: 'error'; error: string; code?: number };
 
 async function advanceClaim(claim: any, env: Env, opts?: { skipDns?: boolean }): Promise<AdvanceResult> {
@@ -206,7 +206,11 @@ async function advanceClaim(claim: any, env: Env, opts?: { skipDns?: boolean }):
 
     // --- Check CF hostname status ---
     const cfResult = await cf.get(claim.cf_hostname_id);
-    if (!cfResult.success || cfResult.result.status !== 'active') {
+    if (!cfResult.success) {
+        return { status: 'provisioning', domain: claim.domain };
+    }
+    // Hostname must be active to proceed, but don't wait for SSL
+    if (cfResult.result.status !== 'active') {
         return { status: 'provisioning', domain: claim.domain };
     }
 
@@ -254,7 +258,7 @@ async function advanceClaim(claim: any, env: Env, opts?: { skipDns?: boolean }):
         }
     }
 
-    return { status: 'claimed', id: domainId, domain: claim.domain, claimed_at: claimedAt };
+    return { status: 'claimed', id: domainId, domain: claim.domain, claimed_at: claimedAt, ssl_status: cfResult.result.ssl?.status || 'pending' };
 }
 
 app.get('/', (c) => c.text('Gratos Provisioner Running'));
@@ -553,6 +557,32 @@ app.get('/domains', authMiddleware, async (c) => {
             claimed_at: r.claimed_at,
         })),
     });
+});
+
+// --- GET /domains/:id/ssl — Check SSL certificate status for a claimed domain ---
+app.get('/domains/:id/ssl', authMiddleware, async (c) => {
+    const identityId = c.get('identityId');
+    const domainId = c.req.param('id');
+
+    const domain = await c.env.DB.prepare(
+        'SELECT * FROM domains WHERE id = ? AND identity_id = ?'
+    ).bind(domainId, identityId).first() as any;
+
+    if (!domain) {
+        return c.json({ error: 'Domain not found' }, 404);
+    }
+
+    if (!domain.cf_hostname_id) {
+        return c.json({ ssl_status: 'pending' });
+    }
+
+    const cf = new CloudflareCustomHostnames(c.env.CF_API_TOKEN, c.env.CF_ZONE_ID);
+    const cfResult = await cf.get(domain.cf_hostname_id);
+    if (!cfResult.success) {
+        return c.json({ ssl_status: 'pending' });
+    }
+
+    return c.json({ ssl_status: cfResult.result.ssl?.status || 'pending' });
 });
 
 // --- Scheduled handler ---
