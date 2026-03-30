@@ -380,7 +380,7 @@ app.get('/claims/:id/domain-connect', async (c) => {
             const urlObj = new URL(applyUrl);
             const sig = await signDomainConnectRequest(urlObj.search.slice(1), c.env.DC_SIGNING_KEY);
             urlObj.searchParams.set('sig', sig);
-            urlObj.searchParams.set('key', 'domainconnect.authgravity.org');
+            urlObj.searchParams.set('key', '_dck1');
             applyUrl = urlObj.toString();
         } catch (err) {
             console.error('Failed to sign Domain Connect request:', err);

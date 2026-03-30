@@ -114,9 +114,9 @@ export async function signDomainConnectRequest(
     const data = new TextEncoder().encode(queryString);
     const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, data);
 
-    // Base64url encode
+    // Standard Base64 encode (URLSearchParams handles URL-encoding)
     const bytes = new Uint8Array(signature);
     let binary = '';
     for (const b of bytes) binary += String.fromCharCode(b);
-    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return btoa(binary);
 }
