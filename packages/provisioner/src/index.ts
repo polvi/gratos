@@ -408,6 +408,12 @@ app.get('/claims/:id/domain-connect/callback', async (c) => {
     }
 
     const signupBase = c.env.SIGNUP_BASE_URL || 'https://authgravity.org';
+    const error = c.req.query('error');
+    if (error) {
+        const desc = c.req.query('error_description') || '';
+        const status = desc.startsWith('user_cancel') ? 'cancelled' : 'error';
+        return c.redirect(`${signupBase}/signup?claim_id=${claimId}&dc=${status}&error=${encodeURIComponent(error)}`);
+    }
     return c.redirect(`${signupBase}/signup?claim_id=${claimId}&dc=success`);
 });
 

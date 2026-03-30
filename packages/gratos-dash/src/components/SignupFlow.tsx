@@ -13,34 +13,73 @@ function SignupInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
     const [step, setStep] = useState<Step>('domain');
     const [claimId, setClaimId] = useState<string | null>(null);
     const [domain, setDomain] = useState('');
+    const [dcError, setDcError] = useState<string | null>(null);
 
     // Restore state after Domain Connect redirect
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         const dcClaimId = params.get('claim_id');
         const dcStatus = params.get('dc');
-        if (dcClaimId && dcStatus === 'success') {
-            // Fetch claim details to restore state
-            (async () => {
-                try {
-                    const res = await fetch(`${provisionerBaseUrl}/claims/${dcClaimId}`);
-                    if (res.ok) {
-                        const data = await res.json() as any;
-                        if (data.status === 'pending') {
-                            setClaimId(data.id);
-                            setDomain(data.domain);
-                            setStep('provisioning');
-                        }
-                    }
-                } catch {
-                    // Fall through to normal flow
-                }
-            })();
-            // Clean URL
+        if (dcClaimId && dcStatus) {
+            // Clean URL immediately
             const url = new URL(window.location.href);
             url.searchParams.delete('claim_id');
             url.searchParams.delete('dc');
+            url.searchParams.delete('error');
             window.history.replaceState({}, '', url.pathname);
+
+            if (dcStatus === 'cancelled') {
+                // User cancelled at the DNS provider — go back to DNS step
+                (async () => {
+                    try {
+                        const res = await fetch(`${provisionerBaseUrl}/claims/${dcClaimId}`);
+                        if (res.ok) {
+                            const data = await res.json() as any;
+                            if (data.status === 'pending') {
+                                setClaimId(data.id);
+                                setDomain(data.domain);
+                                setDcError('Domain Connect was cancelled. You can try again or add the DNS record manually.');
+                                setStep('dns');
+                            }
+                        }
+                    } catch {
+                        // Fall through to normal flow
+                    }
+                })();
+            } else if (dcStatus === 'error') {
+                (async () => {
+                    try {
+                        const res = await fetch(`${provisionerBaseUrl}/claims/${dcClaimId}`);
+                        if (res.ok) {
+                            const data = await res.json() as any;
+                            if (data.status === 'pending') {
+                                setClaimId(data.id);
+                                setDomain(data.domain);
+                                setDcError('Domain Connect encountered an error. You can try again or add the DNS record manually.');
+                                setStep('dns');
+                            }
+                        }
+                    } catch {
+                        // Fall through to normal flow
+                    }
+                })();
+            } else if (dcStatus === 'success') {
+                (async () => {
+                    try {
+                        const res = await fetch(`${provisionerBaseUrl}/claims/${dcClaimId}`);
+                        if (res.ok) {
+                            const data = await res.json() as any;
+                            if (data.status === 'pending') {
+                                setClaimId(data.id);
+                                setDomain(data.domain);
+                                setStep('provisioning');
+                            }
+                        }
+                    } catch {
+                        // Fall through to normal flow
+                    }
+                })();
+            }
         }
     }, [provisionerBaseUrl]);
 
@@ -67,12 +106,25 @@ function SignupInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
             )}
 
             {/* Step 2: Show CNAME instructions, "Done" button */}
+            {step === 'dns' && dcError && (
+                <div style={{
+                    background: '#fef2f2',
+                    border: '1px solid #fca5a5',
+                    borderRadius: '0.5rem',
+                    padding: '1rem',
+                    marginBottom: '1rem',
+                    color: '#991b1b',
+                    fontSize: '0.875rem',
+                }}>
+                    {dcError}
+                </div>
+            )}
             {step === 'dns' && claimId && (
                 <ClaimStatus
                     domain={domain}
                     claimId={claimId}
                     provisionerBaseUrl={provisionerBaseUrl}
-                    onDone={() => setStep('provisioning')}
+                    onDone={() => { setDcError(null); setStep('provisioning'); }}
                 />
             )}
 
