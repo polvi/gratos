@@ -9,6 +9,7 @@ type Domain = {
     id: string;
     domain: string;
     status: 'pending' | 'active';
+    ssl_status?: string;
     created_at?: number;
     claimed_at?: number;
 };
@@ -246,8 +247,33 @@ function PendingDetails({ domain, provisionerBaseUrl, onClaimed }: {
     );
 }
 
-function ActiveDetails({ domain }: { domain: Domain }) {
+function ActiveDetails({ domain, provisionerBaseUrl }: { domain: Domain; provisionerBaseUrl: string }) {
     const endpoint = `${CNAME_NAME}.${domain.domain}`;
+    const [sslStatus, setSslStatus] = useState<string>(domain.ssl_status || 'pending');
+
+    useEffect(() => {
+        if (sslStatus === 'active') return;
+
+        const checkSsl = async () => {
+            try {
+                const res = await fetch(`${provisionerBaseUrl}/domains/${domain.id}/ssl`, {
+                    credentials: 'include',
+                });
+                if (res.ok) {
+                    const data = await res.json() as any;
+                    setSslStatus(data.ssl_status || 'pending');
+                }
+            } catch {
+                // Ignore transient errors
+            }
+        };
+
+        checkSsl();
+        const interval = setInterval(checkSsl, 5000);
+        return () => clearInterval(interval);
+    }, [domain.id, provisionerBaseUrl, sslStatus]);
+
+    const sslReady = sslStatus === 'active';
 
     const cardStyle = {
         background: '#f9fafb',
@@ -268,6 +294,27 @@ function ActiveDetails({ domain }: { domain: Domain }) {
 
     return (
         <div style={{ padding: '0.75rem 0 0' }}>
+            {!sslReady && (
+                <div style={{
+                    background: '#fffbeb',
+                    border: '1px solid #fde68a',
+                    borderRadius: '0.375rem',
+                    padding: '0.75rem',
+                    marginBottom: '0.5rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                    </svg>
+                    <span style={{ color: '#92400e', fontSize: '0.8rem' }}>
+                        SSL certificate provisioning — this usually takes a few minutes.
+                    </span>
+                </div>
+            )}
+
             <div style={cardStyle}>
                 <div style={{ color: '#71717a', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>
                     Auth Endpoint
@@ -317,16 +364,17 @@ function ActiveDetails({ domain }: { domain: Domain }) {
                 style={{
                     display: 'inline-block',
                     padding: '0.375rem 0.75rem',
-                    background: '#f4f4f5',
+                    background: sslReady ? '#f4f4f5' : '#e4e4e7',
                     border: '1px solid #d4d4d8',
                     borderRadius: '0.375rem',
                     fontSize: '0.75rem',
-                    color: '#18181b',
+                    color: sslReady ? '#18181b' : '#a1a1aa',
                     textDecoration: 'none',
                     fontWeight: 500,
+                    pointerEvents: sslReady ? 'auto' : 'none',
                 }}
             >
-                Open Demo
+                {sslReady ? 'Open Demo' : 'Waiting for SSL...'}
             </a>
         </div>
     );
@@ -530,7 +578,7 @@ function DomainListInner({ provisionerBaseUrl }: { provisionerBaseUrl: string })
                                 />
                             )}
                             {expandedId === d.id && d.status === 'active' && (
-                                <ActiveDetails domain={d} />
+                                <ActiveDetails domain={d} provisionerBaseUrl={provisionerBaseUrl} />
                             )}
                         </div>
                     ))}
