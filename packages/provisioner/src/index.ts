@@ -216,9 +216,14 @@ async function advanceClaim(claim: any, env: Env, opts?: { skipDns?: boolean }):
 
     // --- CF active — finalize and claim domain ---
     const existingClaimed = await env.DB.prepare(
-        'SELECT id FROM domains WHERE domain = ?'
-    ).bind(claim.domain).first();
+        'SELECT id, identity_id FROM domains WHERE domain = ?'
+    ).bind(claim.domain).first() as any;
     if (existingClaimed) {
+        if (existingClaimed.identity_id === claim.identity_id) {
+            // Same owner reclaiming — clean up the pending claim and return success
+            await env.DB.prepare('DELETE FROM pending_claims WHERE id = ?').bind(claim.id).run();
+            return { status: 'claimed', domain: claim.domain };
+        }
         return { status: 'error', error: 'Domain already claimed by another identity', code: 409 };
     }
 
@@ -281,21 +286,51 @@ app.post('/claims', async (c) => {
         return c.json({ error: 'Invalid domain format' }, 400);
     }
 
-    // Reject if already claimed
+    // Check if already claimed
     const existingClaimed = await c.env.DB.prepare(
-        'SELECT id FROM domains WHERE domain = ?'
-    ).bind(domain).first();
+        'SELECT id, identity_id, domain, claimed_at FROM domains WHERE domain = ?'
+    ).bind(domain).first() as any;
     if (existingClaimed) {
+        // If the caller is the owner, let them reclaim
+        const sessionId = getCookie(c, 'session_id');
+        if (sessionId) {
+            const tenant = c.env.AUTH_TENANT || 'localhost';
+            const userId = await c.env.AUTH.resolveSession(tenant, sessionId);
+            if (userId && userId === existingClaimed.identity_id) {
+                return c.json({
+                    id: existingClaimed.id,
+                    domain: existingClaimed.domain,
+                    status: 'reclaimed',
+                    claimed_at: existingClaimed.claimed_at,
+                }, 200);
+            }
+        }
         return c.json({ error: 'Domain already claimed' }, 409);
     }
 
-    // Reject if there's already an active pending claim (not yet expired)
+    // Check if there's already an active pending claim (not yet expired)
     const existingPending = await c.env.DB.prepare(
-        'SELECT id, created_at FROM pending_claims WHERE domain = ?'
+        'SELECT id, identity_id, domain, created_at FROM pending_claims WHERE domain = ?'
     ).bind(domain).first() as any;
     if (existingPending) {
         const age = Date.now() - existingPending.created_at;
         if (age < CLAIM_TTL_MS) {
+            // If the caller owns this pending claim (or no identity bound yet), let them resume
+            const sessionId = getCookie(c, 'session_id');
+            if (sessionId) {
+                const tenant = c.env.AUTH_TENANT || 'localhost';
+                const userId = await c.env.AUTH.resolveSession(tenant, sessionId);
+                if (userId && (!existingPending.identity_id || existingPending.identity_id === userId)) {
+                    return c.json({
+                        id: existingPending.id,
+                        domain: existingPending.domain,
+                        cname_name: CNAME_NAME,
+                        cname_target: CNAME_TARGET,
+                        status: 'pending',
+                        created_at: existingPending.created_at,
+                    }, 200);
+                }
+            }
             return c.json({ error: 'Domain already has a pending claim' }, 409);
         }
         // Expired — clean it up

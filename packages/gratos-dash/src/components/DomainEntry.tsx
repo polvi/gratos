@@ -1,9 +1,10 @@
 import { h } from 'preact';
 import { useState } from 'preact/hooks';
 
-export function DomainEntry({ provisionerBaseUrl, onClaimed }: {
+export function DomainEntry({ provisionerBaseUrl, onClaimed, onReclaimed }: {
     provisionerBaseUrl: string;
     onClaimed: (claimId: string, domain: string) => void;
+    onReclaimed?: (domainId: string, domain: string) => void;
 }) {
     const [domain, setDomain] = useState('');
     const [error, setError] = useState('');
@@ -35,6 +36,7 @@ export function DomainEntry({ provisionerBaseUrl, onClaimed }: {
             const res = await fetch(`${provisionerBaseUrl}/claims`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({ domain: trimmed }),
             });
 
@@ -42,6 +44,11 @@ export function DomainEntry({ provisionerBaseUrl, onClaimed }: {
 
             if (!res.ok) {
                 setError(data.error || 'Failed to create claim');
+                return;
+            }
+
+            if (data.status === 'reclaimed' && onReclaimed) {
+                onReclaimed(data.id, data.domain);
                 return;
             }
 

@@ -108,6 +108,11 @@ function SignupInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
                             setDomain(dom);
                             setStep('dns');
                         }}
+                        onReclaimed={(id, dom) => {
+                            setClaimId(id);
+                            setDomain(dom);
+                            setStep('done');
+                        }}
                     />
                 </>
             )}
