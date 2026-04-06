@@ -620,6 +620,23 @@ app.get('/domains/:id/ssl', authMiddleware, async (c) => {
     return c.json({ ssl_status: cfResult.result.ssl?.status || 'pending' });
 });
 
+// --- GET /domains/:id/stats — User and session counts for a claimed domain ---
+app.get('/domains/:id/stats', authMiddleware, async (c) => {
+    const identityId = c.get('identityId');
+    const domainId = c.req.param('id');
+
+    const domain = await c.env.DB.prepare(
+        'SELECT * FROM domains WHERE id = ? AND identity_id = ?'
+    ).bind(domainId, identityId).first() as any;
+
+    if (!domain) {
+        return c.json({ error: 'Domain not found' }, 404);
+    }
+
+    const stats = await c.env.AUTH.getTenantStats(domain.domain);
+    return c.json(stats);
+});
+
 // --- Scheduled handler ---
 // 1. Advance claims that have an identity bound (DNS verified → provision → claim)
 // 2. Expire stale claims (4 hours TTL)

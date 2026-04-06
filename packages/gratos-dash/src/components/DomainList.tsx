@@ -13,6 +13,8 @@ type Domain = {
     ssl_status?: string;
     created_at?: number;
     claimed_at?: number;
+    users?: number;
+    sessions?: number;
 };
 
 function CopyButton({ text }: { text: string }) {
@@ -380,11 +382,31 @@ function DomainListInner({ provisionerBaseUrl }: { provisionerBaseUrl: string })
                 return;
             }
             const data = await res.json();
+            const claimed = data.claimed || [];
             const all: Domain[] = [
-                ...(data.claimed || []),
+                ...claimed,
                 ...(data.pending || []),
             ];
             setDomains(all);
+
+            // Fetch stats for active domains in parallel
+            const statsPromises = claimed.map(async (d: any) => {
+                try {
+                    const statsRes = await fetch(`${provisionerBaseUrl}/domains/${d.id}/stats`, {
+                        credentials: 'include',
+                    });
+                    if (statsRes.ok) {
+                        const stats = await statsRes.json();
+                        return { id: d.id, ...stats };
+                    }
+                } catch {}
+                return null;
+            });
+            const statsResults = await Promise.all(statsPromises);
+            setDomains(prev => prev.map(d => {
+                const stats = statsResults.find((s: any) => s && s.id === d.id);
+                return stats ? { ...d, users: stats.users, sessions: stats.sessions } : d;
+            }));
         } catch {
             setError('Network error');
         } finally {
@@ -514,6 +536,18 @@ function DomainListInner({ provisionerBaseUrl }: { provisionerBaseUrl: string })
                                         <span style={{ fontSize: '0.75rem', color: '#71717a' }}>
                                             {d.status === 'active' ? 'Active' : 'Pending'}
                                         </span>
+                                        {d.status === 'active' && d.users !== undefined && (
+                                            <>
+                                                <span style={{ color: '#d4d4d8' }}>|</span>
+                                                <span style={{ fontSize: '0.75rem', color: '#71717a' }}>
+                                                    {d.users} {d.users === 1 ? 'user' : 'users'}
+                                                </span>
+                                                <span style={{ color: '#d4d4d8' }}>|</span>
+                                                <span style={{ fontSize: '0.75rem', color: '#71717a' }}>
+                                                    {d.sessions} {d.sessions === 1 ? 'session' : 'sessions'}
+                                                </span>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
                                 <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>

@@ -34,6 +34,31 @@ export class AuthRPC extends WorkerEntrypoint<Env> {
 
         return (user as any).id;
     }
+
+    /**
+     * Get user count and active session count for a tenant.
+     */
+    async getTenantStats(tenant: string): Promise<{ users: number; sessions: number }> {
+        const userCount = await this.env.DB.prepare(
+            'SELECT COUNT(*) as count FROM users WHERE tenant = ?'
+        ).bind(tenant).first() as any;
+
+        let sessions = 0;
+        let cursor: string | undefined;
+        do {
+            const list = await this.env.KV.list({
+                prefix: `session:${tenant}:`,
+                cursor,
+            });
+            sessions += list.keys.length;
+            cursor = list.list_complete ? undefined : (list.cursor as string);
+        } while (cursor);
+
+        return {
+            users: userCount?.count ?? 0,
+            sessions,
+        };
+    }
 }
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
