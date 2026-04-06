@@ -160,6 +160,86 @@ function SignupInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
     );
 }
 
+function ClaudeCodePrompt({ domain }: { domain: string }) {
+    const [copied, setCopied] = useState(false);
+
+    const prompt = `Add passkey authentication to this app using AuthGravity. My auth endpoint is https://authgravity.${domain}.
+
+Read the full AuthGravity documentation at https://authgravity.org/llms.txt before implementing.
+
+Key points:
+- Auth endpoint: https://authgravity.${domain}
+- Use @simplewebauthn/browser for WebAuthn ceremonies
+- Include credentials: 'include' on all fetch calls to the auth endpoint
+- Session validation: forward cookies to /whoami endpoint
+- Users are identified by UUID — store profile data in your own database keyed by that UUID`;
+
+    const handleCopy = () => {
+        navigator.clipboard.writeText(prompt).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        });
+    };
+
+    return (
+        <div style={{
+            background: '#fff',
+            border: '1px solid #e4e4e7',
+            borderRadius: '0.5rem',
+            padding: '1.5rem',
+            marginBottom: '1rem',
+        }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem' }}>
+                Add to your app
+            </h3>
+            <p style={{ color: '#52525b', fontSize: '0.875rem', lineHeight: 1.6, marginBottom: '1rem' }}>
+                Copy this prompt into Claude Code to integrate passkey auth:
+            </p>
+            <div style={{ position: 'relative' }}>
+                <pre style={{
+                    background: '#f4f4f5',
+                    padding: '1rem',
+                    paddingRight: '3rem',
+                    borderRadius: '0.375rem',
+                    fontSize: '0.8rem',
+                    fontFamily: 'monospace',
+                    overflowX: 'auto',
+                    whiteSpace: 'pre-wrap',
+                    lineHeight: 1.5,
+                }}>
+                    <code>{prompt}</code>
+                </pre>
+                <button
+                    onClick={handleCopy}
+                    title="Copy to clipboard"
+                    style={{
+                        position: 'absolute',
+                        top: '0.5rem',
+                        right: '0.5rem',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: '0.25rem',
+                        borderRadius: '0.25rem',
+                        color: copied ? '#16a34a' : '#71717a',
+                    }}
+                >
+                    {copied ? (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                    ) : (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                        </svg>
+                    )}
+                </button>
+            </div>
+        </div>
+    );
+}
+
 function DomainReady({ domain, claimId, provisionerBaseUrl }: {
     domain: string;
     claimId: string;
@@ -265,68 +345,7 @@ function DomainReady({ domain, claimId, provisionerBaseUrl }: {
                 </a>
             </div>
 
-            <div style={{
-                background: '#fff',
-                border: '1px solid #e4e4e7',
-                borderRadius: '0.5rem',
-                padding: '1.5rem',
-                marginBottom: '1rem',
-            }}>
-                <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem' }}>
-                    Add to your app
-                </h3>
-                <p style={{ color: '#52525b', fontSize: '0.875rem', lineHeight: 1.6, marginBottom: '1rem' }}>
-                    Install the Preact widget library and add passkey auth to your app.
-                </p>
-
-                <div style={{ marginBottom: '1rem' }}>
-                    <div style={{ color: '#71717a', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.375rem' }}>
-                        Install
-                    </div>
-                    <pre style={{
-                        background: '#f4f4f5',
-                        padding: '0.75rem',
-                        borderRadius: '0.375rem',
-                        fontSize: '0.8rem',
-                        fontFamily: 'monospace',
-                        overflowX: 'auto',
-                    }}>
-                        <code>npm install @gratos/preact</code>
-                    </pre>
-                </div>
-
-                <div>
-                    <div style={{ color: '#71717a', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.375rem' }}>
-                        Usage
-                    </div>
-                    <pre style={{
-                        background: '#f4f4f5',
-                        padding: '0.75rem',
-                        borderRadius: '0.375rem',
-                        fontSize: '0.8rem',
-                        fontFamily: 'monospace',
-                        overflowX: 'auto',
-                        whiteSpace: 'pre',
-                        lineHeight: 1.5,
-                    }}>
-                        <code>{`import { AuthProvider, LoginButton,
-  RegisterButton, LogoutButton,
-  useAuth } from '@gratos/preact';
-
-function App() {
-  return (
-    <AuthProvider
-      apiBaseUrl="https://${CNAME_NAME}.${domain}"
-    >
-      <RegisterButton />
-      <LoginButton />
-      <LogoutButton />
-    </AuthProvider>
-  );
-}`}</code>
-                    </pre>
-                </div>
-            </div>
+            <ClaudeCodePrompt domain={domain} />
 
             <div style={{ display: 'flex', gap: '0.75rem' }}>
                 <a
