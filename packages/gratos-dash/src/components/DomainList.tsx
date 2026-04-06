@@ -318,26 +318,6 @@ function ActiveDetails({ domain, provisionerBaseUrl }: { domain: Domain; provisi
                 </div>
             )}
 
-            <div style={cardStyle}>
-                <div style={{ color: '#71717a', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>
-                    Auth Endpoint
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                    <span style={codeStyle}>{endpoint}</span>
-                    <CopyButton text={endpoint} />
-                </div>
-            </div>
-
-            <div style={cardStyle}>
-                <div style={{ color: '#71717a', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>
-                    API Base URL
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                    <span style={codeStyle}>https://{endpoint}</span>
-                    <CopyButton text={`https://${endpoint}`} />
-                </div>
-            </div>
-
             <InstallationPrompt domain={domain.domain} />
 
             <a
