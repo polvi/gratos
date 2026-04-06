@@ -193,7 +193,7 @@ Key points:
                 Add to your app
             </h3>
             <p style={{ color: '#52525b', fontSize: '0.875rem', lineHeight: 1.6, marginBottom: '1rem' }}>
-                Copy this prompt into Claude Code to integrate passkey auth:
+                Copy this prompt to integrate passkey auth:
             </p>
             <div style={{ position: 'relative' }}>
                 <pre style={{
@@ -245,7 +245,7 @@ function DomainReady({ domain, claimId, provisionerBaseUrl }: {
     claimId: string;
     provisionerBaseUrl: string;
 }) {
-    const [sslStatus, setSslStatus] = useState<string>('pending');
+    const [sslStatus, setSslStatus] = useState<string | null>(null);
 
     useEffect(() => {
         if (sslStatus === 'active') return;
@@ -286,7 +286,7 @@ function DomainReady({ domain, claimId, provisionerBaseUrl }: {
                 </p>
             </div>
 
-            {!sslReady && (
+            {sslStatus !== null && !sslReady && (
                 <div style={{
                     background: '#fffbeb',
                     border: '1px solid #fde68a',

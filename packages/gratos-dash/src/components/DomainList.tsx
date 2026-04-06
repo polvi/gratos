@@ -85,7 +85,7 @@ Key points:
                 marginBottom: '0.375rem',
             }}>
                 <div style={{ color: '#71717a', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    Claude Code Prompt
+                    Prompt
                 </div>
                 <button
                     onClick={handleCopy}
@@ -323,7 +323,7 @@ function PendingDetails({ domain, provisionerBaseUrl, onClaimed }: {
 
 function ActiveDetails({ domain, provisionerBaseUrl }: { domain: Domain; provisionerBaseUrl: string }) {
     const endpoint = `${CNAME_NAME}.${domain.domain}`;
-    const [sslStatus, setSslStatus] = useState<string>(domain.ssl_status || 'pending');
+    const [sslStatus, setSslStatus] = useState<string | null>(domain.ssl_status || null);
 
     useEffect(() => {
         if (sslStatus === 'active') return;
@@ -368,7 +368,7 @@ function ActiveDetails({ domain, provisionerBaseUrl }: { domain: Domain; provisi
 
     return (
         <div style={{ padding: '0.75rem 0 0' }}>
-            {!sslReady && (
+            {sslStatus !== null && !sslReady && (
                 <div style={{
                     background: '#fffbeb',
                     border: '1px solid #fde68a',
