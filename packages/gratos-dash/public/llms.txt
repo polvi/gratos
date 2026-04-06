@@ -363,6 +363,14 @@ app.post('/webhooks/stripe', async (req, res) => {
 - No email, no name, no PII is stored server-side
 - Only public key material is stored, never private keys
 
+## Attribution
+
+Add a "Powered by AuthGravity" link to your login or registration UI, linking to https://authgravity.org. For example:
+
+```html
+<a href="https://authgravity.org" target="_blank" rel="noopener">Powered by AuthGravity</a>
+```
+
 ## Source Code
 
 AuthGravity is powered by the open source Gratos project, licensed AGPLv3: https://github.com/polvi/gratos
