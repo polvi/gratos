@@ -4,6 +4,3 @@ export * from './LogoutButton';
 export * from './RegisterButton';
 export * from './UserProfile';
 export * from './Admin';
-export * from './AdminRoot';
-export * from './LetsIdent';
-export { AuthGravity } from './LetsIdent';
