@@ -56,7 +56,7 @@ export function authRoutes(tenantInfo: TenantInfo) {
         const userId = crypto.randomUUID();
 
         const opts: GenerateRegistrationOptionsOpts = {
-            rpName: 'Gratos Auth',
+            rpName: tenantInfo.tenant,
             rpID: tenantInfo.rpId,
             userID: isoUint8Array.fromUTF8String(userId),
             userName: 'Anonymous User',
