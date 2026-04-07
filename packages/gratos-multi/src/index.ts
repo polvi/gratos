@@ -139,6 +139,7 @@ app.get('/demo', (c) => {
       const [user, setUser] = useState(null);
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState('');
+      const [username, setUsernameState] = useState('your account');
 
       const checkSession = async () => {
         try {
@@ -153,11 +154,16 @@ app.get('/demo', (c) => {
 
       useEffect(() => { checkSession(); }, []);
 
-      const register = async () => {
+      const register = async (username) => {
         setError('');
         try {
           const optRes = await fetch(API + '/register/options', { credentials: 'include' });
           const opts = await optRes.json();
+          // Client-side only: label the passkey with the username. Never sent to server.
+          if (username) {
+            opts.user.name = username;
+            opts.user.displayName = username;
+          }
           const cred = await startRegistration({ optionsJSON: opts });
           const verRes = await fetch(API + '/register/verify', {
             method: 'POST',
@@ -202,10 +208,23 @@ app.get('/demo', (c) => {
       );
 
       return h('div', null,
-        h('div', { class: 'card' },
-          h('h2', null, 'Get started'),
-          h('button', { onClick: register }, 'Register a Passkey'),
-          h('button', { onClick: login }, 'Sign In'),
+        h('h1', { style: 'font-size: 1.75rem; font-weight: 700; margin-bottom: 0.5rem;' }, 'Welcome'),
+        h('p', null, 'Sign in or create an account with a passkey.'),
+        h('div', { style: 'display: flex; flex-direction: column; gap: 1rem;' },
+          h('button', { onClick: login }, 'Login'),
+          h('p', { style: 'text-align: center; color: #a1a1aa; font-size: 0.875rem; margin: 0;' }, 'or'),
+          h('div', { style: 'display: flex; gap: 8px;' },
+            h('input', {
+              type: 'text',
+              value: username,
+              onInput: (e) => setUsernameState(e.target.value),
+              placeholder: 'Username',
+              style: 'padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px; flex: 1;',
+            }),
+            h('button', { onClick: () => register(username), style: 'background: #18181b; color: white; border: none;' }, 'Register'),
+          ),
+          h('p', { style: 'font-size: 0.75rem; color: #a1a1aa; line-height: 1.4; margin: 0;' },
+            'Your username is only used locally to label your passkey. It is never sent to or stored by the server.'),
         ),
         error && h('p', { style: 'color: #ef4444; font-size: 0.875rem; margin-top: 0.5rem;' }, error),
       );

@@ -5,14 +5,10 @@ import { useAuth } from './AuthContext';
 
 export function RegisterButton() {
     const { login, apiBaseUrl } = useAuth();
-    const [username, setUsername] = useState('');
+    const [username, setUsername] = useState('your account');
     const [status, setStatus] = useState('');
 
     const handleRegister = async () => {
-        if (!username) {
-            setStatus('Please enter a username');
-            return;
-        }
         try {
             setStatus('Registering...');
             // No username sent to server
@@ -113,7 +109,6 @@ export function RegisterButton() {
                     value={username}
                     onInput={(e) => {
                         setUsername((e.target as HTMLInputElement).value);
-                        if (status === 'Please enter a username') setStatus('');
                     }}
                 />
                 <button
