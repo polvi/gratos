@@ -458,13 +458,6 @@ function DomainListInner({ provisionerBaseUrl }: { provisionerBaseUrl: string })
         }
     }, [isAuthenticated, fetchDomains]);
 
-    // Auto-expand activating domains so the user sees the installation prompt
-    useEffect(() => {
-        if (!expandedId) {
-            const activating = domains.find(d => d.status === 'pending' && d.activating);
-            if (activating) setExpandedId(activating.id);
-        }
-    }, [domains, expandedId]);
 
     const handleDelete = async (d: Domain) => {
         if (!confirm(`Remove ${d.domain}? This cannot be undone.`)) return;
