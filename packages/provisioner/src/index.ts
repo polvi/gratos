@@ -136,14 +136,16 @@ type AdvanceResult =
     | { status: 'waiting_for_dns'; domain: string; dns_lookup: string; dns_expected: string; dns_actual: string | null; dns_found: Array<{ type: string; value: string }> }
     | { status: 'dns_mismatch'; domain: string; dns_lookup: string; dns_expected: string; dns_actual: string }
     | { status: 'provisioning'; domain: string }
-    | { status: 'claimed'; id: string; domain: string; claimed_at: number; ssl_status: string }
+    | { status: 'claimed'; id?: string; domain: string; claimed_at?: number; ssl_status?: string }
     | { status: 'error'; error: string; code?: number };
 
 async function advanceClaim(claim: any, env: Env, opts?: { skipDns?: boolean }): Promise<AdvanceResult> {
     const expectedTarget = CNAME_TARGET;
     const hostname = `${CNAME_NAME}.${claim.domain}`;
 
-    if (!opts?.skipDns) {
+    // Skip DNS if explicitly requested (Domain Connect success) or if we already
+    // have a CF hostname ID — that means DNS was already verified on a prior call.
+    if (!opts?.skipDns && !claim.cf_hostname_id) {
         const dns = await lookupDNS(hostname);
 
         if (dns.cname !== expectedTarget) {
@@ -222,7 +224,7 @@ async function advanceClaim(claim: any, env: Env, opts?: { skipDns?: boolean }):
         if (existingClaimed.identity_id === claim.identity_id) {
             // Same owner reclaiming — clean up the pending claim and return success
             await env.DB.prepare('DELETE FROM pending_claims WHERE id = ?').bind(claim.id).run();
-            return { status: 'claimed', domain: claim.domain };
+            return { status: 'claimed', id: existingClaimed.id, domain: claim.domain };
         }
         return { status: 'error', error: 'Domain already claimed by another identity', code: 409 };
     }
@@ -470,12 +472,12 @@ app.post('/claims/:id/activate', authMiddleware, async (c) => {
     const identityId = c.get('identityId');
     const claimId = c.req.param('id');
 
-    // Check if already claimed
+    // Check if already claimed (claim ID may match a domain ID for reclaims)
     const existingDomain = await c.env.DB.prepare(
         'SELECT * FROM domains WHERE id = ?'
     ).bind(claimId).first() as any;
     if (existingDomain) {
-        return c.json({ status: 'claimed', domain: existingDomain.domain, claimed_at: existingDomain.claimed_at });
+        return c.json({ status: 'claimed', id: existingDomain.id, domain: existingDomain.domain, claimed_at: existingDomain.claimed_at });
     }
 
     const claim = await c.env.DB.prepare(
@@ -483,6 +485,17 @@ app.post('/claims/:id/activate', authMiddleware, async (c) => {
     ).bind(claimId).first() as any;
 
     if (!claim) {
+        // Claim may have been advanced to a domain by the scheduled handler.
+        // The new domain ID differs from the claim ID, so check by identity.
+        const sessionId = getCookie(c, 'session_id');
+        if (sessionId) {
+            const recentDomain = await c.env.DB.prepare(
+                'SELECT * FROM domains WHERE identity_id = ? ORDER BY claimed_at DESC LIMIT 1'
+            ).bind(identityId).first() as any;
+            if (recentDomain) {
+                return c.json({ status: 'claimed', id: recentDomain.id, domain: recentDomain.domain, claimed_at: recentDomain.claimed_at });
+            }
+        }
         return c.json({ error: 'Claim not found' }, 404);
     }
 

@@ -167,13 +167,48 @@ function DomainReady({ domain, claimId, provisionerBaseUrl }: {
     provisionerBaseUrl: string;
 }) {
     const [sslStatus, setSslStatus] = useState<string | null>(null);
+    const [domainId, setDomainId] = useState<string | null>(null);
+    const [claimed, setClaimed] = useState(false);
 
+    // Poll activate until the claim is fully claimed (moved to domains table)
     useEffect(() => {
+        if (claimed) return;
+
+        const pollActivate = async () => {
+            try {
+                const res = await fetch(`${provisionerBaseUrl}/claims/${claimId}/activate`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ skip_dns: true }),
+                });
+                if (res.ok) {
+                    const data = await res.json() as any;
+                    if (data.status === 'claimed') {
+                        setClaimed(true);
+                        setDomainId(data.id || claimId);
+                        if (data.ssl_status) setSslStatus(data.ssl_status);
+                    }
+                }
+            } catch {
+                // Ignore transient errors
+            }
+        };
+
+        pollActivate();
+        const interval = setInterval(pollActivate, 5000);
+        return () => clearInterval(interval);
+    }, [claimId, provisionerBaseUrl, claimed]);
+
+    // Once claimed, poll SSL status
+    useEffect(() => {
+        if (!claimed) return;
         if (sslStatus === 'active') return;
 
+        const effectiveDomainId = domainId || claimId;
         const checkSsl = async () => {
             try {
-                const res = await fetch(`${provisionerBaseUrl}/domains/${claimId}/ssl`, {
+                const res = await fetch(`${provisionerBaseUrl}/domains/${effectiveDomainId}/ssl`, {
                     credentials: 'include',
                 });
                 if (res.ok) {
@@ -188,7 +223,7 @@ function DomainReady({ domain, claimId, provisionerBaseUrl }: {
         checkSsl();
         const interval = setInterval(checkSsl, 5000);
         return () => clearInterval(interval);
-    }, [claimId, provisionerBaseUrl, sslStatus]);
+    }, [claimId, domainId, provisionerBaseUrl, sslStatus, claimed]);
 
     const sslReady = sslStatus === 'active';
 
