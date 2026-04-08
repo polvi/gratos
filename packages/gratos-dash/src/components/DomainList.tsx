@@ -10,6 +10,7 @@ type Domain = {
     id: string;
     domain: string;
     status: 'pending' | 'active';
+    activating?: boolean;
     ssl_status?: string;
     created_at?: number;
     claimed_at?: number;
@@ -343,6 +344,61 @@ function ActiveDetails({ domain, provisionerBaseUrl }: { domain: Domain; provisi
     );
 }
 
+function ActivatingDetails({ domain, provisionerBaseUrl, onClaimed }: {
+    domain: Domain;
+    provisionerBaseUrl: string;
+    onClaimed: () => void;
+}) {
+    // Silently poll activate until claimed, then show SSL + installation prompt
+    useEffect(() => {
+        const poll = async () => {
+            try {
+                const res = await fetch(`${provisionerBaseUrl}/claims/${domain.id}/activate`, {
+                    method: 'POST',
+                    credentials: 'include',
+                });
+                if (res.ok) {
+                    const data = await res.json() as any;
+                    if (data.status === 'claimed') {
+                        onClaimed();
+                    }
+                }
+            } catch {
+                // Ignore transient errors
+            }
+        };
+
+        poll();
+        const interval = setInterval(poll, 5000);
+        return () => clearInterval(interval);
+    }, [domain.id, provisionerBaseUrl, onClaimed]);
+
+    return (
+        <div style={{ padding: '0.75rem 0 0' }}>
+            <div style={{
+                background: '#fffbeb',
+                border: '1px solid #fde68a',
+                borderRadius: '0.375rem',
+                padding: '0.75rem',
+                marginBottom: '0.5rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+            }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+                <span style={{ color: '#92400e', fontSize: '0.8rem' }}>
+                    SSL certificate provisioning — this usually takes a few minutes.
+                </span>
+            </div>
+
+            <InstallationPrompt domain={domain.domain} />
+        </div>
+    );
+}
+
 function DomainListInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
     const { isAuthenticated } = useAuth();
     const [domains, setDomains] = useState<Domain[]>([]);
@@ -401,6 +457,14 @@ function DomainListInner({ provisionerBaseUrl }: { provisionerBaseUrl: string })
             setLoading(false);
         }
     }, [isAuthenticated, fetchDomains]);
+
+    // Auto-expand activating domains so the user sees the installation prompt
+    useEffect(() => {
+        if (!expandedId) {
+            const activating = domains.find(d => d.status === 'pending' && d.activating);
+            if (activating) setExpandedId(activating.id);
+        }
+    }, [domains, expandedId]);
 
     const handleDelete = async (d: Domain) => {
         if (!confirm(`Remove ${d.domain}? This cannot be undone.`)) return;
@@ -511,10 +575,10 @@ function DomainListInner({ provisionerBaseUrl }: { provisionerBaseUrl: string })
                                             width: '0.5rem',
                                             height: '0.5rem',
                                             borderRadius: '50%',
-                                            background: d.status === 'active' ? '#22c55e' : '#f59e0b',
+                                            background: d.status === 'active' ? '#22c55e' : d.activating ? '#3b82f6' : '#f59e0b',
                                         }} />
                                         <span style={{ fontSize: '0.75rem', color: '#71717a' }}>
-                                            {d.status === 'active' ? 'Active' : 'Pending'}
+                                            {d.status === 'active' ? 'Active' : d.activating ? 'Pending SSL' : 'Pending DNS'}
                                         </span>
                                         {d.status === 'active' && d.users !== undefined && (
                                             <>
@@ -565,8 +629,15 @@ function DomainListInner({ provisionerBaseUrl }: { provisionerBaseUrl: string })
                                 </div>
                             </div>
 
-                            {expandedId === d.id && d.status === 'pending' && (
+                            {expandedId === d.id && d.status === 'pending' && !d.activating && (
                                 <PendingDetails
+                                    domain={d}
+                                    provisionerBaseUrl={provisionerBaseUrl}
+                                    onClaimed={fetchDomains}
+                                />
+                            )}
+                            {expandedId === d.id && d.status === 'pending' && d.activating && (
+                                <ActivatingDetails
                                     domain={d}
                                     provisionerBaseUrl={provisionerBaseUrl}
                                     onClaimed={fetchDomains}

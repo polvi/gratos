@@ -581,7 +581,7 @@ app.get('/domains', authMiddleware, async (c) => {
     const identityId = c.get('identityId');
 
     const { results: pending } = await c.env.DB.prepare(
-        'SELECT id, domain, created_at FROM pending_claims WHERE identity_id = ?'
+        'SELECT id, domain, cf_hostname_id, created_at FROM pending_claims WHERE identity_id = ?'
     ).bind(identityId).all();
 
     const { results: claimed } = await c.env.DB.prepare(
@@ -593,6 +593,7 @@ app.get('/domains', authMiddleware, async (c) => {
             id: r.id,
             domain: r.domain,
             status: 'pending',
+            activating: !!r.cf_hostname_id,
             cname_name: CNAME_NAME,
             cname_target: CNAME_TARGET,
             created_at: r.created_at,
