@@ -57,7 +57,7 @@ Keep packages/gratos-dash/public/llms.txt and packages/gratos-dash/src/pages/doc
 
 ## Spec
 
-In a seperate agent, keep the specs/ file up to date using TLA+. This involves making changes to the .tla file whenever the architecture changes. Then validate the change using the the tla checker at:
+In a separate agent, keep the specs/ file up to date using TLA+. This involves making changes to the .tla file whenever the architecture changes. Then validate the change using the the tla checker at:
 
 ~/Downloads/tla2tools.jar
 
