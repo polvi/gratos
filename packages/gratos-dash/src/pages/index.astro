@@ -1,5 +1,6 @@
 ---
 import Layout from "../layouts/Layout.astro";
+import { HeroPrompt } from "../components/HeroPrompt";
 ---
 
 <Layout title="AuthGravity - Zero Knowledge Identity">
@@ -51,5 +52,6 @@ import Layout from "../layouts/Layout.astro";
       user authentication using passkeys.
     </p>
     <a href="/login" class="cta">Get Started</a>
+    <HeroPrompt client:load />
   </div>
 </Layout>

@@ -15,11 +15,73 @@ function SignupInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
     const [domain, setDomain] = useState('');
     const [dcError, setDcError] = useState<string | null>(null);
 
-    // Restore state after Domain Connect redirect
+    // Restore state after Domain Connect redirect, or enter from a deep link.
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         const dcClaimId = params.get('claim_id');
         const dcStatus = params.get('dc');
+        const paramDomain = params.get('domain');
+
+        const cleanUrl = () => {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('claim_id');
+            url.searchParams.delete('dc');
+            url.searchParams.delete('error');
+            url.searchParams.delete('domain');
+            window.history.replaceState({}, '', url.pathname);
+        };
+
+        // Deep link: resume an existing claim (agent pre-created it and opened
+        // /signup?claim_id=<id>). No `dc` param → not a Domain Connect return.
+        if (dcClaimId && !dcStatus) {
+            cleanUrl();
+            (async () => {
+                try {
+                    const res = await fetch(`${provisionerBaseUrl}/claims/${dcClaimId}`);
+                    if (res.ok) {
+                        const data = await res.json() as any;
+                        setClaimId(data.id);
+                        setDomain(data.domain);
+                        setStep(data.status === 'pending' ? 'dns' : 'done');
+                    }
+                } catch {
+                    // ignore — fall back to manual entry
+                }
+            })();
+            return;
+        }
+
+        // Deep link: create a claim for a given domain and jump to the DNS step
+        // (/signup?domain=example.com).
+        if (paramDomain && !dcStatus) {
+            cleanUrl();
+            let trimmed = paramDomain.trim().toLowerCase();
+            if (trimmed.startsWith('authgravity.')) {
+                trimmed = trimmed.slice('authgravity.'.length);
+            }
+            const domainRegex = /^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$/;
+            if (!domainRegex.test(trimmed)) return;
+            (async () => {
+                try {
+                    const res = await fetch(`${provisionerBaseUrl}/claims`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ domain: trimmed }),
+                    });
+                    const data = await res.json() as any;
+                    if (res.ok) {
+                        setClaimId(data.id);
+                        setDomain(data.domain || trimmed);
+                        setStep(data.status === 'reclaimed' ? 'done' : 'dns');
+                    }
+                } catch {
+                    // ignore — fall back to manual entry
+                }
+            })();
+            return;
+        }
+
         if (dcClaimId && dcStatus) {
             // Clean URL immediately
             const url = new URL(window.location.href);

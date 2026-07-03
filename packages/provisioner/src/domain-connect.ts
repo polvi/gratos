@@ -32,6 +32,25 @@ export async function lookupTXT(hostname: string): Promise<string[]> {
 }
 
 /**
+ * Validate a provider host discovered from an attacker-controlled TXT record
+ * (`_domainconnect.<domain>` is set by whoever owns the domain being claimed).
+ * We fetch this host server-side, so it must be a plain public FQDN — this
+ * rejects IP literals, ports, userinfo (`@`), paths, and reserved/internal
+ * suffixes to prevent the discovery step from being used for SSRF.
+ */
+export function isValidProviderHost(host: string): boolean {
+    const h = host.trim().toLowerCase();
+    // Strict FQDN: dotted labels ending in an alphabetic TLD. Excludes IPv4
+    // (numeric TLD), IPv6 (colons), and anything with `:`/`/`/`@`/whitespace.
+    const FQDN = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/;
+    if (!FQDN.test(h)) return false;
+    // Reserved / internal-only suffixes that could resolve to private hosts.
+    const RESERVED = ['.local', '.localhost', '.internal', '.intranet', '.corp', '.home', '.lan', '.arpa'];
+    if (RESERVED.some((suffix) => h.endsWith(suffix))) return false;
+    return true;
+}
+
+/**
  * Discover whether a domain's DNS provider supports Domain Connect.
  * 1. Look up `_domainconnect.<domain>` TXT → provider host
  * 2. Fetch `https://<host>/v2/<domain>/settings` → provider settings
@@ -45,10 +64,16 @@ export async function discoverDomainConnect(
     }
 
     const host = txtRecords[0];
+    if (!isValidProviderHost(host)) {
+        return { supported: false };
+    }
 
     try {
-        const res = await fetch(`https://${host}/v2/${domain}/settings`, {
+        // `redirect: 'error'` stops a validated public host from 3xx-redirecting
+        // the request into an internal target.
+        const res = await fetch(`https://${host}/v2/${encodeURIComponent(domain)}/settings`, {
             headers: { Accept: 'application/json' },
+            redirect: 'error',
         });
         if (!res.ok) {
             return { supported: false };

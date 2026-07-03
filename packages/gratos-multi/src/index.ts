@@ -36,6 +36,29 @@ export class AuthRPC extends WorkerEntrypoint<Env> {
     }
 
     /**
+     * Delete throwaway sandbox pools older than maxAgeMs (default 7 days).
+     * Removes users + public_keys for each expired sandbox tenant, then the
+     * sandbox record itself. KV sessions expire on their own TTL.
+     * Intended to be called from the provisioner's scheduled cron.
+     */
+    async sweepSandboxes(maxAgeMs: number = 7 * 24 * 60 * 60 * 1000): Promise<{ swept: number }> {
+        const cutoff = Date.now() - maxAgeMs;
+        const { results } = await this.env.DB.prepare(
+            "SELECT id FROM sandboxes WHERE created_at < ? AND id LIKE 'sandbox.%'"
+        ).bind(cutoff).all();
+
+        let swept = 0;
+        for (const row of (results || []) as Array<{ id: string }>) {
+            const tenant = row.id;
+            await this.env.DB.prepare('DELETE FROM public_keys WHERE tenant = ?').bind(tenant).run();
+            await this.env.DB.prepare('DELETE FROM users WHERE tenant = ?').bind(tenant).run();
+            await this.env.DB.prepare('DELETE FROM sandboxes WHERE id = ?').bind(tenant).run();
+            swept++;
+        }
+        return { swept };
+    }
+
+    /**
      * Get user count and active session count for a tenant.
      */
     async getTenantStats(tenant: string): Promise<{ users: number; sessions: number }> {
@@ -73,6 +96,10 @@ app.use('/*', async (c, next) => {
             try {
                 const host = new URL(origin).hostname;
                 if (host === tenantInfo.tenant || host.endsWith('.' + tenantInfo.tenant)) {
+                    return origin;
+                }
+                // Sandbox tenants are driven from a developer's local app.
+                if (tenantInfo.sandbox && (host === 'localhost' || host === '127.0.0.1')) {
                     return origin;
                 }
             } catch {
@@ -139,7 +166,7 @@ app.get('/demo', (c) => {
       const [user, setUser] = useState(null);
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState('');
-      const [username, setUsernameState] = useState('your account');
+      const [username, setUsernameState] = useState('Me');
 
       const checkSession = async () => {
         try {
@@ -221,10 +248,10 @@ app.get('/demo', (c) => {
               placeholder: 'Username',
               style: 'padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px; flex: 1;',
             }),
-            h('button', { onClick: () => register(username), style: 'background: #18181b; color: white; border: none;' }, 'Register'),
+            h('button', { onClick: () => register(username), style: 'background: #18181b; color: white; border: none;' }, 'Create Account'),
           ),
           h('p', { style: 'font-size: 0.75rem; color: #a1a1aa; line-height: 1.4; margin: 0;' },
-            'Your username is only used locally to label your passkey. It is never sent to or stored by the server.'),
+            'The label is only used locally to name your passkey. It is never sent to or stored by the server.'),
         ),
         error && h('p', { style: 'color: #ef4444; font-size: 0.875rem; margin-top: 0.5rem;' }, error),
       );
@@ -236,6 +263,46 @@ app.get('/demo', (c) => {
 </html>`);
 });
 
+// Mint an instant, zero-DNS sandbox auth endpoint. Unauthenticated so a coding
+// agent / CLI can call it directly. The wildcard route makes the returned host
+// live immediately; the isolated user pool is created lazily on first register.
+app.post('/sandbox', async (c) => {
+    // Light per-IP rate limit to bound abuse of the public mint endpoint.
+    const ip = c.req.header('CF-Connecting-IP') || 'unknown';
+    const rlKey = `sandbox_rl:${ip}`;
+    const count = parseInt((await c.env.KV.get(rlKey)) || '0', 10);
+    if (count >= 30) {
+        return c.json({ error: 'Rate limit exceeded, try again later' }, 429);
+    }
+    await c.env.KV.put(rlKey, String(count + 1), { expirationTtl: 3600 });
+
+    const id = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+    const url = new URL(c.req.url);
+    const isDev =
+        url.hostname === 'localhost' ||
+        url.hostname === '127.0.0.1' ||
+        url.hostname.endsWith('.localhost');
+
+    // Single custom-domain host (auto-certified, no ACM/wildcard); the sandbox
+    // id lives in the path: https://sandbox.authgravity.org/<id>
+    const sandboxHost = isDev
+        ? `sandbox.localhost${url.port ? ':' + url.port : ''}`
+        : 'sandbox.authgravity.org';
+    const endpoint = `${url.protocol}//${sandboxHost}/${id}`;
+    const tenant = `${isDev ? 'sandbox.localhost' : 'sandbox.authgravity.org'}/${id}`;
+
+    // Record the tenant for TTL cleanup (best-effort).
+    try {
+        await c.env.DB.prepare('INSERT INTO sandboxes (id, created_at) VALUES (?, ?)')
+            .bind(tenant, Date.now())
+            .run();
+    } catch {
+        // table may not exist yet in older deployments; non-fatal
+    }
+
+    return c.json({ id, endpoint, mode: 'sandbox' });
+});
+
 // Mount tenant-scoped routes per request
 app.all('/*', async (c, next) => {
     const url = new URL(c.req.url);
@@ -244,11 +311,20 @@ app.all('/*', async (c, next) => {
     const auth = authRoutes(tenantInfo);
     const session = sessionRoutes(tenantInfo);
 
+    // For path-based sandbox tenants, strip the "/<id>" prefix so the existing
+    // auth/session routes (mounted at root) match "/register/options" etc.
+    let req = c.req.raw;
+    if (tenantInfo.sandbox && tenantInfo.sandboxId) {
+        const u = new URL(c.req.url);
+        u.pathname = u.pathname.slice(tenantInfo.sandboxPrefix!.length) || '/';
+        req = new Request(u.toString(), c.req.raw);
+    }
+
     // Try auth routes first, then session routes
-    const authResponse = await auth.fetch(c.req.raw, c.env);
+    const authResponse = await auth.fetch(req, c.env);
     if (authResponse.status !== 404) return authResponse;
 
-    const sessionResponse = await session.fetch(c.req.raw, c.env);
+    const sessionResponse = await session.fetch(req, c.env);
     if (sessionResponse.status !== 404) return sessionResponse;
 
     return next();

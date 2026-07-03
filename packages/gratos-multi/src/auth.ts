@@ -32,7 +32,13 @@ function getExpectedOrigin(c: any, tenantInfo: TenantInfo): string {
     if (requestOrigin) {
         try {
             const host = new URL(requestOrigin).hostname;
-            if (
+            // Sandbox tenants run the ceremony on the developer's local app
+            // (rpId=localhost), so only accept localhost/127.0.0.1 origins.
+            if (tenantInfo.sandbox) {
+                if (host === 'localhost' || host === '127.0.0.1') {
+                    return requestOrigin;
+                }
+            } else if (
                 tenantInfo.tenant === 'localhost' ||
                 host === tenantInfo.tenant ||
                 host.endsWith('.' + tenantInfo.tenant)
@@ -56,10 +62,11 @@ export function authRoutes(tenantInfo: TenantInfo) {
         const userId = crypto.randomUUID();
 
         const opts: GenerateRegistrationOptionsOpts = {
-            rpName: tenantInfo.tenant,
+            rpName: tenantInfo.rpName,
             rpID: tenantInfo.rpId,
             userID: isoUint8Array.fromUTF8String(userId),
-            userName: 'Anonymous User',
+            userName: 'Me',
+            userDisplayName: 'Me',
             excludeCredentials: [],
             authenticatorSelection: {
                 residentKey: 'preferred',
@@ -129,7 +136,14 @@ export function authRoutes(tenantInfo: TenantInfo) {
             // Cleanup
             await c.env.KV.delete(`reg_challenge:${tenantInfo.tenant}:${userId}`);
 
-            return c.json({ verified: true, user: { id: userId } });
+            // Sandbox tenants are cross-site (local app ↔ sandbox host), so the
+            // httpOnly cookie can't be relied on — return the session id so the
+            // app can send it as `Authorization: Bearer <session_id>`.
+            return c.json({
+                verified: true,
+                user: { id: userId },
+                ...(tenantInfo.sandbox ? { session_id: sessionId } : {}),
+            });
         }
 
         return c.json({ verified: false, error: 'Verification failed' }, 400);
@@ -212,7 +226,11 @@ export function authRoutes(tenantInfo: TenantInfo) {
                 domain: tenantInfo.cookieDomain,
             });
 
-            return c.json({ verified: true, user });
+            return c.json({
+                verified: true,
+                user,
+                ...(tenantInfo.sandbox ? { session_id: sessionId } : {}),
+            });
         }
 
         return c.json({ verified: false }, 400);

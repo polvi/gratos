@@ -24,6 +24,14 @@
 				{
 					"pattern": "authgravity.authgravity.org",
 					"custom_domain": true
+				},
+				{
+					// Instant sandbox pools live under this single custom domain,
+					// with the sandbox id in the path (sandbox.authgravity.org/<id>).
+					// custom_domain auto-provisions DNS + a dedicated cert (no ACM,
+					// no wildcard needed).
+					"pattern": "sandbox.authgravity.org",
+					"custom_domain": true
 				}
 			],
 			"d1_databases": [

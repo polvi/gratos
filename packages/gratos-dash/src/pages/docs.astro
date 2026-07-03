@@ -5,6 +5,69 @@ const cnameExample = `Type:   CNAME
 Name:   authgravity
 Target: cname.authgravity.net`;
 
+const agentAuthModule = `// src/lib/auth.ts
+import { startRegistration, startAuthentication } from '@simplewebauthn/browser';
+
+const ENDPOINT = import.meta.env.PUBLIC_AUTH_ENDPOINT;  // dev: http://localhost:8787  prod: https://authgravity.myapp.com
+
+async function api(path: string, init: RequestInit = {}) {
+  return fetch(ENDPOINT + path, { ...init, credentials: 'include' });
+}
+
+export async function register() {
+  const opts = await (await api('/register/options')).json();
+  const cred = await startRegistration({ optionsJSON: opts });
+  const res = await api('/register/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ response: cred, userId: opts.userId }),
+  });
+  return res.json(); // { verified, user: { id } } — session_id cookie is now set
+}
+
+export async function login() {
+  const opts = await (await api('/login/options')).json();
+  const cred = await startAuthentication({ optionsJSON: opts });
+  const res = await api('/login/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ response: cred, challengeId: opts.challengeId }),
+  });
+  return res.json(); // { verified, user: { id } } — session_id cookie is now set
+}
+
+export async function whoami() {
+  const res = await api('/whoami');
+  return res.ok ? res.json() : null; // { user_id } or null
+}
+
+export async function logout() {
+  await api('/logout', { method: 'POST' });
+}`;
+
+const sandboxCurl = `npx @authgravity/cli listen
+# ✔ Minted sandbox &lt;id&gt;
+#   Sandbox endpoint: https://sandbox.authgravity.org/&lt;id&gt;
+# ▶ Listening on http://localhost:8787`;
+
+const sandboxEnv = `# .env
+PUBLIC_AUTH_ENDPOINT=http://localhost:8787`;
+
+const promoteClaimCurl = `# 1. Create a claim (no auth needed):
+curl -X POST https://provision.api.authgravity.org/claims \\
+  -H 'Content-Type: application/json' -d '{"domain":"myapp.com"}'
+# → { "id":"&lt;claimId&gt;", "cname_name":"authgravity", "cname_target":"cname.authgravity.net", "status":"pending" }
+
+# 2. Open the browser for the human (passkey + DNS / one-click Domain Connect):
+#      https://authgravity.org/signup?claim_id=&lt;claimId&gt;
+
+# 3. Poll until claimed:
+curl https://provision.api.authgravity.org/claims/&lt;claimId&gt;
+# → ... "status":"claimed" when live`;
+
+const promoteEnv = `# .env
+PUBLIC_AUTH_ENDPOINT=https://authgravity.myapp.com`;
+
 const registerVerifyExample = `POST /register/verify
 Content-Type: application/json
 
@@ -288,6 +351,80 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
 
     <p>
       <a href="/llms.txt" class="llms-link">llms.txt - machine-readable version of these docs</a>
+    </p>
+
+    <h2>Quick Start for Coding Agents</h2>
+
+    <p>
+      Add real passkey login to a local app in seconds - <strong>no domain and no DNS</strong> - then
+      promote to a real domain later by changing one env var. The app uses first-party cookies
+      everywhere: in local dev the AuthGravity CLI (<code>authgravity listen</code>) proxies an
+      instant sandbox onto <code>localhost</code>, and in production the cookie comes from your own
+      domain. Dev and prod run the exact same app code, including server-side session checks.
+    </p>
+
+    <h3>1. Auth module (scaffold this first)</h3>
+
+    <p>
+      Create <code>src/lib/auth.ts</code>. It talks to a single <code>PUBLIC_AUTH_ENDPOINT</code> with
+      <code>credentials: 'include'</code> - the session is always a first-party
+      <code>session_id</code> cookie.
+    </p>
+
+    <pre><code set:html={agentAuthModule} /></pre>
+
+    <p>
+      A minimal "hello world" calls <code>register()</code> / <code>login()</code> on a button click
+      and shows <code>(await whoami()).user_id</code>.
+    </p>
+
+    <h3>2. Local dev: <code>authgravity listen</code> (zero DNS)</h3>
+
+    <p>
+      Run the AuthGravity CLI alongside your dev server. It mints an ephemeral, isolated sandbox and
+      proxies it on localhost, converting the sandbox session into a first-party
+      <code>session_id</code> cookie:
+    </p>
+
+    <pre><code set:html={sandboxCurl} /></pre>
+
+    <p>Point the app at the proxy and run <code>npm run dev</code>:</p>
+
+    <pre><code set:html={sandboxEnv} /></pre>
+
+    <p>
+      Open <code>http://localhost:&lt;port&gt;</code>, click "Create Account" - the passkey prompt fires
+      inline. Sandboxes use <code>rpID=localhost</code>, so the ceremony works directly from your local
+      app, and the proxy sets the session as an httpOnly <code>session_id</code> cookie on
+      <code>localhost</code> - so server-side session validation works in dev too.
+      Sandbox passkeys are <strong>throwaway</strong> (bound to <code>localhost</code>) and sandboxes are
+      periodically garbage collected; use them for demos and local development.
+    </p>
+
+    <h3>Design guidelines</h3>
+
+    <ul>
+      <li>Buttons: <strong>"Create Account"</strong> (calls <code>register()</code>) and <strong>"Login"</strong> (calls <code>login()</code>).</li>
+      <li>The passkey label defaults to <strong>"Me"</strong> - do not ask the user for a username or email at signup. If you offer a custom label, it stays client-side only (set <code>opts.user.name</code> / <code>opts.user.displayName</code> before <code>startRegistration</code>); it is never sent to the server.</li>
+      <li>Include a "Powered by AuthGravity" link to <a href="https://authgravity.org">authgravity.org</a> near the auth UI.</li>
+    </ul>
+
+    <h3>3. Promote to your domain (production)</h3>
+
+    <p>When ready, claim a real domain (agent-drivable end to end except the human passkey + DNS):</p>
+
+    <pre><code set:html={promoteClaimCurl} /></pre>
+
+    <p>Then flip the one env var - no app code changes:</p>
+
+    <pre><code set:html={promoteEnv} /></pre>
+
+    <p>
+      The app (<code>myapp.com</code>) and auth endpoint (<code>authgravity.myapp.com</code>) share a
+      registrable domain, so the <code>session_id</code> cookie is first-party exactly as it was in dev -
+      the same code, the same server-side validation (see Server-Side Session Validation below), no proxy
+      needed. Passkeys are bound to their domain, so sandbox (<code>localhost</code>) passkeys do not
+      carry over - real users register fresh on your domain.
     </p>
 
     <h2>How It Works</h2>

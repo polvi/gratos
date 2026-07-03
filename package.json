@@ -6,7 +6,8 @@
     "build-demo": "bun --cwd packages/preact build && bun --cwd packages/demo build",
     "build-dash": "bun --cwd packages/preact build && bun --cwd packages/gratos-dash build",
     "dev-dash": "bun --cwd packages/gratos-dash dev",
-    "dev-provisioner": "bun --cwd packages/provisioner dev"
+    "dev-provisioner": "bun --cwd packages/provisioner dev",
+    "cli": "bun --cwd packages/cli dev"
   },
   "workspaces": [
     "packages/*"
