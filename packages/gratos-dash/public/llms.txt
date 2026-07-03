@@ -87,7 +87,7 @@ There is no correlation id to carry: the server keys the pending ceremony by the
 
 ## Server-side session validation
 
-Forward the incoming cookie header to `/whoami`. Astro middleware example:
+Forward the incoming cookie header to `/v1/whoami`. Astro middleware example:
 
 ```typescript
 import { defineMiddleware } from "astro:middleware";

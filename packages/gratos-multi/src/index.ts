@@ -312,7 +312,7 @@ app.all('/*', async (c, next) => {
     const session = sessionRoutes(tenantInfo);
 
     // For path-based sandbox tenants, strip the "/<id>" prefix so the existing
-    // auth/session routes (mounted at root) match "/register/options" etc.
+    // auth/session routes (mounted at root) match "/v1/register/options" etc.
     let req = c.req.raw;
     if (tenantInfo.sandbox && tenantInfo.sandboxId) {
         const u = new URL(c.req.url);

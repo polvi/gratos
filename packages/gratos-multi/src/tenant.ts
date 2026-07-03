@@ -16,7 +16,7 @@ export type TenantInfo = {
 /**
  * Hosts that serve instant sandbox tenants. A single Workers custom domain
  * (auto-certified, no ACM/wildcard) hosts every sandbox; the sandbox id lives in
- * the FIRST PATH SEGMENT: e.g. https://sandbox.authgravity.org/<id>/register/options.
+ * the FIRST PATH SEGMENT: e.g. https://sandbox.authgravity.org/<id>/v1/register/options.
  * Each id is its own isolated user pool (tenant = "<host>/<id>"), with rpId pinned
  * to "localhost" so the passkey ceremony runs inline in a developer's local app.
  * "sandbox.localhost" is the dev-mode equivalent (*.localhost resolves to 127.0.0.1).

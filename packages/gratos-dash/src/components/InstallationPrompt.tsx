@@ -10,7 +10,7 @@ Key points:
 - Auth endpoint: https://authgravity.${domain}
 - Use @simplewebauthn/browser for WebAuthn ceremonies
 - Include credentials: 'include' on all fetch calls to the auth endpoint
-- Session validation: forward cookies to /whoami endpoint
+- Session validation: forward cookies to /v1/whoami endpoint
 - Users are identified by UUID — store profile data in your own database keyed by that UUID`;
 }
 

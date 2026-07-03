@@ -13,7 +13,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
         try {
             // Forward the cookie to the Gratos check auth endpoint
-            const res = await fetch(`${apiBaseUrl}/whoami`, {
+            const res = await fetch(`${apiBaseUrl}/v1/whoami`, {
                 headers: cookieHeader ? { cookie: cookieHeader } : {},
             });
 
