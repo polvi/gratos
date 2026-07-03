@@ -37,7 +37,7 @@ Note: there is no `packages/demo` or `packages/e2e`; an older single-tenant `wor
 
 **Multi-tenant:** `resolveTenant(url)` strips the first Host label, so `authgravity.<domain>` → tenant/rpId/cookieDomain `<domain>`. Sessions are namespaced `session:{tenant}:{sessionId}` in KV.
 
-**Session model:** Cookie-based (`session_id`, httpOnly, secure, sameSite=None, 7-day KV TTL). `/whoami` also accepts `Authorization: Bearer <session_id>`. Challenges expire in 5 minutes.
+**Session model:** Cookie-based (`session_id`, httpOnly, secure, sameSite=None, 7-day KV TTL). `/whoami` also accepts `Authorization: Bearer <session_id>`. Challenges expire in 5 minutes and are single-use; pending-ceremony state is keyed in KV by the challenge value itself (`reg_challenge:{tenant}:{challenge}` → userId, `auth_challenge:{tenant}:{challenge}`), which verify recovers from the signed `clientDataJSON.challenge` — no correlation id.
 
 **Instant sandbox (agent onboarding):** `POST /sandbox` mints `https://sandbox.authgravity.org/<id>` — a single Workers custom domain (auto DNS + cert, no ACM/wildcard) with the isolated sandbox id in the path. Tenant is `sandbox.authgravity.org/<id>` (`resolveTenant` reads the first path segment; the `/<id>` prefix is stripped before dispatching auth/session routes). Sandbox tenants use `rpID=localhost` and return `session_id` in the verify body (Bearer-usable) with **no domain and no DNS**. Local apps don't consume the Bearer directly: `authgravity listen` (packages/cli) proxies the sandbox on `localhost:8787` and terminates the session as a first-party `session_id` cookie, so app code is cookie-only and identical to production. Throwaway; swept by `AuthRPC.sweepSandboxes`. The full agent recipe (`src/lib/auth.ts`, `authgravity listen`, sandbox → domain promotion) lives in `packages/gratos-dash/public/llms.txt`.
 
@@ -45,11 +45,18 @@ Note: there is no `packages/demo` or `packages/e2e`; an older single-tenant `wor
 
 ## Worker API Endpoints (gratos-multi)
 
-- `GET/POST /register/options, /register/verify` — WebAuthn registration
-- `GET/POST /login/options, /login/verify` — WebAuthn authentication
-- `GET /whoami`, `POST /logout` — Session management (cookie or Bearer)
+v1 — spec-shaped WebAuthn JSON (options returned unmodified; verify takes the bare credential response as the whole body):
+
+- `GET /v1/register/options`, `POST /v1/register/verify` — WebAuthn registration
+- `GET /v1/login/options`, `POST /v1/login/verify` — WebAuthn authentication
+- `GET /v1/whoami`, `POST /v1/logout` — Session management (cookie or Bearer)
+
+Unversioned:
+
 - `POST /sandbox` — Mint an instant sandbox auth endpoint (unauthenticated)
 - `GET /`, `GET /demo` — Health + self-contained demo page
+
+Legacy (still supported, pre-v1 shapes): root-level `/register/options` (+`userId`), `/login/options` (+`challengeId`), verify with `{userId|challengeId, response}` wrappers (the ids are vestigial and ignored), `/whoami`, `/logout`.
 
 Domain claiming lives in the provisioner: `POST /claims`, `GET /claims/:id`, `POST /claims/:id/activate`, `GET /domains`, etc.
 

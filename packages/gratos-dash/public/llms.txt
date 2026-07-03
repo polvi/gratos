@@ -31,34 +31,34 @@ async function api(path: string, init: RequestInit = {}) {
 }
 
 export async function register() {
-  const opts = await (await api('/register/options')).json();
+  const opts = await (await api('/v1/register/options')).json(); // standard PublicKeyCredentialCreationOptionsJSON
   const cred = await startRegistration({ optionsJSON: opts });
-  const res = await api('/register/verify', {
+  const res = await api('/v1/register/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ response: cred, userId: opts.userId }),
+    body: JSON.stringify(cred), // bare RegistrationResponseJSON — no wrapper
   });
   return res.json(); // { verified, user: { id } } — session_id cookie is now set
 }
 
 export async function login() {
-  const opts = await (await api('/login/options')).json();
+  const opts = await (await api('/v1/login/options')).json(); // standard PublicKeyCredentialRequestOptionsJSON
   const cred = await startAuthentication({ optionsJSON: opts });
-  const res = await api('/login/verify', {
+  const res = await api('/v1/login/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ response: cred, challengeId: opts.challengeId }),
+    body: JSON.stringify(cred), // bare AuthenticationResponseJSON — no wrapper
   });
   return res.json(); // { verified, user: { id } } — session_id cookie is now set
 }
 
 export async function whoami() {
-  const res = await api('/whoami');
+  const res = await api('/v1/whoami');
   return res.ok ? res.json() : null; // { user_id } or null
 }
 
 export async function logout() {
-  await api('/logout', { method: 'POST' });
+  await api('/v1/logout', { method: 'POST' });
 }
 ```
 
@@ -74,14 +74,16 @@ How it works: the CLI mints an ephemeral, isolated sandbox (rpID=localhost) and 
 
 ## HTTP API
 
-All paths relative to `PUBLIC_AUTH_ENDPOINT`; always fetch with `credentials: 'include'`.
+All paths relative to `PUBLIC_AUTH_ENDPOINT`; always fetch with `credentials: 'include'`. The v1 API speaks pure spec-shaped WebAuthn JSON — any conforming WebAuthn client library works against it.
 
-- `GET /register/options` → WebAuthn creation options + `userId`
-- `POST /register/verify` `{userId, response}` → `{verified, user:{id}}`; sets `session_id` cookie
-- `GET /login/options` → WebAuthn request options + `challengeId`
-- `POST /login/verify` `{challengeId, response}` → `{verified, user:{id}}`; sets `session_id` cookie
-- `GET /whoami` → `{user_id}` or 401. Accepts the cookie or `Authorization: Bearer <session_id>`
-- `POST /logout` → destroys the session, clears the cookie
+- `GET /v1/register/options` → standard `PublicKeyCredentialCreationOptionsJSON`, unmodified
+- `POST /v1/register/verify` bare `RegistrationResponseJSON` → `{verified, user:{id}}`; sets `session_id` cookie
+- `GET /v1/login/options` → standard `PublicKeyCredentialRequestOptionsJSON`, unmodified
+- `POST /v1/login/verify` bare `AuthenticationResponseJSON` → `{verified, user:{id}}`; sets `session_id` cookie
+- `GET /v1/whoami` → `{user_id}` or 401. Accepts the cookie or `Authorization: Bearer <session_id>`
+- `POST /v1/logout` → destroys the session, clears the cookie
+
+There is no correlation id to carry: the server keys the pending ceremony by the challenge, which comes back inside the signed `clientDataJSON`. Legacy unversioned endpoints (`/register/options` returning `userId`, `/login/options` returning `challengeId`, and their `{userId|challengeId, response}` verify wrappers) remain supported for existing integrations.
 
 ## Server-side session validation
 
@@ -93,7 +95,7 @@ import { defineMiddleware } from "astro:middleware";
 export const onRequest = defineMiddleware(async (context, next) => {
   if (context.url.pathname.startsWith("/protected")) {
     const cookie = context.request.headers.get("cookie");
-    const res = await fetch(import.meta.env.PUBLIC_AUTH_ENDPOINT + "/whoami", {
+    const res = await fetch(import.meta.env.PUBLIC_AUTH_ENDPOINT + "/v1/whoami", {
       headers: cookie ? { cookie } : {},
     });
     if (!res.ok) return context.redirect("/login");

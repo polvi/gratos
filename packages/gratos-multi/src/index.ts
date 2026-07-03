@@ -170,7 +170,7 @@ app.get('/demo', (c) => {
 
       const checkSession = async () => {
         try {
-          const res = await fetch(API + '/whoami', { credentials: 'include' });
+          const res = await fetch(API + '/v1/whoami', { credentials: 'include' });
           if (res.ok) {
             const data = await res.json();
             setUser(data);
@@ -184,7 +184,7 @@ app.get('/demo', (c) => {
       const register = async (username) => {
         setError('');
         try {
-          const optRes = await fetch(API + '/register/options', { credentials: 'include' });
+          const optRes = await fetch(API + '/v1/register/options', { credentials: 'include' });
           const opts = await optRes.json();
           // Client-side only: label the passkey with the username. Never sent to server.
           if (username) {
@@ -192,11 +192,11 @@ app.get('/demo', (c) => {
             opts.user.displayName = username;
           }
           const cred = await startRegistration({ optionsJSON: opts });
-          const verRes = await fetch(API + '/register/verify', {
+          const verRes = await fetch(API + '/v1/register/verify', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            body: JSON.stringify({ response: cred, userId: opts.userId }),
+            body: JSON.stringify(cred),
           });
           if (verRes.ok) { await checkSession(); }
           else { const d = await verRes.json(); setError(d.error || 'Registration failed'); }
@@ -206,14 +206,14 @@ app.get('/demo', (c) => {
       const login = async () => {
         setError('');
         try {
-          const optRes = await fetch(API + '/login/options', { credentials: 'include' });
+          const optRes = await fetch(API + '/v1/login/options', { credentials: 'include' });
           const opts = await optRes.json();
           const cred = await startAuthentication({ optionsJSON: opts });
-          const verRes = await fetch(API + '/login/verify', {
+          const verRes = await fetch(API + '/v1/login/verify', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            body: JSON.stringify({ response: cred, challengeId: opts.challengeId }),
+            body: JSON.stringify(cred),
           });
           if (verRes.ok) { await checkSession(); }
           else { const d = await verRes.json(); setError(d.error || 'Login failed'); }
@@ -221,7 +221,7 @@ app.get('/demo', (c) => {
       };
 
       const logout = async () => {
-        await fetch(API + '/logout', { method: 'POST', credentials: 'include' });
+        await fetch(API + '/v1/logout', { method: 'POST', credentials: 'include' });
         setUser(null);
       };
 

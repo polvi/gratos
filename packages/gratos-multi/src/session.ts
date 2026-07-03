@@ -23,7 +23,7 @@ function getSessionId(c: any): string | undefined {
 export function sessionRoutes(tenantInfo: TenantInfo) {
     const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-    app.get('/whoami', async (c) => {
+    const whoami = async (c: any) => {
         const sessionId = getSessionId(c);
         if (!sessionId) {
             return c.json({ error: 'Not authenticated' }, 401);
@@ -40,9 +40,9 @@ export function sessionRoutes(tenantInfo: TenantInfo) {
         }
 
         return c.json({ user_id: (user as any).id });
-    });
+    };
 
-    app.post('/logout', async (c) => {
+    const logout = async (c: any) => {
         const sessionId = getSessionId(c);
         if (sessionId) {
             await c.env.KV.delete(`session:${tenantInfo.tenant}:${sessionId}`);
@@ -52,7 +52,12 @@ export function sessionRoutes(tenantInfo: TenantInfo) {
             });
         }
         return c.json({ success: true });
-    });
+    };
+
+    app.get('/whoami', whoami);
+    app.get('/v1/whoami', whoami);
+    app.post('/logout', logout);
+    app.post('/v1/logout', logout);
 
     return app;
 }

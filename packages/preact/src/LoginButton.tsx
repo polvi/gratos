@@ -10,20 +10,17 @@ export function LoginButton() {
     const handleLogin = async () => {
         try {
             setStatus('Login...');
-            const resp = await fetch(`${apiBaseUrl}/login/options`);
+            const resp = await fetch(`${apiBaseUrl}/v1/login/options`);
             const options = await resp.json();
 
             const asseResp = await startAuthentication({ optionsJSON: options });
 
-            const verifyResp = await fetch(`${apiBaseUrl}/login/verify`, {
+            const verifyResp = await fetch(`${apiBaseUrl}/v1/login/verify`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    challengeId: options.challengeId,
-                    response: asseResp,
-                }),
+                body: JSON.stringify(asseResp),
                 credentials: 'include',
             });
 

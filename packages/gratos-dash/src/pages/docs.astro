@@ -15,34 +15,34 @@ async function api(path: string, init: RequestInit = {}) {
 }
 
 export async function register() {
-  const opts = await (await api('/register/options')).json();
+  const opts = await (await api('/v1/register/options')).json(); // standard PublicKeyCredentialCreationOptionsJSON
   const cred = await startRegistration({ optionsJSON: opts });
-  const res = await api('/register/verify', {
+  const res = await api('/v1/register/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ response: cred, userId: opts.userId }),
+    body: JSON.stringify(cred), // bare RegistrationResponseJSON — no wrapper
   });
   return res.json(); // { verified, user: { id } } — session_id cookie is now set
 }
 
 export async function login() {
-  const opts = await (await api('/login/options')).json();
+  const opts = await (await api('/v1/login/options')).json(); // standard PublicKeyCredentialRequestOptionsJSON
   const cred = await startAuthentication({ optionsJSON: opts });
-  const res = await api('/login/verify', {
+  const res = await api('/v1/login/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ response: cred, challengeId: opts.challengeId }),
+    body: JSON.stringify(cred), // bare AuthenticationResponseJSON — no wrapper
   });
   return res.json(); // { verified, user: { id } } — session_id cookie is now set
 }
 
 export async function whoami() {
-  const res = await api('/whoami');
+  const res = await api('/v1/whoami');
   return res.ok ? res.json() : null; // { user_id } or null
 }
 
 export async function logout() {
-  await api('/logout', { method: 'POST' });
+  await api('/v1/logout', { method: 'POST' });
 }`;
 
 const sandboxCurl = `npx @authgravity/cli listen
@@ -68,21 +68,17 @@ curl https://provision.api.authgravity.org/claims/&lt;claimId&gt;
 const promoteEnv = `# .env
 PUBLIC_AUTH_ENDPOINT=https://authgravity.myapp.com`;
 
-const registerVerifyExample = `POST /register/verify
+const registerVerifyExample = `POST /v1/register/verify
 Content-Type: application/json
 
-{
-  "userId": "&lt;userId from step 1&gt;",
-  "response": &lt;attestation response from navigator.credentials.create()&gt;
-}`;
+&lt;attestation response from navigator.credentials.create(), as JSON&gt;
+# the bare RegistrationResponseJSON — no wrapper object`;
 
-const loginVerifyExample = `POST /login/verify
+const loginVerifyExample = `POST /v1/login/verify
 Content-Type: application/json
 
-{
-  "challengeId": "&lt;challengeId from step 1&gt;",
-  "response": &lt;assertion response from navigator.credentials.get()&gt;
-}`;
+&lt;assertion response from navigator.credentials.get(), as JSON&gt;
+# the bare AuthenticationResponseJSON — no wrapper object`;
 
 const verifiedResult = `{ "verified": true, "user": { "id": "&lt;uuid&gt;" } }`;
 const whoamiResult = `{ "user_id": "&lt;uuid&gt;" }`;
@@ -91,19 +87,19 @@ const registerCodeExample = `import { startRegistration } from '@simplewebauthn/
 
 const API = 'https://authgravity.myapp.com';
 
-// 1. Fetch options from AuthGravity
-const optRes = await fetch(API + '/register/options', { credentials: 'include' });
+// 1. Fetch standard WebAuthn creation options from AuthGravity
+const optRes = await fetch(API + '/v1/register/options', { credentials: 'include' });
 const opts = await optRes.json();
 
 // 2. Browser prompts user for passkey (biometric, security key, etc.)
 const attResp = await startRegistration({ optionsJSON: opts });
 
-// 3. Send attestation response back for verification
-const verRes = await fetch(API + '/register/verify', {
+// 3. Send the attestation response back, as-is
+const verRes = await fetch(API + '/v1/register/verify', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   credentials: 'include',
-  body: JSON.stringify({ response: attResp, userId: opts.userId }),
+  body: JSON.stringify(attResp),
 });
 const result = await verRes.json();
 // result: { verified: true, user: { id: "&lt;uuid&gt;" } }
@@ -113,25 +109,25 @@ const loginCodeExample = `import { startAuthentication } from '@simplewebauthn/b
 
 const API = 'https://authgravity.myapp.com';
 
-// 1. Fetch options from AuthGravity
-const optRes = await fetch(API + '/login/options', { credentials: 'include' });
+// 1. Fetch standard WebAuthn request options from AuthGravity
+const optRes = await fetch(API + '/v1/login/options', { credentials: 'include' });
 const opts = await optRes.json();
 
 // 2. Browser prompts user for passkey
 const assertResp = await startAuthentication({ optionsJSON: opts });
 
-// 3. Send assertion response back for verification
-const verRes = await fetch(API + '/login/verify', {
+// 3. Send the assertion response back, as-is
+const verRes = await fetch(API + '/v1/login/verify', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   credentials: 'include',
-  body: JSON.stringify({ response: assertResp, challengeId: opts.challengeId }),
+  body: JSON.stringify(assertResp),
 });
 const result = await verRes.json();
 // result: { verified: true, user: { id: "&lt;uuid&gt;" } }
 // A session_id cookie is now set on your domain.`;
 
-const checkAuthExample = `const res = await fetch('https://authgravity.myapp.com/whoami', {
+const checkAuthExample = `const res = await fetch('https://authgravity.myapp.com/v1/whoami', {
   credentials: 'include',
 });
 if (res.ok) {
@@ -149,7 +145,7 @@ export const onRequest = defineMiddleware(async (context, next) =&gt; {
   if (context.url.pathname.startsWith("/protected")) {
     const cookieHeader = context.request.headers.get("cookie");
 
-    const res = await fetch(AUTH_API + "/whoami", {
+    const res = await fetch(AUTH_API + "/v1/whoami", {
       headers: cookieHeader ? { cookie: cookieHeader } : {},
     });
 
@@ -172,7 +168,7 @@ const schemaExample = `CREATE TABLE users (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );`;
 
-const firstSightExample = `// In your backend, after calling /whoami
+const firstSightExample = `// In your backend, after calling /v1/whoami
 const { user_id } = await authRes.json();
 
 let user = await db.get('SELECT * FROM users WHERE id = ?', user_id);
@@ -185,7 +181,7 @@ const stripeCheckoutExample = `// POST /api/subscribe handler
 app.post('/api/subscribe', async (req, res) =&gt; {
   // Validate the session via AuthGravity
   const cookieHeader = req.headers.cookie;
-  const authRes = await fetch('https://authgravity.myapp.com/whoami', {
+  const authRes = await fetch('https://authgravity.myapp.com/v1/whoami', {
     headers: cookieHeader ? { cookie: cookieHeader } : {},
   });
 
@@ -250,7 +246,7 @@ app.post('/webhooks/stripe', async (req, res) =&gt; {
 const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
   const cookieHeader = req.headers.cookie;
 
-  const authRes = await fetch('https://authgravity.myapp.com/whoami', {
+  const authRes = await fetch('https://authgravity.myapp.com/v1/whoami', {
     headers: cookieHeader ? { cookie: cookieHeader } : {},
   });
 
@@ -436,7 +432,7 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
     <ul>
       <li><strong>First-party cookies</strong>: the session cookie is set on your own domain (e.g., <code>.myapp.com</code>), not a third-party domain. Your browser sends it automatically on every request to any subdomain.</li>
       <li><strong>Your own Relying Party (RP)</strong>: the WebAuthn RP ID is your registrable domain (e.g., <code>myapp.com</code>), so passkeys created through AuthGravity work across all your subdomains.</li>
-      <li><strong>Server-side session checks</strong>: because the cookie lives on your domain, your backend can validate sessions by forwarding it to the AuthGravity <code>/whoami</code> endpoint - no tokens to manage, no JWTs to verify.</li>
+      <li><strong>Server-side session checks</strong>: because the cookie lives on your domain, your backend can validate sessions by forwarding it to the AuthGravity <code>/v1/whoami</code> endpoint - no tokens to manage, no JWTs to verify.</li>
     </ul>
 
     <h2>Setup</h2>
@@ -463,36 +459,40 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
     <p>
       All endpoints are relative to your auth endpoint (e.g., <code>https://authgravity.myapp.com</code>).
       Include <code>credentials: 'include'</code> on every fetch from the browser so the session cookie is sent.
+      The v1 API speaks pure spec-shaped WebAuthn JSON: options endpoints return the standard
+      options objects unmodified, and verify endpoints accept the credential response as-is — no
+      wrapper, no correlation id. Any conforming WebAuthn client library works against it.
     </p>
 
     <h3>Registration</h3>
 
     <p><strong>Step 1:</strong> Get registration options.</p>
 
-    <pre><code>GET /register/options</code></pre>
+    <pre><code>GET /v1/register/options</code></pre>
 
     <p>
-      Returns WebAuthn <code>PublicKeyCredentialCreationOptions</code> plus a <code>userId</code> field
-      (a server-generated UUID).
+      Returns a standard WebAuthn <code>PublicKeyCredentialCreationOptionsJSON</code>, unmodified.
     </p>
 
-    <p><strong>Step 2:</strong> Pass the WebAuthn attestation response along with the <code>userId</code> from step 1.</p>
+    <p><strong>Step 2:</strong> Post the WebAuthn attestation response back, as-is.</p>
 
     <pre><code set:html={registerVerifyExample} /></pre>
 
-    <p>Returns <code set:html={verifiedResult} /> and sets a <code>session_id</code> cookie on your domain.</p>
+    <p>Returns <code set:html={verifiedResult} /> and sets a <code>session_id</code> cookie on your domain. The <code>user.id</code> is your stable server-generated UUID.</p>
 
     <h3>Authentication (Login)</h3>
 
     <p><strong>Step 1:</strong> Get authentication options.</p>
 
-    <pre><code>GET /login/options</code></pre>
+    <pre><code>GET /v1/login/options</code></pre>
 
     <p>
-      Returns WebAuthn <code>PublicKeyCredentialRequestOptions</code> plus a <code>challengeId</code> field.
+      Returns a standard WebAuthn <code>PublicKeyCredentialRequestOptionsJSON</code>, unmodified.
+      There is nothing extra to carry between the two steps: the server keys the pending ceremony
+      by the challenge, which comes back inside the signed <code>clientDataJSON</code>.
     </p>
 
-    <p><strong>Step 2:</strong> Pass the WebAuthn assertion response along with the <code>challengeId</code> from step 1.</p>
+    <p><strong>Step 2:</strong> Post the WebAuthn assertion response back, as-is.</p>
 
     <pre><code set:html={loginVerifyExample} /></pre>
 
@@ -500,7 +500,7 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
 
     <h3>Session Management</h3>
 
-    <pre><code>GET /whoami</code></pre>
+    <pre><code>GET /v1/whoami</code></pre>
 
     <p>Returns <code set:html={whoamiResult} /> if authenticated, or 401 if not.</p>
 
@@ -510,9 +510,19 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
       <li><strong>Bearer token</strong> (server-to-server): pass <code>Authorization: Bearer &lt;session_id&gt;</code> header.</li>
     </ul>
 
-    <pre><code>POST /logout</code></pre>
+    <pre><code>POST /v1/logout</code></pre>
 
     <p>Destroys the session and clears the cookie.</p>
+
+    <h3>Legacy API</h3>
+
+    <p>
+      The original unversioned endpoints (<code>/register/options</code> returning an extra
+      <code>userId</code>, <code>/login/options</code> returning an extra <code>challengeId</code>,
+      and their <code>&#123;userId | challengeId, response&#125;</code> verify wrappers, plus
+      <code>/whoami</code> and <code>/logout</code>) remain supported for existing integrations.
+      New integrations should use <code>/v1</code>.
+    </p>
 
     <h2>Using @simplewebauthn/browser</h2>
 
@@ -539,7 +549,7 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
     <p>
       Because the <code>session_id</code> cookie is scoped to your registrable domain (e.g., <code>.myapp.com</code>),
       the browser sends it on requests to both <code>authgravity.myapp.com</code> and <code>www.myapp.com</code>.
-      Your backend can validate the session by forwarding this cookie to the <code>/whoami</code> endpoint.
+      Your backend can validate the session by forwarding this cookie to the <code>/v1/whoami</code> endpoint.
     </p>
 
     <h3>Astro middleware example</h3>
@@ -560,7 +570,7 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
     <ol>
       <li><strong>User registers or logs in</strong> via AuthGravity. You get back a UUID.</li>
       <li><strong>Your app stores profile data</strong> (name, email, subscription, etc.) in your own database, keyed by that UUID.</li>
-      <li><strong>On each request</strong>, your backend calls <code>/whoami</code> to get the UUID, then looks up the user in your database.</li>
+      <li><strong>On each request</strong>, your backend calls <code>/v1/whoami</code> to get the UUID, then looks up the user in your database.</li>
     </ol>
 
     <p>

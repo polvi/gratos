@@ -12,28 +12,22 @@ export function RegisterButton() {
         try {
             setStatus('Registering...');
             // No username sent to server
-            const resp = await fetch(`${apiBaseUrl}/register/options`);
+            const resp = await fetch(`${apiBaseUrl}/v1/register/options`);
             const options = await resp.json();
 
-            // We get userId from the server to pass back for verification
-            const userId = options.userId;
-
-            // CLIENT-SIDE OVERWRITE: Put the real username here so the Authenticator (TouchID/FaceID) 
+            // CLIENT-SIDE OVERWRITE: Put the real username here so the Authenticator (TouchID/FaceID)
             // shows the correct label to the user. The server never sees this string.
             options.user.name = username;
             options.user.displayName = username;
 
             const attResp = await startRegistration({ optionsJSON: options });
 
-            const verifyResp = await fetch(`${apiBaseUrl}/register/verify`, {
+            const verifyResp = await fetch(`${apiBaseUrl}/v1/register/verify`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    userId,
-                    response: attResp,
-                }),
+                body: JSON.stringify(attResp),
                 credentials: 'include',
             });
 

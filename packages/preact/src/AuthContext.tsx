@@ -31,13 +31,13 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
 
         const checkAuth = async () => {
             try {
-                const res = await fetch(`${apiBaseUrl}/whoami`, {
+                const res = await fetch(`${apiBaseUrl}/v1/whoami`, {
                     credentials: 'include',
                 });
                 if (res.ok) {
                     const data = await res.json();
 
-                    setUser({ ...data.user, username: '' });
+                    setUser({ id: data.user_id, username: '' });
                 }
             } catch (err) {
                 console.error('Failed to check auth', err);
@@ -62,7 +62,7 @@ export function AuthProvider({ children, apiBaseUrl }: AuthProviderProps) {
         // also call server logout
         if (apiBaseUrl) {
             try {
-                await fetch(`${apiBaseUrl}/logout`, { method: 'POST', credentials: 'include' });
+                await fetch(`${apiBaseUrl}/v1/logout`, { method: 'POST', credentials: 'include' });
             } catch (error) {
                 console.error('Failed to log out on server:', error);
             }
