@@ -3,24 +3,9 @@ import { useState } from 'preact/hooks';
 import { AuthProvider, useAuth } from './auth';
 import { startAuthentication } from '@simplewebauthn/browser';
 
-function NavButtonInner({ currentPath, provisionerBaseUrl }: { currentPath: string; provisionerBaseUrl: string }) {
+function NavButtonInner({ currentPath }: { currentPath: string }) {
     const { isAuthenticated, login, logout, apiBaseUrl, isLoading } = useAuth();
     const [status, setStatus] = useState('');
-
-    const routeAfterLogin = async () => {
-        try {
-            const res = await fetch(`${provisionerBaseUrl}/domains`, {
-                credentials: 'include',
-            });
-            if (res.ok) {
-                const data = await res.json();
-                const hasDomains = (data.claimed?.length > 0) || (data.pending?.length > 0);
-                window.location.href = hasDomains ? '/domains' : '/signup';
-                return;
-            }
-        } catch { /* fall through */ }
-        window.location.href = '/signup';
-    };
 
     if (isLoading) {
         // Placeholder to prevent layout shift during initial auth check
@@ -68,7 +53,7 @@ function NavButtonInner({ currentPath, provisionerBaseUrl }: { currentPath: stri
             if (verifyJSON && verifyJSON.verified) {
                 setStatus('');
                 login(verifyJSON.user);
-                await routeAfterLogin();
+                window.location.href = '/domains';
             } else {
                 setStatus('');
             }
@@ -88,10 +73,10 @@ function NavButtonInner({ currentPath, provisionerBaseUrl }: { currentPath: stri
     );
 }
 
-export function NavButton({ apiBaseUrl, currentPath, provisionerBaseUrl }: { apiBaseUrl: string; currentPath: string; provisionerBaseUrl: string }) {
+export function NavButton({ apiBaseUrl, currentPath }: { apiBaseUrl: string; currentPath: string }) {
     return (
         <AuthProvider apiBaseUrl={apiBaseUrl}>
-            <NavButtonInner currentPath={currentPath} provisionerBaseUrl={provisionerBaseUrl} />
+            <NavButtonInner currentPath={currentPath} />
         </AuthProvider>
     );
 }

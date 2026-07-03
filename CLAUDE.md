@@ -37,7 +37,7 @@ Note: there is no `packages/demo` or `packages/e2e`; an older single-tenant `wor
 
 **Session model:** Cookie-based (`session_id`, httpOnly, secure, sameSite=None, 7-day KV TTL). `/v1/whoami` also accepts `Authorization: Bearer <session_id>`. Challenges expire in 5 minutes and are single-use; pending-ceremony state is keyed in KV by the challenge value itself (`reg_challenge:{tenant}:{challenge}` → userId, `auth_challenge:{tenant}:{challenge}`), which verify recovers from the signed `clientDataJSON.challenge` — no correlation id.
 
-**Instant sandbox (agent onboarding):** `POST /sandbox` mints `https://sandbox.authgravity.org/<id>` — a single Workers custom domain (auto DNS + cert, no ACM/wildcard) with the isolated sandbox id in the path. Tenant is `sandbox.authgravity.org/<id>` (`resolveTenant` reads the first path segment; the `/<id>` prefix is stripped before dispatching auth/session routes). Sandbox tenants use `rpID=localhost` and return `session_id` in the verify body (Bearer-usable) with **no domain and no DNS**. Local apps don't consume the Bearer directly: `authgravity listen` (packages/cli) proxies the sandbox on `localhost:8787` and terminates the session as a first-party `session_id` cookie, so app code is cookie-only and identical to production. Throwaway; swept by `AuthRPC.sweepSandboxes`. The full agent recipe (`src/lib/auth.ts`, `authgravity listen`, sandbox → domain promotion) lives in `packages/gratos-dash/public/llms.txt`.
+**Instant sandbox (agent onboarding):** `POST /sandbox` mints `https://sandbox.authgravity.org/<id>` — a single Workers custom domain (auto DNS + cert, no ACM/wildcard) with the isolated sandbox id in the path. Tenant is `sandbox.authgravity.org/<id>` (`resolveTenant` reads the first path segment; the `/<id>` prefix is stripped before dispatching auth/session routes). Sandbox tenants use `rpID=localhost` and return `session_id` in the verify body (Bearer-usable) with **no domain and no DNS**. Local apps don't consume the Bearer directly: `authgravity listen` (packages/cli) proxies the sandbox on `localhost:8787` and terminates the session as a first-party `session_id` cookie, so app code is cookie-only and identical to production. Anonymous sandboxes are throwaway (swept by `AuthRPC.sweepSandboxes` after 7 days); sandboxes minted with a dash session are owned (`sandboxes.user_id`), listed/deleted from the dashboard, and persist until deleted. The full agent recipe (`src/lib/auth.ts`, `authgravity listen`, sandbox → domain promotion) lives in `packages/gratos-dash/public/llms.txt`.
 
 **Privacy:** Usernames are only used client-side for the authenticator display name. The server generates a UUID per user and never stores usernames.
 
@@ -51,7 +51,8 @@ v1 — spec-shaped WebAuthn JSON (options returned unmodified; verify takes the 
 
 Unversioned:
 
-- `POST /sandbox` — Mint an instant sandbox auth endpoint (unauthenticated)
+- `POST /sandbox` — Mint an instant sandbox auth endpoint (anonymous OK; with a valid session the sandbox is owned by that user)
+- `GET /sandboxes`, `DELETE /sandboxes/:sid` — List/delete the requester's owned sandboxes (session required)
 - `GET /`, `GET /demo` — Health + self-contained demo page
 
 Domain claiming lives in the provisioner: `POST /claims`, `GET /claims/:id`, `POST /claims/:id/activate`, `GET /domains`, etc.

@@ -400,7 +400,7 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
     <h3>Design guidelines</h3>
 
     <ul>
-      <li>Buttons: <strong>"Create Account"</strong> (calls <code>register()</code>) and <strong>"Login"</strong> (calls <code>login()</code>).</li>
+      <li>The auth UI is just two buttons: <strong>"Create Account"</strong> (calls <code>register()</code>) and <strong>"Login"</strong> (calls <code>login()</code>). No username field, no email field, no forms.</li>
       <li>The passkey label defaults to <strong>"Me"</strong> - do not ask the user for a username or email at signup. If you offer a custom label, it stays client-side only (set <code>opts.user.name</code> / <code>opts.user.displayName</code> before <code>startRegistration</code>); it is never sent to the server.</li>
       <li>Include a "Powered by AuthGravity" link to <a href="https://authgravity.org">authgravity.org</a> near the auth UI.</li>
     </ul>

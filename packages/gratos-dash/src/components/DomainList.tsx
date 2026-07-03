@@ -399,7 +399,185 @@ function ActivatingDetails({ domain, provisionerBaseUrl, onClaimed }: {
     );
 }
 
-function DomainListInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
+type Sandbox = {
+    id: string;
+    tenant: string;
+    endpoint: string;
+    created_at: number;
+};
+
+function SandboxSection({ apiBaseUrl }: { apiBaseUrl: string }) {
+    const [sandboxes, setSandboxes] = useState<Sandbox[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [creating, setCreating] = useState(false);
+    const [deleting, setDeleting] = useState<string | null>(null);
+    const [error, setError] = useState('');
+
+    const fetchSandboxes = useCallback(async () => {
+        try {
+            const res = await fetch(`${apiBaseUrl}/sandboxes`, { credentials: 'include' });
+            if (res.ok) {
+                const data = await res.json();
+                setSandboxes(data.sandboxes || []);
+            }
+        } catch {
+            // ignore transient errors
+        } finally {
+            setLoading(false);
+        }
+    }, [apiBaseUrl]);
+
+    useEffect(() => {
+        fetchSandboxes();
+    }, [fetchSandboxes]);
+
+    const handleCreate = async () => {
+        setCreating(true);
+        setError('');
+        try {
+            const res = await fetch(`${apiBaseUrl}/sandbox`, {
+                method: 'POST',
+                credentials: 'include',
+            });
+            if (!res.ok) {
+                const data = await res.json();
+                setError(data.error || 'Failed to create sandbox');
+                return;
+            }
+            await fetchSandboxes();
+        } catch {
+            setError('Network error');
+        } finally {
+            setCreating(false);
+        }
+    };
+
+    const handleDelete = async (s: Sandbox) => {
+        if (!confirm(`Delete sandbox ${s.id}? Its users and passkeys are removed.`)) return;
+
+        setDeleting(s.id);
+        setError('');
+        try {
+            const res = await fetch(`${apiBaseUrl}/sandboxes/${s.id}`, {
+                method: 'DELETE',
+                credentials: 'include',
+            });
+            if (!res.ok) {
+                const data = await res.json();
+                setError(data.error || 'Failed to delete sandbox');
+                return;
+            }
+            setSandboxes(prev => prev.filter(x => x.id !== s.id));
+        } catch {
+            setError('Network error');
+        } finally {
+            setDeleting(null);
+        }
+    };
+
+    const codeStyle = {
+        background: '#f4f4f5',
+        padding: '0.125rem 0.375rem',
+        borderRadius: '0.25rem',
+        fontFamily: 'monospace',
+        fontSize: '0.75rem',
+        wordBreak: 'break-all' as const,
+    };
+
+    return (
+        <div style={{ marginTop: '3rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>Sandboxes</h2>
+                <button
+                    onClick={handleCreate}
+                    disabled={creating}
+                    style={{
+                        padding: '0.5rem 1rem',
+                        background: '#18181b',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '0.375rem',
+                        fontSize: '0.875rem',
+                        fontWeight: 600,
+                        cursor: creating ? 'not-allowed' : 'pointer',
+                        opacity: creating ? 0.6 : 1,
+                    }}
+                >
+                    {creating ? 'Creating...' : 'New Sandbox'}
+                </button>
+            </div>
+            <p style={{ color: '#71717a', fontSize: '0.8rem', marginBottom: '1rem', lineHeight: 1.5 }}>
+                Instant, isolated auth endpoints for local development — no domain, no DNS.
+                Run <span style={codeStyle}>npx @authgravity/cli listen --endpoint &lt;endpoint&gt;</span> next
+                to your dev server.
+            </p>
+
+            {error && (
+                <p style={{ color: '#ef4444', fontSize: '0.875rem', marginBottom: '1rem' }}>{error}</p>
+            )}
+
+            {loading ? (
+                <p style={{ color: '#71717a', fontSize: '0.875rem' }}>Loading...</p>
+            ) : sandboxes.length === 0 ? (
+                <div style={{
+                    border: '1px dashed #d4d4d8',
+                    borderRadius: '0.5rem',
+                    padding: '1.5rem',
+                    textAlign: 'center',
+                }}>
+                    <p style={{ color: '#71717a', fontSize: '0.875rem' }}>No sandboxes yet.</p>
+                </div>
+            ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {sandboxes.map(s => (
+                        <div
+                            key={s.id}
+                            style={{
+                                background: '#fff',
+                                border: '1px solid #e4e4e7',
+                                borderRadius: '0.5rem',
+                                padding: '1rem 1.25rem',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                gap: '1rem',
+                            }}
+                        >
+                            <div style={{ minWidth: 0 }}>
+                                <div>
+                                    <span style={codeStyle}>{s.endpoint}</span>
+                                    <CopyButton text={s.endpoint} />
+                                </div>
+                                <div style={{ fontSize: '0.75rem', color: '#71717a', marginTop: '0.375rem' }}>
+                                    Created {new Date(s.created_at).toLocaleDateString()}
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => handleDelete(s)}
+                                disabled={deleting === s.id}
+                                style={{
+                                    padding: '0.375rem 0.75rem',
+                                    background: 'none',
+                                    border: '1px solid #fca5a5',
+                                    borderRadius: '0.375rem',
+                                    color: '#dc2626',
+                                    fontSize: '0.8rem',
+                                    cursor: deleting === s.id ? 'not-allowed' : 'pointer',
+                                    opacity: deleting === s.id ? 0.5 : 1,
+                                    flexShrink: 0,
+                                }}
+                            >
+                                {deleting === s.id ? 'Deleting...' : 'Delete'}
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function DomainListInner({ apiBaseUrl, provisionerBaseUrl }: { apiBaseUrl: string; provisionerBaseUrl: string }) {
     const { isAuthenticated } = useAuth();
     const [domains, setDomains] = useState<Domain[]>([]);
     const [loading, setLoading] = useState(true);
@@ -643,6 +821,8 @@ function DomainListInner({ provisionerBaseUrl }: { provisionerBaseUrl: string })
                     ))}
                 </div>
             )}
+
+            <SandboxSection apiBaseUrl={apiBaseUrl} />
         </div>
     );
 }
@@ -653,7 +833,7 @@ export function DomainList({ apiBaseUrl, provisionerBaseUrl }: {
 }) {
     return (
         <AuthProvider apiBaseUrl={apiBaseUrl}>
-            <DomainListInner provisionerBaseUrl={provisionerBaseUrl} />
+            <DomainListInner apiBaseUrl={apiBaseUrl} provisionerBaseUrl={provisionerBaseUrl} />
         </AuthProvider>
     );
 }

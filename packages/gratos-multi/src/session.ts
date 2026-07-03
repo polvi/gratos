@@ -8,7 +8,7 @@ import { getUser } from './db';
 /**
  * Resolve session ID from cookie or Authorization Bearer header.
  */
-function getSessionId(c: any): string | undefined {
+export function getSessionId(c: any): string | undefined {
     const cookieSession = getCookie(c, 'session_id');
     if (cookieSession) return cookieSession;
 

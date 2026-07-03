@@ -1,6 +1,12 @@
 ---
 import Layout from "../layouts/Layout.astro";
 import { HeroPrompt } from "../components/HeroPrompt";
+import { HomeAuth } from "../components/HomeAuth";
+import { env } from "cloudflare:workers";
+
+export const prerender = false;
+
+const apiBaseUrl = env.PUBLIC_GRATOS_SERVER || import.meta.env.PUBLIC_GRATOS_SERVER;
 ---
 
 <Layout title="AuthGravity - Zero Knowledge Identity">
@@ -18,29 +24,7 @@ import { HeroPrompt } from "../components/HeroPrompt";
       font-size: 1.15rem;
       color: #52525b;
       line-height: 1.7;
-      margin-bottom: 2rem;
-    }
-    .cta {
-      display: inline-block;
-      padding: 0.75rem 2rem;
-      background: #18181b;
-      color: #fff;
-      text-decoration: none;
-      border-radius: 0.5rem;
-      font-weight: 600;
-      font-size: 1rem;
-    }
-    .cta:hover {
-      background: #27272a;
-    }
-    .cta.secondary {
-      background: transparent;
-      color: #18181b;
-      border: 1px solid #d4d4d8;
-      margin-left: 0.75rem;
-    }
-    .cta.secondary:hover {
-      background: #f4f4f5;
+      margin-bottom: 1rem;
     }
   </style>
 
@@ -51,7 +35,7 @@ import { HeroPrompt } from "../components/HeroPrompt";
       service for the post-password era. It provides modern, privacy-focused
       user authentication using passkeys.
     </p>
-    <a href="/login" class="cta">Get Started</a>
+    <HomeAuth client:only="preact" apiBaseUrl={apiBaseUrl} />
     <HeroPrompt client:load />
   </div>
 </Layout>

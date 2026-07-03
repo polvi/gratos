@@ -101,20 +101,15 @@ export function useAuth() {
 
 export function RegisterButton() {
     const { login, apiBaseUrl } = useAuth();
-    const [username, setUsername] = useState('your account');
     const [status, setStatus] = useState('');
 
     const handleRegister = async () => {
         try {
             setStatus('Registering...');
-            // No username sent to server
+            // No username: the passkey label defaults to "Me" (set server-side
+            // in the options; the server never stores it).
             const resp = await fetch(`${apiBaseUrl}/v1/register/options`);
             const options = await resp.json();
-
-            // CLIENT-SIDE OVERWRITE: Put the real username here so the Authenticator (TouchID/FaceID)
-            // shows the correct label to the user. The server never sees this string.
-            options.user.name = username;
-            options.user.displayName = username;
 
             const attResp = await startRegistration({ optionsJSON: options });
 
@@ -147,18 +142,8 @@ export function RegisterButton() {
     return (
         <div style={{ position: 'relative' }}>
             <style>{`
-                .register-input-group {
-                    display: flex;
-                    gap: 8px;
-                    align-items: center;
-                }
-                .register-input {
-                    padding: 8px 12px;
-                    border: 1px solid #ddd;
-                    border-radius: 4px;
-                    font-size: 16px; /* Avoid iOS zoom */
-                }
                 .register-btn {
+                    width: 100%;
                     padding: 8px 16px;
                     height: 40px;
                     cursor: pointer;
@@ -174,44 +159,19 @@ export function RegisterButton() {
                     cursor: not-allowed;
                 }
                 @media (max-width: 600px) {
-                    .register-input-group {
-                        flex-direction: column;
-                        width: 100%;
-                        align-items: stretch;
-                    }
-                    .register-input {
-                        width: 100%;
-                        height: 44px; /* Touch target */
-                        box-sizing: border-box;
-                    }
                     .register-btn {
-                        width: 100%;
                         height: 48px; /* Larger touch target */
                         font-size: 16px;
                     }
                 }
             `}</style>
-            <div className="register-input-group">
-                <input
-                    type="text"
-                    className="register-input"
-                    placeholder="Username"
-                    value={username}
-                    onInput={(e) => {
-                        setUsername((e.target as HTMLInputElement).value);
-                    }}
-                />
-                <button
-                    className="register-btn"
-                    onClick={handleRegister}
-                    disabled={status === 'Registering...'}
-                >
-                    {status || 'Register'}
-                </button>
-            </div>
-            <div style={{ fontSize: '0.75rem', color: '#a1a1aa', marginTop: '0.5rem', lineHeight: 1.4 }}>
-                Your username is only used locally to label your passkey. It is never sent to or stored by the server.
-            </div>
+            <button
+                className="register-btn"
+                onClick={handleRegister}
+                disabled={status === 'Registering...'}
+            >
+                {status || 'Create Account'}
+            </button>
             {!window.isSecureContext && (
                 <div style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: '6px', textAlign: 'center', background: '#fee2e2', padding: '4px', borderRadius: '4px' }}>
                     ⚠️ Not Secure Context. HTTPS required.

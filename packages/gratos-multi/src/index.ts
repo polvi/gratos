@@ -4,7 +4,7 @@ import { WorkerEntrypoint } from 'cloudflare:workers';
 
 import { resolveTenant } from './tenant';
 import { authRoutes } from './auth';
-import { sessionRoutes } from './session';
+import { sessionRoutes, getSessionId } from './session';
 import { getUser } from './db';
 
 export type Env = {
@@ -43,8 +43,10 @@ export class AuthRPC extends WorkerEntrypoint<Env> {
      */
     async sweepSandboxes(maxAgeMs: number = 7 * 24 * 60 * 60 * 1000): Promise<{ swept: number }> {
         const cutoff = Date.now() - maxAgeMs;
+        // Only anonymous sandboxes are throwaway; owned ones (user_id set)
+        // persist until deleted from the dashboard.
         const { results } = await this.env.DB.prepare(
-            "SELECT id FROM sandboxes WHERE created_at < ? AND id LIKE 'sandbox.%'"
+            "SELECT id FROM sandboxes WHERE created_at < ? AND id LIKE 'sandbox.%' AND user_id IS NULL"
         ).bind(cutoff).all();
 
         let swept = 0;
@@ -166,7 +168,6 @@ app.get('/demo', (c) => {
       const [user, setUser] = useState(null);
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState('');
-      const [username, setUsernameState] = useState('Me');
 
       const checkSession = async () => {
         try {
@@ -181,16 +182,12 @@ app.get('/demo', (c) => {
 
       useEffect(() => { checkSession(); }, []);
 
-      const register = async (username) => {
+      const register = async () => {
         setError('');
         try {
+          // The passkey label defaults to "Me" (set server-side, never stored).
           const optRes = await fetch(API + '/v1/register/options', { credentials: 'include' });
           const opts = await optRes.json();
-          // Client-side only: label the passkey with the username. Never sent to server.
-          if (username) {
-            opts.user.name = username;
-            opts.user.displayName = username;
-          }
           const cred = await startRegistration({ optionsJSON: opts });
           const verRes = await fetch(API + '/v1/register/verify', {
             method: 'POST',
@@ -238,20 +235,9 @@ app.get('/demo', (c) => {
         h('h1', { style: 'font-size: 1.75rem; font-weight: 700; margin-bottom: 0.5rem;' }, 'Welcome'),
         h('p', null, 'Sign in or create an account with a passkey.'),
         h('div', { style: 'display: flex; flex-direction: column; gap: 1rem;' },
-          h('button', { onClick: login }, 'Login'),
+          h('button', { onClick: () => register(), style: 'background: #18181b; color: white; border: none;' }, 'Create Account'),
           h('p', { style: 'text-align: center; color: #a1a1aa; font-size: 0.875rem; margin: 0;' }, 'or'),
-          h('div', { style: 'display: flex; gap: 8px;' },
-            h('input', {
-              type: 'text',
-              value: username,
-              onInput: (e) => setUsernameState(e.target.value),
-              placeholder: 'Username',
-              style: 'padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px; flex: 1;',
-            }),
-            h('button', { onClick: () => register(username), style: 'background: #18181b; color: white; border: none;' }, 'Create Account'),
-          ),
-          h('p', { style: 'font-size: 0.75rem; color: #a1a1aa; line-height: 1.4; margin: 0;' },
-            'The label is only used locally to name your passkey. It is never sent to or stored by the server.'),
+          h('button', { onClick: login }, 'Login'),
         ),
         error && h('p', { style: 'color: #ef4444; font-size: 0.875rem; margin-top: 0.5rem;' }, error),
       );
@@ -263,9 +249,25 @@ app.get('/demo', (c) => {
 </html>`);
 });
 
+/**
+ * Resolve the requester's user id for the tenant of the current request
+ * (session cookie or Bearer). Used by the sandbox management endpoints; the
+ * dash calls them on its own auth endpoint, so the tenant is e.g.
+ * authgravity.org and the user is a dash account.
+ */
+async function resolveRequestUser(c: any): Promise<string | null> {
+    const sessionId = getSessionId(c);
+    if (!sessionId) return null;
+    const tenantInfo = resolveTenant(new URL(c.req.url));
+    const userId = await c.env.KV.get(`session:${tenantInfo.tenant}:${sessionId}`);
+    return userId || null;
+}
+
 // Mint an instant, zero-DNS sandbox auth endpoint. Unauthenticated so a coding
-// agent / CLI can call it directly. The wildcard route makes the returned host
-// live immediately; the isolated user pool is created lazily on first register.
+// agent / CLI can call it directly; with a valid session the sandbox is owned
+// by that user (listed in the dashboard, exempt from the anonymous sweep). The
+// wildcard route makes the returned host live immediately; the isolated user
+// pool is created lazily on first register.
 app.post('/sandbox', async (c) => {
     // Light per-IP rate limit to bound abuse of the public mint endpoint.
     const ip = c.req.header('CF-Connecting-IP') || 'unknown';
@@ -291,16 +293,63 @@ app.post('/sandbox', async (c) => {
     const endpoint = `${url.protocol}//${sandboxHost}/${id}`;
     const tenant = `${isDev ? 'sandbox.localhost' : 'sandbox.authgravity.org'}/${id}`;
 
-    // Record the tenant for TTL cleanup (best-effort).
+    // Record the tenant for TTL cleanup / ownership (best-effort).
+    const ownerId = await resolveRequestUser(c);
     try {
-        await c.env.DB.prepare('INSERT INTO sandboxes (id, created_at) VALUES (?, ?)')
-            .bind(tenant, Date.now())
+        await c.env.DB.prepare('INSERT INTO sandboxes (id, created_at, user_id) VALUES (?, ?, ?)')
+            .bind(tenant, Date.now(), ownerId)
             .run();
     } catch {
         // table may not exist yet in older deployments; non-fatal
     }
 
-    return c.json({ id, endpoint, mode: 'sandbox' });
+    return c.json({ id, endpoint, mode: 'sandbox', owned: !!ownerId });
+});
+
+// List the requester's owned sandboxes.
+app.get('/sandboxes', async (c) => {
+    const userId = await resolveRequestUser(c);
+    if (!userId) return c.json({ error: 'Not authenticated' }, 401);
+
+    const { results } = await c.env.DB.prepare(
+        'SELECT id, created_at FROM sandboxes WHERE user_id = ? ORDER BY created_at DESC'
+    ).bind(userId).all();
+
+    const url = new URL(c.req.url);
+    const sandboxes = ((results || []) as Array<{ id: string; created_at: number }>).map((row) => {
+        const slash = row.id.indexOf('/');
+        const host = row.id.slice(0, slash);
+        const sid = row.id.slice(slash + 1);
+        const endpoint = host.endsWith('.localhost')
+            ? `${url.protocol}//${host}${url.port ? ':' + url.port : ''}/${sid}`
+            : `https://${host}/${sid}`;
+        return { id: sid, tenant: row.id, endpoint, created_at: row.created_at };
+    });
+
+    return c.json({ sandboxes });
+});
+
+// Delete an owned sandbox and its isolated user pool (mirrors sweepSandboxes).
+app.delete('/sandboxes/:sid', async (c) => {
+    const userId = await resolveRequestUser(c);
+    if (!userId) return c.json({ error: 'Not authenticated' }, 401);
+
+    const sid = c.req.param('sid');
+    if (!/^[a-z0-9]{6,32}$/.test(sid)) {
+        return c.json({ error: 'Invalid sandbox id' }, 400);
+    }
+
+    const row = await c.env.DB.prepare(
+        'SELECT id FROM sandboxes WHERE user_id = ? AND id LIKE ?'
+    ).bind(userId, `%/${sid}`).first() as { id: string } | null;
+    if (!row) return c.json({ error: 'Sandbox not found' }, 404);
+
+    const tenant = row.id;
+    await c.env.DB.prepare('DELETE FROM public_keys WHERE tenant = ?').bind(tenant).run();
+    await c.env.DB.prepare('DELETE FROM users WHERE tenant = ?').bind(tenant).run();
+    await c.env.DB.prepare('DELETE FROM sandboxes WHERE id = ?').bind(tenant).run();
+
+    return c.json({ success: true });
 });
 
 // Mount tenant-scoped routes per request

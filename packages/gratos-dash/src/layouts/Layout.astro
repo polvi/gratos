@@ -10,7 +10,6 @@ interface Props {
 const { title } = Astro.props;
 const pathname = Astro.url.pathname;
 const apiBaseUrl = env.PUBLIC_GRATOS_SERVER || import.meta.env.PUBLIC_GRATOS_SERVER;
-const provisionerBaseUrl = env.PUBLIC_PROVISIONER_SERVER || import.meta.env.PUBLIC_PROVISIONER_SERVER;
 ---
 
 <html lang="en">
@@ -150,7 +149,7 @@ const provisionerBaseUrl = env.PUBLIC_PROVISIONER_SERVER || import.meta.env.PUBL
               { active: pathname === "/login" || pathname === "/login/" },
             ]}>Get Started</a
           >
-          <NavButton client:load apiBaseUrl={apiBaseUrl} provisionerBaseUrl={provisionerBaseUrl} currentPath={pathname} />
+          <NavButton client:load apiBaseUrl={apiBaseUrl} currentPath={pathname} />
         </div>
       </nav>
       <main>

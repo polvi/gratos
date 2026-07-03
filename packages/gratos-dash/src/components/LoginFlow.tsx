@@ -2,31 +2,14 @@ import { h, Fragment } from 'preact';
 import { useEffect } from 'preact/hooks';
 import { AuthProvider, useAuth, LoginButton, RegisterButton } from './auth';
 
-function LoginInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
+function LoginInner() {
     const { isAuthenticated } = useAuth();
 
-    // After auth, check if user has domains → route accordingly
+    // Signed in (fresh ceremony or existing session) → dashboard
     useEffect(() => {
         if (!isAuthenticated) return;
-
-        (async () => {
-            try {
-                const res = await fetch(`${provisionerBaseUrl}/domains`, {
-                    credentials: 'include',
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    const hasDomains = (data.claimed?.length > 0) || (data.pending?.length > 0);
-                    window.location.href = hasDomains ? '/domains' : '/signup';
-                } else {
-                    // Auth might have failed on provisioner side, just go to signup
-                    window.location.href = '/signup';
-                }
-            } catch {
-                window.location.href = '/signup';
-            }
-        })();
-    }, [isAuthenticated, provisionerBaseUrl]);
+        window.location.href = '/domains';
+    }, [isAuthenticated]);
 
     return (
         <div style={{ width: '100%', margin: '2rem 0', textAlign: 'left' }}>
@@ -47,13 +30,10 @@ function LoginInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
     );
 }
 
-export function LoginFlow({ apiBaseUrl, provisionerBaseUrl }: {
-    apiBaseUrl: string;
-    provisionerBaseUrl: string;
-}) {
+export function LoginFlow({ apiBaseUrl }: { apiBaseUrl: string }) {
     return (
         <AuthProvider apiBaseUrl={apiBaseUrl}>
-            <LoginInner provisionerBaseUrl={provisionerBaseUrl} />
+            <LoginInner />
         </AuthProvider>
     );
 }

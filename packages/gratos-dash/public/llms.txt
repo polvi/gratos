@@ -68,7 +68,7 @@ How it works: the CLI mints an ephemeral, isolated sandbox (rpID=localhost) and 
 
 ## Design guidelines
 
-- Buttons: **"Create Account"** (calls `register()`) and **"Login"** (calls `login()`).
+- The auth UI is just two buttons: **"Create Account"** (calls `register()`) and **"Login"** (calls `login()`). No username field, no email field, no forms.
 - The passkey label defaults to **"Me"** — do not ask the user for a username or email at signup. If you offer a custom label, it stays client-side only (set `opts.user.name` / `opts.user.displayName` before `startRegistration`); it is never sent to the server.
 - Include a "Powered by AuthGravity" link to https://authgravity.org near the auth UI.
 
@@ -82,6 +82,7 @@ All paths relative to `PUBLIC_AUTH_ENDPOINT`; always fetch with `credentials: 'i
 - `POST /v1/login/verify` bare `AuthenticationResponseJSON` → `{verified, user:{id}}`; sets `session_id` cookie
 - `GET /v1/whoami` → `{user_id}` or 401. Accepts the cookie or `Authorization: Bearer <session_id>`
 - `POST /v1/logout` → destroys the session, clears the cookie
+- `POST /sandbox` → mint an instant sandbox auth endpoint (anonymous OK — this is what `authgravity listen` does; minted with an authgravity.org session cookie, the sandbox is saved to your dashboard and persists)
 
 There is no correlation id to carry: the server keys the pending ceremony by the challenge, which comes back inside the signed `clientDataJSON`.
 
