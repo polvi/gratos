@@ -76,6 +76,8 @@ function challengeFromResponse(response: any): string | null {
 }
 
 async function createRegistrationOptions(c: any, tenantInfo: TenantInfo) {
+    // The minted userId travels only through the KV value; the client never
+    // needs to see or echo it.
     const userId = crypto.randomUUID();
 
     const opts: GenerateRegistrationOptionsOpts = {
@@ -101,7 +103,7 @@ async function createRegistrationOptions(c: any, tenantInfo: TenantInfo) {
         { expirationTtl: CHALLENGE_TTL }
     );
 
-    return { options, userId };
+    return options;
 }
 
 async function verifyRegistration(c: any, tenantInfo: TenantInfo, response: any) {
@@ -254,57 +256,26 @@ async function verifyAuthentication(c: any, tenantInfo: TenantInfo, response: an
 export function authRoutes(tenantInfo: TenantInfo) {
     const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-    // --- v1: standard WebAuthn JSON ---
-    // Options endpoints return @simplewebauthn/server output verbatim
-    // (PublicKeyCredentialCreationOptionsJSON / RequestOptionsJSON); verify
-    // endpoints accept a bare RegistrationResponseJSON /
-    // AuthenticationResponseJSON as the whole POST body.
+    // Standard WebAuthn JSON: options endpoints return @simplewebauthn/server
+    // output verbatim (PublicKeyCredentialCreationOptionsJSON /
+    // RequestOptionsJSON); verify endpoints accept a bare
+    // RegistrationResponseJSON / AuthenticationResponseJSON as the whole
+    // POST body.
 
-    const v1 = new Hono<{ Bindings: Env; Variables: Variables }>();
-
-    v1.get('/register/options', async (c) => {
-        const { options } = await createRegistrationOptions(c, tenantInfo);
-        return c.json(options);
+    app.get('/v1/register/options', async (c) => {
+        return c.json(await createRegistrationOptions(c, tenantInfo));
     });
 
-    v1.post('/register/verify', async (c) => {
+    app.post('/v1/register/verify', async (c) => {
         return verifyRegistration(c, tenantInfo, await c.req.json());
     });
 
-    v1.get('/login/options', async (c) => {
+    app.get('/v1/login/options', async (c) => {
         return c.json(await createAuthenticationOptions(c, tenantInfo));
     });
 
-    v1.post('/login/verify', async (c) => {
+    app.post('/v1/login/verify', async (c) => {
         return verifyAuthentication(c, tenantInfo, await c.req.json());
-    });
-
-    app.route('/v1', v1);
-
-    // --- Legacy (pre-/v1) wire shapes ---
-    // Options graft userId/challengeId onto the standard JSON and verify takes
-    // a { userId | challengeId, response } wrapper. The grafted ids are now
-    // vestigial: verify recovers the challenge from clientDataJSON and ignores
-    // whatever id the client echoes back.
-
-    app.get('/register/options', async (c) => {
-        const { options, userId } = await createRegistrationOptions(c, tenantInfo);
-        return c.json({ ...options, userId });
-    });
-
-    app.post('/register/verify', async (c) => {
-        const body = await c.req.json();
-        return verifyRegistration(c, tenantInfo, body?.response);
-    });
-
-    app.get('/login/options', async (c) => {
-        const options = await createAuthenticationOptions(c, tenantInfo);
-        return c.json({ ...options, challengeId: crypto.randomUUID() });
-    });
-
-    app.post('/login/verify', async (c) => {
-        const body = await c.req.json();
-        return verifyAuthentication(c, tenantInfo, body?.response);
     });
 
     return app;

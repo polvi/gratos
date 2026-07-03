@@ -12,7 +12,7 @@
     },
     "packages/cli": {
       "name": "@authgravity/cli",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "bin": {
         "authgravity": "./src/cli.ts",
       },
@@ -31,7 +31,6 @@
         "@astrojs/cloudflare": "13.1.2",
         "@astrojs/preact": "5.0.1",
         "@astrojs/sitemap": "^3.7.1",
-        "@gratos/preact": "workspace:*",
         "@simplewebauthn/browser": "^13.3.0",
         "astro": "6.0.5",
         "preact": "^10.28.2",
@@ -49,17 +48,6 @@
         "@cloudflare/workers-types": "^4.20260109.0",
         "typescript": "^5.9.3",
         "wrangler": "^4.58.0",
-      },
-    },
-    "packages/preact": {
-      "name": "@gratos/preact",
-      "version": "0.1.11",
-      "dependencies": {
-        "@simplewebauthn/browser": "^13.2.2",
-        "preact": "^10.28.2",
-      },
-      "devDependencies": {
-        "typescript": "^5.9.3",
       },
     },
     "packages/provisioner": {
@@ -219,8 +207,6 @@
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.27.3", "", { "os": "win32", "cpu": "x64" }, "sha512-4uJGhsxuptu3OcpVAzli+/gWusVGwZZHTlS63hh++ehExkVT8SgiEf7/uC/PclrPPkLhZqGgCTjd0VWLo6xMqA=="],
 
     "@gratos/multi": ["@gratos/multi@workspace:packages/gratos-multi"],
-
-    "@gratos/preact": ["@gratos/preact@workspace:packages/preact"],
 
     "@gratos/provisioner": ["@gratos/provisioner@workspace:packages/provisioner"],
 

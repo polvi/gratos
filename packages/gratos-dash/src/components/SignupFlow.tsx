@@ -1,6 +1,6 @@
 import { h } from 'preact';
 import { useState, useEffect } from 'preact/hooks';
-import { AuthProvider } from '@gratos/preact';
+import { AuthProvider } from './auth';
 import { DomainEntry } from './DomainEntry';
 import { ClaimStatus } from './ClaimStatus';
 import { InstallationPrompt } from './InstallationPrompt';

@@ -7,14 +7,13 @@
         "start": "astro dev --port 4322",
         "build": "astro build",
         "preview": "astro preview",
-        "deploy": "bun run --cwd ../preact build && CLOUDFLARE_ENV=prod astro build && wrangler deploy",
+        "deploy": "CLOUDFLARE_ENV=prod astro build && wrangler deploy",
         "astro": "astro"
     },
     "dependencies": {
         "@astrojs/cloudflare": "13.1.2",
         "@astrojs/preact": "5.0.1",
         "@astrojs/sitemap": "^3.7.1",
-        "@gratos/preact": "workspace:*",
         "@simplewebauthn/browser": "^13.3.0",
         "astro": "6.0.5",
         "preact": "^10.28.2",

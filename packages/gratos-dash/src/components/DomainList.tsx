@@ -1,6 +1,6 @@
 import { h } from 'preact';
 import { useState, useEffect, useCallback } from 'preact/hooks';
-import { AuthProvider, useAuth } from '@gratos/preact';
+import { AuthProvider, useAuth } from './auth';
 import { InstallationPrompt } from './InstallationPrompt';
 
 const CNAME_NAME = 'authgravity';

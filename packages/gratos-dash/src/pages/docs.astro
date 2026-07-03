@@ -514,16 +514,6 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
 
     <p>Destroys the session and clears the cookie.</p>
 
-    <h3>Legacy API</h3>
-
-    <p>
-      The original unversioned endpoints (<code>/register/options</code> returning an extra
-      <code>userId</code>, <code>/login/options</code> returning an extra <code>challengeId</code>,
-      and their <code>&#123;userId | challengeId, response&#125;</code> verify wrappers, plus
-      <code>/whoami</code> and <code>/logout</code>) remain supported for existing integrations.
-      New integrations should use <code>/v1</code>.
-    </p>
-
     <h2>Using @simplewebauthn/browser</h2>
 
     <p>

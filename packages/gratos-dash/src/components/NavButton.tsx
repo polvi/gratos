@@ -1,6 +1,6 @@
 import { h } from 'preact';
 import { useState } from 'preact/hooks';
-import { AuthProvider, useAuth } from '@gratos/preact';
+import { AuthProvider, useAuth } from './auth';
 import { startAuthentication } from '@simplewebauthn/browser';
 
 function NavButtonInner({ currentPath, provisionerBaseUrl }: { currentPath: string; provisionerBaseUrl: string }) {

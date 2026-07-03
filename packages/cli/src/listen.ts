@@ -99,12 +99,7 @@ export function createApp(endpoint: string) {
         c.res = new Response(text, { status: res.status, headers: responseHeaders });
 
         let note = '';
-        const isVerify = [
-            '/register/verify',
-            '/login/verify',
-            '/v1/register/verify',
-            '/v1/login/verify',
-        ].includes(url.pathname);
+        const isVerify = url.pathname === '/v1/register/verify' || url.pathname === '/v1/login/verify';
         if (isVerify && res.ok) {
             try {
                 const data = JSON.parse(text) as { session_id?: string };
@@ -123,7 +118,7 @@ export function createApp(endpoint: string) {
                 // non-JSON verify response; pass through untouched
             }
         }
-        if (url.pathname === '/logout' || url.pathname === '/v1/logout') {
+        if (url.pathname === '/v1/logout') {
             deleteCookie(c, COOKIE_NAME, { path: '/' });
             note = ' (session cookie cleared)';
         }

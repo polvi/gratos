@@ -83,7 +83,7 @@ All paths relative to `PUBLIC_AUTH_ENDPOINT`; always fetch with `credentials: 'i
 - `GET /v1/whoami` → `{user_id}` or 401. Accepts the cookie or `Authorization: Bearer <session_id>`
 - `POST /v1/logout` → destroys the session, clears the cookie
 
-There is no correlation id to carry: the server keys the pending ceremony by the challenge, which comes back inside the signed `clientDataJSON`. Legacy unversioned endpoints (`/register/options` returning `userId`, `/login/options` returning `challengeId`, and their `{userId|challengeId, response}` verify wrappers) remain supported for existing integrations.
+There is no correlation id to carry: the server keys the pending ceremony by the challenge, which comes back inside the signed `clientDataJSON`.
 
 ## Server-side session validation
 

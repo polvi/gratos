@@ -54,9 +54,7 @@ export function sessionRoutes(tenantInfo: TenantInfo) {
         return c.json({ success: true });
     };
 
-    app.get('/whoami', whoami);
     app.get('/v1/whoami', whoami);
-    app.post('/logout', logout);
     app.post('/v1/logout', logout);
 
     return app;

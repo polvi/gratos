@@ -22,8 +22,7 @@ Every domain gets its own user pool. A user who registers on `authgravity.foo.co
 
 ```
 Browser
-  ├─ @gratos/preact (LoginButton, RegisterButton, etc.)
-  │    └─ @simplewebauthn/browser
+  ├─ your app (@simplewebauthn/browser or any WebAuthn client)
   │
   └─ authgravity.myapp.com (CNAME → Gratos Worker)
        ├─ Hono server on Cloudflare Workers
@@ -34,12 +33,12 @@ Browser
 
 ## Auth Flow
 
-Because the auth server lives on your domain (via CNAME), everything is same-origin. No iframes, no popups, no cross-domain redirects.
+Because the auth server lives on your domain (via CNAME), everything is same-origin. No iframes, no popups, no cross-domain redirects. The API speaks pure spec-shaped WebAuthn JSON, so any conforming client library works.
 
 1. User clicks **Register** or **Sign In** in your app
-2. `@gratos/preact` calls `authgravity.myapp.com` for WebAuthn options
+2. Your app fetches standard WebAuthn options from `authgravity.myapp.com/v1/...`
 3. Browser prompts for passkey (biometric, security key, etc.)
-4. `@gratos/preact` sends the response back to `authgravity.myapp.com` for verification
+4. Your app posts the credential response back, as-is — no wrapper, no correlation id
 5. Worker verifies the credential, creates a session, sets an `httpOnly` cookie
 
 RP ID is the registrable domain (e.g., `authgravity.myapp.com` → RP ID `myapp.com`), so passkeys work across subdomains.
@@ -62,9 +61,9 @@ RP ID is the registrable domain (e.g., `authgravity.myapp.com` → RP ID `myapp.
 ```
 packages/
   gratos-multi/     Cloudflare Worker — WebAuthn, sessions, multi-tenant
-  preact/           @gratos/preact: LoginButton, RegisterButton, AuthContext
   gratos-dash/      AuthGravity dashboard and docs site (Astro)
   provisioner/      Domain provisioning service
+  cli/              @authgravity/cli — local dev proxy (authgravity listen)
 ```
 
 ## Getting Started
@@ -79,70 +78,69 @@ authgravity  CNAME  <token>.cname.authgravity.net
 
 The target is a unique per-claim token (e.g., `ab3kx7.cname.authgravity.net`) that proves DNS ownership. AuthGravity polls and activates automatically.
 
-### 2. Embed the auth components
+### 2. Wire up auth
 
-```tsx
-import { AuthProvider, LoginButton, RegisterButton } from '@gratos/preact';
+```ts
+import { startRegistration, startAuthentication } from '@simplewebauthn/browser';
 
-function App() {
-  return (
-    <AuthProvider apiBaseUrl="https://authgravity.myapp.com">
-      <LoginButton />
-      <RegisterButton />
-    </AuthProvider>
-  );
+const API = 'https://authgravity.myapp.com';
+
+export async function register() {
+  const opts = await (await fetch(API + '/v1/register/options', { credentials: 'include' })).json();
+  const cred = await startRegistration({ optionsJSON: opts });
+  return (await fetch(API + '/v1/register/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(cred),
+  })).json(); // { verified, user: { id } } — session_id cookie is now set
+}
+
+export async function login() {
+  const opts = await (await fetch(API + '/v1/login/options', { credentials: 'include' })).json();
+  const cred = await startAuthentication({ optionsJSON: opts });
+  return (await fetch(API + '/v1/login/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(cred),
+  })).json();
 }
 ```
 
 ### 3. Check auth state
 
-```tsx
-import { useAuth } from '@gratos/preact';
-
-function Profile() {
-  const { user, isLoading } = useAuth();
-  if (isLoading) return <p>Loading...</p>;
-  if (!user) return <p>Not signed in</p>;
-  return <p>User: {user.id}</p>;
-}
+```ts
+const res = await fetch(API + '/v1/whoami', { credentials: 'include' });
+const session = res.ok ? await res.json() : null; // { user_id } or null
 ```
 
 ## Development
 
 ```bash
 bun install
-
-# Run both in separate terminals:
-bun --cwd packages/demo dev              # Demo on :4321
-```
-
-## Build & Deploy
-
-```bash
-bun --cwd packages/preact build          # Build preact lib
-bun run build-demo                       # Build demo (builds preact first)
-```
-
-## E2E Tests
-
-```bash
-bun --cwd packages/e2e test    # Starts both servers, runs Playwright with virtual authenticator
+bun --cwd packages/gratos-multi dev      # Auth API on :8789
+bun --cwd packages/provisioner dev       # Provisioner on :8788
+bun --cwd packages/gratos-dash dev       # Dash on :4322
 ```
 
 ## API Endpoints
 
+Options endpoints return standard WebAuthn options JSON unmodified; verify endpoints accept the bare credential response as the whole POST body.
+
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/register/options` | Generate WebAuthn registration options |
-| POST | `/register/verify` | Verify registration + create session |
-| GET | `/login/options` | Generate WebAuthn authentication options |
-| POST | `/login/verify` | Verify authentication + create session |
-| GET | `/whoami` | Get current user from session |
-| POST | `/logout` | Destroy session |
+| GET | `/v1/register/options` | Standard `PublicKeyCredentialCreationOptionsJSON` |
+| POST | `/v1/register/verify` | Verify bare `RegistrationResponseJSON` + create session |
+| GET | `/v1/login/options` | Standard `PublicKeyCredentialRequestOptionsJSON` |
+| POST | `/v1/login/verify` | Verify bare `AuthenticationResponseJSON` + create session |
+| GET | `/v1/whoami` | Get current user from session (cookie or Bearer) |
+| POST | `/v1/logout` | Destroy session |
+| POST | `/sandbox` | Mint an instant sandbox auth endpoint |
 
 ## Full API Documentation
 
-See the [AuthGravity docs](https://authgravity.org/docs) for complete integration guides covering both the `@gratos/preact` component library and the native HTTP API (registration, login, session management, client CRUD).
+See the [AuthGravity docs](https://authgravity.org/docs) for complete integration guides covering the HTTP API (registration, login, session management) and local development with `npx @authgravity/cli listen`.
 
 A machine-readable version is available at [authgravity.org/llms.txt](https://authgravity.org/llms.txt).
 

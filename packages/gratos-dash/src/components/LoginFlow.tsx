@@ -1,6 +1,6 @@
 import { h, Fragment } from 'preact';
 import { useEffect } from 'preact/hooks';
-import { AuthProvider, useAuth, LoginButton, RegisterButton } from '@gratos/preact';
+import { AuthProvider, useAuth, LoginButton, RegisterButton } from './auth';
 
 function LoginInner({ provisionerBaseUrl }: { provisionerBaseUrl: string }) {
     const { isAuthenticated } = useAuth();

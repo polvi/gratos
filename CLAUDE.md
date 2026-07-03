@@ -16,8 +16,7 @@ Gratos is a zero-trust, serverless, headless passkey authentication service. It 
 - Dash (Astro): `bun --cwd packages/gratos-dash dev`
 
 **Build/deploy:**
-- Preact lib: `bun --cwd packages/preact build`
-- Each Worker deploys with `wrangler deploy --env prod` from its package dir (dash builds preact + astro first).
+- Each Worker deploys with `wrangler deploy --env prod` from its package dir (dash builds astro first).
 
 ## Monorepo Structure
 
@@ -25,8 +24,7 @@ Bun workspace, `packages/*`:
 
 - **packages/gratos-multi** — The auth API Worker (Hono, `@simplewebauthn/server`). Multi-tenant: the tenant/rpId/cookieDomain are derived from the request Host (`src/tenant.ts`). Isolated user pool per tenant. Deployed at `authgravity.authgravity.org`. Also exports a `WorkerEntrypoint` RPC class `AuthRPC` (`resolveSession`, `getTenantStats`, `sweepSandboxes`) used by other Workers via service binding.
 - **packages/provisioner** — Domain-claim Worker (Hono + cron). Users claim a domain by adding `CNAME authgravity.<domain> → cname.authgravity.net`; the provisioner verifies DNS and creates a Cloudflare Custom Hostname. Deployed at `provision.api.authgravity.org`; has a service binding `AUTH → gratos-multi`.
-- **packages/gratos-dash** — Astro SSR site (`@astrojs/cloudflare`, `@astrojs/preact`) at `authgravity.org`. Pages: `/`, `/about`, `/docs`, `/domains`, `/login`, `/signup`. Env: `PUBLIC_GRATOS_SERVER`, `PUBLIC_PROVISIONER_SERVER`.
-- **packages/preact** — Published as `@gratos/preact`. Auth UI components (LoginButton, RegisterButton, LogoutButton, UserProfile, Admin) consuming `AuthContext` (`apiBaseUrl` + user state).
+- **packages/gratos-dash** — Astro SSR site (`@astrojs/cloudflare`, `@astrojs/preact`) at `authgravity.org`. Pages: `/`, `/about`, `/docs`, `/domains`, `/login`, `/signup`. Env: `PUBLIC_GRATOS_SERVER`, `PUBLIC_PROVISIONER_SERVER`. Auth UI (AuthProvider/useAuth, LoginButton, RegisterButton) lives in `src/components/auth.tsx`; external apps integrate via the llms.txt recipe, not a published component library.
 - **packages/cli** — Published as `@authgravity/cli` (binary `authgravity`, Stripe-style subcommands). `authgravity listen` runs a local dev proxy (Bun + Hono, default port 8787): mints an instant sandbox, reverse-proxies auth calls to it, and translates the sandbox's Bearer session into a first-party httpOnly `session_id` cookie on `localhost` — so local apps run the exact same cookie-based auth code as production (including SSR `/whoami` checks).
 
 Note: there is no `packages/demo` or `packages/e2e`; an older single-tenant `worker-runtime` (with OIDC/`/clients`) was removed.
@@ -37,7 +35,7 @@ Note: there is no `packages/demo` or `packages/e2e`; an older single-tenant `wor
 
 **Multi-tenant:** `resolveTenant(url)` strips the first Host label, so `authgravity.<domain>` → tenant/rpId/cookieDomain `<domain>`. Sessions are namespaced `session:{tenant}:{sessionId}` in KV.
 
-**Session model:** Cookie-based (`session_id`, httpOnly, secure, sameSite=None, 7-day KV TTL). `/whoami` also accepts `Authorization: Bearer <session_id>`. Challenges expire in 5 minutes and are single-use; pending-ceremony state is keyed in KV by the challenge value itself (`reg_challenge:{tenant}:{challenge}` → userId, `auth_challenge:{tenant}:{challenge}`), which verify recovers from the signed `clientDataJSON.challenge` — no correlation id.
+**Session model:** Cookie-based (`session_id`, httpOnly, secure, sameSite=None, 7-day KV TTL). `/v1/whoami` also accepts `Authorization: Bearer <session_id>`. Challenges expire in 5 minutes and are single-use; pending-ceremony state is keyed in KV by the challenge value itself (`reg_challenge:{tenant}:{challenge}` → userId, `auth_challenge:{tenant}:{challenge}`), which verify recovers from the signed `clientDataJSON.challenge` — no correlation id.
 
 **Instant sandbox (agent onboarding):** `POST /sandbox` mints `https://sandbox.authgravity.org/<id>` — a single Workers custom domain (auto DNS + cert, no ACM/wildcard) with the isolated sandbox id in the path. Tenant is `sandbox.authgravity.org/<id>` (`resolveTenant` reads the first path segment; the `/<id>` prefix is stripped before dispatching auth/session routes). Sandbox tenants use `rpID=localhost` and return `session_id` in the verify body (Bearer-usable) with **no domain and no DNS**. Local apps don't consume the Bearer directly: `authgravity listen` (packages/cli) proxies the sandbox on `localhost:8787` and terminates the session as a first-party `session_id` cookie, so app code is cookie-only and identical to production. Throwaway; swept by `AuthRPC.sweepSandboxes`. The full agent recipe (`src/lib/auth.ts`, `authgravity listen`, sandbox → domain promotion) lives in `packages/gratos-dash/public/llms.txt`.
 
@@ -55,8 +53,6 @@ Unversioned:
 
 - `POST /sandbox` — Mint an instant sandbox auth endpoint (unauthenticated)
 - `GET /`, `GET /demo` — Health + self-contained demo page
-
-Legacy (still supported, pre-v1 shapes): root-level `/register/options` (+`userId`), `/login/options` (+`challengeId`), verify with `{userId|challengeId, response}` wrappers (the ids are vestigial and ignored), `/whoami`, `/logout`.
 
 Domain claiming lives in the provisioner: `POST /claims`, `GET /claims/:id`, `POST /claims/:id/activate`, `GET /domains`, etc.
 
