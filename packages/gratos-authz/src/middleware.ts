@@ -7,10 +7,16 @@ import type { Context, Next } from 'hono';
 
 export const TENANT_HEADER = 'X-Gratos-Tenant';
 export const USER_HEADER = 'X-Gratos-User';
+// For sandbox tenants only: 'owned' | 'anonymous', from gratos-multi's
+// sandboxes table. Absent (e.g. missing row) means fail-closed: managed mode.
+export const SANDBOX_HEADER = 'X-Gratos-Sandbox';
 
 export type Variables = {
     tenant: string;
     userId?: string;
+    sandboxMode?: 'owned' | 'anonymous';
+    /** Set by the on-behalf owner gate: full manage rights on `tenant`. */
+    superuser?: boolean;
 };
 
 /** Require the trusted tenant header on every request (console page included). */
@@ -23,6 +29,8 @@ export async function trustedContext(c: Context, next: Next) {
     c.set('tenant', tenant);
     const userId = c.req.header(USER_HEADER);
     if (userId) c.set('userId', userId);
+    const sandbox = c.req.header(SANDBOX_HEADER);
+    if (sandbox === 'owned' || sandbox === 'anonymous') c.set('sandboxMode', sandbox);
     await next();
 }
 

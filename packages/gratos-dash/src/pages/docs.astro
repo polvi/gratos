@@ -243,10 +243,13 @@ app.post('/webhooks/stripe', async (req, res) =&gt; {
   res.json({ received: true });
 });`;
 
-const authzBootstrapExample = `# Become the authz admin for your tenant — the first user to bootstrap while
-# no admin exists wins. Do this right after your first register(). 409 after.
-curl -X POST $ENDPOINT/v1/authz/bootstrap -H "Authorization: Bearer $SESSION_ID"
-# → { "bootstrapped": true, "admin": "&lt;your user_id&gt;" }`;
+const authzOnBehalfExample = `# Manage your domain's authorization from anywhere, authenticated with your
+# authgravity.org dashboard session (the same passkey you claimed the domain with):
+https://authgravity.authgravity.org/v1/authz/tenants/&lt;tenant&gt;/(status|schema|relationships|check)
+
+# &lt;tenant&gt; is your domain, or a sandbox key URL-encoded:
+#   myapp.com
+#   sandbox.authgravity.org%2F&lt;id&gt;`;
 
 const authzSchemaExample = `curl -X PUT $ENDPOINT/v1/authz/schema -H "Authorization: Bearer $SESSION_ID" \\
   -H 'Content-Type: application/json' -d '{
@@ -609,23 +612,24 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
 
     <p>
       Every <code>/v1/authz/*</code> call needs a valid session (cookie or
-      <code>Authorization: Bearer &lt;session_id&gt;</code>). Mutations — schema and tuple writes —
-      additionally require the caller to be an <strong>authz admin</strong>. Admin rights are
-      themselves relationship tuples on the built-in <code>gratos_authz:root</code> object, so
-      granting another admin is just a normal tuple write:
-      <code>{'{ "op": "touch", "object": "gratos_authz:root", "relation": "admin", "subject": "user:<uuid>" }'}</code>.
+      <code>Authorization: Bearer &lt;session_id&gt;</code>); any session may run checks and read
+      the schema and relationships. Who can <em>write</em> depends on the tenant:
     </p>
 
-    <h3>1. Bootstrap</h3>
+    <ul>
+      <li>
+        <strong>Anonymous sandboxes are open</strong> — any registered user in the sandbox pool can
+        edit the schema and write relationships directly. This is the dev flow; there is no setup step.
+      </li>
+      <li>
+        <strong>Domains and dashboard-created sandboxes are owner-managed</strong> — whoever claimed
+        the domain (or minted the sandbox from the dashboard) manages its authorization, from the
+        Authorization panel on <a href="/domains">your domains page</a> or via the management API
+        below. Ownership is recorded automatically during onboarding. In-tenant sessions get 403 on writes.
+      </li>
+    </ul>
 
-    <pre><code set:html={authzBootstrapExample} /></pre>
-
-    <p>
-      In production, bootstrap immediately after claiming your domain so nobody beats you to it.
-      Deleting the last admin tuple reopens bootstrap.
-    </p>
-
-    <h3>2. Define your schema</h3>
+    <h3>1. Define your schema</h3>
 
     <pre><code set:html={authzSchemaExample} /></pre>
 
@@ -638,11 +642,11 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
       <code>{'{ "type": "group", "relation": "member" }'}</code> in <code>subjects</code>.
     </p>
 
-    <h3>3. Write relationships</h3>
+    <h3>2. Write relationships</h3>
 
     <pre><code set:html={authzWriteExample} /></pre>
 
-    <h3>4. Check permissions</h3>
+    <h3>3. Check permissions</h3>
 
     <pre><code set:html={authzCheckExample} /></pre>
 
@@ -654,22 +658,35 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
 
     <ul>
       <li><code>GET /v1/authz</code> → endpoint index (no auth)</li>
-      <li><code>POST /v1/authz/bootstrap</code> → <code>{'{bootstrapped, admin}'}</code>; 409 once an admin exists</li>
-      <li><code>GET /v1/authz/status</code> → <code>{'{user_id, bootstrapped, admins, admin, schema_version}'}</code></li>
-      <li><code>PUT /v1/authz/schema</code> (admin) → <code>{'{ok, version}'}</code>; 400 with <code>details</code> on validation errors</li>
+      <li><code>GET /v1/authz/status</code> → <code>{'{user_id, mode: "open-sandbox"|"managed", can_manage, schema_version}'}</code></li>
+      <li><code>PUT /v1/authz/schema</code> (manage) → <code>{'{ok, version}'}</code>; 400 with <code>details</code> on validation errors</li>
       <li><code>GET /v1/authz/schema</code> → <code>{'{schema, version, updated_at}'}</code>; 404 before first PUT</li>
-      <li><code>POST /v1/authz/relationships</code> (admin) — batch of <code>touch</code>/<code>create</code>/<code>delete</code> updates (≤100, atomic) → <code>{'{written, deleted}'}</code></li>
+      <li><code>POST /v1/authz/relationships</code> (manage) — batch of <code>touch</code>/<code>create</code>/<code>delete</code> updates (≤100, atomic) → <code>{'{written, deleted}'}</code></li>
       <li><code>GET /v1/authz/relationships?object_type=…</code> (or <code>subject_type=…</code>) → <code>{'{relationships, cursor}'}</code></li>
       <li><code>POST /v1/authz/check</code> → <code>{'{allowed}'}</code></li>
     </ul>
+
+    <h3>Owner management API</h3>
+
+    <p>
+      As the domain owner, manage any of your tenants remotely — the same operations, gated by the
+      ownership recorded when you claimed the domain or minted the sandbox:
+    </p>
+
+    <pre><code set:html={authzOnBehalfExample} /></pre>
+
+    <p>
+      The <a href="/domains">domains page</a> exposes this as an Authorization panel per domain and
+      sandbox — no API calls needed.
+    </p>
 
     <h3>Management console</h3>
 
     <p>
       A self-contained console is served at <code>/authz</code> on your auth endpoint —
-      <code>http://localhost:8787/authz</code> in dev, <code>https://authgravity.myapp.com/authz</code>
-      in production. Sign in with a passkey to bootstrap, edit the schema, browse relationships, and
-      test checks.
+      <code>http://localhost:8787/authz</code> in dev (full editor for open sandboxes),
+      <code>https://authgravity.myapp.com/authz</code> in production (relationship browser and check
+      tester for signed-in users; editing happens in the dashboard).
     </p>
 
     <h2>Architecting Your App with AuthGravity</h2>

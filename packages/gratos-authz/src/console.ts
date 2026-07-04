@@ -101,29 +101,19 @@ export function consolePage(): string {
       );
     }
 
-    function Status({ status, refresh, userId }) {
-      const [error, setError] = useState('');
-      const bootstrap = async () => {
-        setError('');
-        const res = await fetch(API + '/v1/authz/bootstrap', { method: 'POST', ...opts });
-        if (res.ok) refresh(); else setError((await res.json()).error || 'Bootstrap failed');
-      };
+    function Status({ status, userId }) {
+      const open = status.mode === 'open-sandbox';
       return h('div', { class: 'card' },
         h('h2', null, 'Status'),
         h('p', { class: 'muted', style: 'margin-bottom: 0.5rem' }, 'Signed in as ', h('code', null, userId)),
         h('div', { class: 'row' },
-          h('span', { class: 'badge ' + (status.bootstrapped ? 'green' : 'yellow') },
-            status.bootstrapped ? status.admins + ' admin' + (status.admins === 1 ? '' : 's') : 'Not bootstrapped'),
-          status.bootstrapped && h('span', { class: 'badge ' + (status.admin ? 'green' : 'yellow') },
-            status.admin ? 'You are an admin' : 'Not an admin'),
+          h('span', { class: 'badge ' + (status.can_manage ? 'green' : 'yellow') },
+            open ? 'Open sandbox — all users can manage' : 'Managed tenant'),
           status.schema_version && h('span', { class: 'badge green' }, 'Schema v' + status.schema_version),
         ),
-        !status.bootstrapped && h('div', { style: 'margin-top: 1rem' },
-          h('p', { class: 'muted', style: 'margin-bottom: 0.5rem' },
-            'No admin exists yet. The first user to bootstrap becomes the admin.'),
-          h('button', { class: 'primary', onClick: bootstrap }, 'Become Admin'),
-        ),
-        error && h('p', { class: 'error' }, error),
+        !status.can_manage && h('p', { class: 'muted', style: 'margin-top: 0.75rem' },
+          'Schema and relationships are managed by the tenant owner from the AuthGravity dashboard. ',
+          'You can browse relationships and test checks below.'),
       );
     }
 
@@ -159,7 +149,7 @@ export function consolePage(): string {
       );
     }
 
-    function Tuples() {
+    function Tuples({ canManage }) {
       const [filterType, setFilterType] = useState('');
       const [rows, setRows] = useState([]);
       const [form, setForm] = useState({ object: '', relation: '', subject: '' });
@@ -201,12 +191,12 @@ export function consolePage(): string {
           h('thead', null, h('tr', null, h('th', null, 'object'), h('th', null, 'relation'), h('th', null, 'subject'), h('th', null, ''))),
           h('tbody', null, rows.map((r) => h('tr', { key: r.object + r.relation + r.subject },
             h('td', null, r.object), h('td', null, r.relation), h('td', null, r.subject),
-            h('td', null, h('button', { class: 'danger', onClick: () => write('delete', r.object, r.relation, r.subject) }, 'x')),
+            h('td', null, canManage && h('button', { class: 'danger', onClick: () => write('delete', r.object, r.relation, r.subject) }, 'x')),
           ))),
         ),
-        h('p', { class: 'muted', style: 'margin-bottom: 0.375rem' }, 'Add: object ', h('code', null, 'type:id'),
+        canManage && h('p', { class: 'muted', style: 'margin-bottom: 0.375rem' }, 'Add: object ', h('code', null, 'type:id'),
           ', relation, subject ', h('code', null, 'user:id'), ' or ', h('code', null, 'group:id#member')),
-        h('div', { class: 'row' },
+        canManage && h('div', { class: 'row' },
           h('input', { placeholder: 'document:readme', value: form.object, onInput: (e) => setForm({ ...form, object: e.target.value }), style: 'margin: 0' }),
           h('input', { placeholder: 'viewer', value: form.relation, onInput: (e) => setForm({ ...form, relation: e.target.value }), style: 'margin: 0' }),
           h('input', { placeholder: 'user:abc', value: form.subject, onInput: (e) => setForm({ ...form, subject: e.target.value }), style: 'margin: 0' }),
@@ -263,9 +253,9 @@ export function consolePage(): string {
       if (!status) return h('p', null, 'Loading...');
 
       return h('div', null,
-        h(Status, { status, refresh, userId }),
-        status.admin && h(SchemaEditor, { refresh }),
-        h(Tuples, null),
+        h(Status, { status, userId }),
+        status.can_manage && h(SchemaEditor, { refresh }),
+        h(Tuples, { canManage: status.can_manage }),
         h(Checker, null),
         h('p', { class: 'muted', style: 'margin-top: 1rem' },
           'API base: ', h('code', null, API + '/v1/authz'),

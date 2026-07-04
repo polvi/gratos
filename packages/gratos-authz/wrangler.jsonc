@@ -8,6 +8,10 @@
 	"compatibility_flags": ["nodejs_compat"],
 	"workers_dev": false,
 	"preview_urls": false,
+	"vars": {
+		// Tenant key of the control-plane authz space (gratos_tenant tuples).
+		"ROOT_TENANT": "localhost"
+	},
 	"d1_databases": [
 		{
 			"binding": "DB",
@@ -19,6 +23,9 @@
 		"prod": {
 			"workers_dev": false,
 			"preview_urls": false,
+			"vars": {
+				"ROOT_TENANT": "authgravity.org"
+			},
 			"d1_databases": [
 				{
 					"binding": "DB",

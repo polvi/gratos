@@ -22,9 +22,12 @@
 		{
 			// The authz worker has no public route; this worker mounts it at
 			// /authz and /v1/authz/* on every tenant host, forwarding requests
-			// with trusted X-Gratos-Tenant / X-Gratos-User headers.
+			// with trusted X-Gratos-Tenant / X-Gratos-User headers. The
+			// AuthzRPC entrypoint also exposes control-plane writes
+			// (grantTenantOwners / cleanupTenant) used by the sandbox hooks.
 			"binding": "AUTHZ",
-			"service": "gratos-authz"
+			"service": "gratos-authz",
+			"entrypoint": "AuthzRPC"
 		}
 	],
 	"env": {
@@ -59,7 +62,8 @@
 			"services": [
 				{
 					"binding": "AUTHZ",
-					"service": "gratos-authz-prod"
+					"service": "gratos-authz-prod",
+					"entrypoint": "AuthzRPC"
 				}
 			]
 		}

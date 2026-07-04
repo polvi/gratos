@@ -251,7 +251,285 @@ function PendingDetails({ domain, provisionerBaseUrl, onClaimed }: {
     );
 }
 
-function ActiveDetails({ domain, provisionerBaseUrl }: { domain: Domain; provisionerBaseUrl: string }) {
+const AUTHZ_STARTER = JSON.stringify(
+    {
+        definitions: {
+            document: {
+                relations: {
+                    owner: { subjects: [{ type: 'user' }] },
+                    viewer: { subjects: [{ type: 'user' }] },
+                },
+                permissions: {
+                    view: { union: [{ rel: 'viewer' }, { rel: 'owner' }] },
+                },
+            },
+        },
+    },
+    null,
+    2
+);
+
+/**
+ * Owner-facing authz management for one tenant (domain or owned sandbox),
+ * via the on-behalf API on the root auth endpoint. The dash session cookie
+ * flows to authgravity.authgravity.org, and the control plane authorizes us
+ * because onboarding recorded this dash user as the tenant's owner.
+ */
+function AuthzPanel({ apiBaseUrl, tenant }: { apiBaseUrl: string; tenant: string }) {
+    const base = `${apiBaseUrl}/v1/authz/tenants/${encodeURIComponent(tenant)}`;
+    const [status, setStatus] = useState<{ schema_version: number | null } | null>(null);
+    const [denied, setDenied] = useState(false);
+    const [schemaText, setSchemaText] = useState('');
+    const [rows, setRows] = useState<Array<{ object: string; relation: string; subject: string }>>([]);
+    const [filterType, setFilterType] = useState('');
+    const [form, setForm] = useState({ object: '', relation: '', subject: '' });
+    const [msg, setMsg] = useState<{ error?: string; ok?: string } | null>(null);
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const res = await fetch(`${base}/status`, { credentials: 'include' });
+                if (!res.ok) {
+                    setDenied(true);
+                    return;
+                }
+                setStatus(await res.json());
+                const schemaRes = await fetch(`${base}/schema`, { credentials: 'include' });
+                setSchemaText(
+                    schemaRes.ok
+                        ? JSON.stringify((await schemaRes.json()).schema, null, 2)
+                        : AUTHZ_STARTER
+                );
+            } catch {
+                setDenied(true);
+            }
+        })();
+    }, [base]);
+
+    const saveSchema = async () => {
+        setMsg(null);
+        let doc;
+        try {
+            doc = JSON.parse(schemaText);
+        } catch (e: any) {
+            setMsg({ error: `Invalid JSON: ${e.message}` });
+            return;
+        }
+        const res = await fetch(`${base}/schema`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(doc),
+        });
+        const data = await res.json();
+        if (res.ok) {
+            setMsg({ ok: `Saved as version ${data.version}` });
+            setStatus((s) => (s ? { ...s, schema_version: data.version } : s));
+        } else {
+            setMsg({ error: (data.error || 'Save failed') + (data.details ? `\n${data.details.join('\n')}` : '') });
+        }
+    };
+
+    const loadRows = async (type: string) => {
+        setMsg(null);
+        if (!type) {
+            setRows([]);
+            return;
+        }
+        const res = await fetch(`${base}/relationships?object_type=${encodeURIComponent(type)}`, {
+            credentials: 'include',
+        });
+        const data = await res.json();
+        if (res.ok) setRows(data.relationships);
+        else setMsg({ error: data.error || 'Load failed' });
+    };
+
+    const writeRel = async (op: 'touch' | 'delete', object: string, relation: string, subject: string) => {
+        setMsg(null);
+        const res = await fetch(`${base}/relationships`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ updates: [{ op, object, relation, subject }] }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            setMsg({ error: (data.error || 'Write failed') + (data.details ? `\n${data.details.join('\n')}` : '') });
+            return;
+        }
+        await loadRows(filterType || object.split(':')[0]);
+    };
+
+    const codeStyle = {
+        background: '#f4f4f5',
+        padding: '0.125rem 0.375rem',
+        borderRadius: '0.25rem',
+        fontFamily: 'monospace',
+        fontSize: '0.75rem',
+        wordBreak: 'break-all' as const,
+    };
+    const inputStyle = {
+        flex: 1,
+        padding: '0.375rem 0.5rem',
+        border: '1px solid #d4d4d8',
+        borderRadius: '0.375rem',
+        fontFamily: 'monospace',
+        fontSize: '0.75rem',
+    };
+    const smallButton = {
+        padding: '0.375rem 0.75rem',
+        background: '#18181b',
+        color: '#fff',
+        border: 'none',
+        borderRadius: '0.375rem',
+        fontSize: '0.75rem',
+        fontWeight: 600 as const,
+        cursor: 'pointer',
+    };
+
+    if (denied) {
+        return (
+            <p style={{ color: '#71717a', fontSize: '0.8rem', padding: '0.5rem 0' }}>
+                You don't manage this tenant's authorization.
+            </p>
+        );
+    }
+    if (!status) {
+        return <p style={{ color: '#71717a', fontSize: '0.8rem', padding: '0.5rem 0' }}>Loading...</p>;
+    }
+
+    return (
+        <div style={{ padding: '0.75rem 0 0' }}>
+            <div style={{ fontSize: '0.75rem', color: '#71717a', marginBottom: '0.5rem' }}>
+                {status.schema_version ? `Schema v${status.schema_version}` : 'No schema yet'} · API:{' '}
+                <span style={codeStyle}>/v1/authz</span> on the tenant's auth endpoint
+            </div>
+
+            <textarea
+                value={schemaText}
+                onInput={(e: any) => setSchemaText(e.target.value)}
+                spellcheck={false}
+                style={{
+                    width: '100%',
+                    minHeight: '12rem',
+                    padding: '0.5rem',
+                    border: '1px solid #d4d4d8',
+                    borderRadius: '0.375rem',
+                    fontFamily: 'monospace',
+                    fontSize: '0.75rem',
+                    marginBottom: '0.5rem',
+                    boxSizing: 'border-box' as const,
+                }}
+            />
+            <button onClick={saveSchema} style={smallButton}>
+                Save Schema
+            </button>
+
+            <div style={{ marginTop: '1rem' }}>
+                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                    <input
+                        placeholder="object type (e.g. document)"
+                        value={filterType}
+                        onInput={(e: any) => setFilterType(e.target.value)}
+                        style={inputStyle}
+                    />
+                    <button onClick={() => loadRows(filterType)} style={{ ...smallButton, background: '#f4f4f5', color: '#18181b', border: '1px solid #d4d4d8' }}>
+                        List Relationships
+                    </button>
+                </div>
+                {rows.length > 0 && (
+                    <div style={{ marginBottom: '0.5rem' }}>
+                        {rows.map((r) => (
+                            <div
+                                key={`${r.object}#${r.relation}@${r.subject}`}
+                                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.25rem 0', fontSize: '0.75rem' }}
+                            >
+                                <span style={codeStyle}>{r.object}</span>
+                                <span style={{ color: '#71717a' }}>{r.relation}</span>
+                                <span style={codeStyle}>{r.subject}</span>
+                                <button
+                                    onClick={() => writeRel('delete', r.object, r.relation, r.subject)}
+                                    style={{
+                                        marginLeft: 'auto',
+                                        padding: '0.125rem 0.5rem',
+                                        background: 'none',
+                                        border: '1px solid #fca5a5',
+                                        borderRadius: '0.375rem',
+                                        color: '#dc2626',
+                                        fontSize: '0.7rem',
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    x
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <input
+                        placeholder="document:readme"
+                        value={form.object}
+                        onInput={(e: any) => setForm({ ...form, object: e.target.value })}
+                        style={inputStyle}
+                    />
+                    <input
+                        placeholder="viewer"
+                        value={form.relation}
+                        onInput={(e: any) => setForm({ ...form, relation: e.target.value })}
+                        style={inputStyle}
+                    />
+                    <input
+                        placeholder="user:abc"
+                        value={form.subject}
+                        onInput={(e: any) => setForm({ ...form, subject: e.target.value })}
+                        style={inputStyle}
+                    />
+                    <button
+                        onClick={() => {
+                            if (!form.object || !form.relation || !form.subject) return;
+                            if (!filterType) setFilterType(form.object.split(':')[0]);
+                            writeRel('touch', form.object, form.relation, form.subject);
+                        }}
+                        style={smallButton}
+                    >
+                        Add
+                    </button>
+                </div>
+            </div>
+
+            {msg?.error && (
+                <p style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: '0.5rem', whiteSpace: 'pre-wrap' }}>{msg.error}</p>
+            )}
+            {msg?.ok && <p style={{ color: '#16a34a', fontSize: '0.75rem', marginTop: '0.5rem' }}>{msg.ok}</p>}
+        </div>
+    );
+}
+
+function AuthzSection({ apiBaseUrl, tenant }: { apiBaseUrl: string; tenant: string }) {
+    const [open, setOpen] = useState(false);
+    return (
+        <div style={{ marginTop: '0.75rem', borderTop: '1px solid #f4f4f5', paddingTop: '0.75rem' }}>
+            <button
+                onClick={() => setOpen(!open)}
+                style={{
+                    padding: '0.25rem 0',
+                    background: 'none',
+                    border: 'none',
+                    color: '#18181b',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                }}
+            >
+                {open ? '▾' : '▸'} Authorization
+            </button>
+            {open && <AuthzPanel apiBaseUrl={apiBaseUrl} tenant={tenant} />}
+        </div>
+    );
+}
+
+function ActiveDetails({ domain, provisionerBaseUrl, apiBaseUrl }: { domain: Domain; provisionerBaseUrl: string; apiBaseUrl: string }) {
     const endpoint = `${CNAME_NAME}.${domain.domain}`;
     const [sslStatus, setSslStatus] = useState<string | null>(domain.ssl_status || null);
 
@@ -362,6 +640,8 @@ function ActiveDetails({ domain, provisionerBaseUrl }: { domain: Domain; provisi
                     </a>
                 )}
             </div>
+
+            <AuthzSection apiBaseUrl={apiBaseUrl} tenant={domain.domain} />
         </div>
     );
 }
@@ -560,38 +840,37 @@ function SandboxSection({ apiBaseUrl }: { apiBaseUrl: string }) {
                                 border: '1px solid #e4e4e7',
                                 borderRadius: '0.5rem',
                                 padding: '1rem 1.25rem',
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                gap: '1rem',
                             }}
                         >
-                            <div style={{ minWidth: 0 }}>
-                                <div>
-                                    <span style={codeStyle}>{s.endpoint}</span>
-                                    <CopyButton text={s.endpoint} />
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
+                                <div style={{ minWidth: 0 }}>
+                                    <div>
+                                        <span style={codeStyle}>{s.endpoint}</span>
+                                        <CopyButton text={s.endpoint} />
+                                    </div>
+                                    <div style={{ fontSize: '0.75rem', color: '#71717a', marginTop: '0.375rem' }}>
+                                        Created {new Date(s.created_at).toLocaleDateString()}
+                                    </div>
                                 </div>
-                                <div style={{ fontSize: '0.75rem', color: '#71717a', marginTop: '0.375rem' }}>
-                                    Created {new Date(s.created_at).toLocaleDateString()}
-                                </div>
+                                <button
+                                    onClick={() => handleDelete(s)}
+                                    disabled={deleting === s.id}
+                                    style={{
+                                        padding: '0.375rem 0.75rem',
+                                        background: 'none',
+                                        border: '1px solid #fca5a5',
+                                        borderRadius: '0.375rem',
+                                        color: '#dc2626',
+                                        fontSize: '0.8rem',
+                                        cursor: deleting === s.id ? 'not-allowed' : 'pointer',
+                                        opacity: deleting === s.id ? 0.5 : 1,
+                                        flexShrink: 0,
+                                    }}
+                                >
+                                    {deleting === s.id ? 'Deleting...' : 'Delete'}
+                                </button>
                             </div>
-                            <button
-                                onClick={() => handleDelete(s)}
-                                disabled={deleting === s.id}
-                                style={{
-                                    padding: '0.375rem 0.75rem',
-                                    background: 'none',
-                                    border: '1px solid #fca5a5',
-                                    borderRadius: '0.375rem',
-                                    color: '#dc2626',
-                                    fontSize: '0.8rem',
-                                    cursor: deleting === s.id ? 'not-allowed' : 'pointer',
-                                    opacity: deleting === s.id ? 0.5 : 1,
-                                    flexShrink: 0,
-                                }}
-                            >
-                                {deleting === s.id ? 'Deleting...' : 'Delete'}
-                            </button>
+                            <AuthzSection apiBaseUrl={apiBaseUrl} tenant={s.tenant} />
                         </div>
                     ))}
                 </div>
@@ -838,7 +1117,7 @@ function DomainListInner({ apiBaseUrl, provisionerBaseUrl }: { apiBaseUrl: strin
                                 />
                             )}
                             {expandedId === d.id && d.status === 'active' && (
-                                <ActiveDetails domain={d} provisionerBaseUrl={provisionerBaseUrl} />
+                                <ActiveDetails domain={d} provisionerBaseUrl={provisionerBaseUrl} apiBaseUrl={apiBaseUrl} />
                             )}
                         </div>
                     ))}

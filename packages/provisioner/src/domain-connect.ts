@@ -51,9 +51,30 @@ export function isValidProviderHost(host: string): boolean {
 }
 
 /**
+ * Parse the `_domainconnect` TXT value into a validated host + optional path.
+ * Some providers publish a bare host (`dcc.godaddy.com`), others a host with
+ * a path prefix (`api.cloudflare.com/client/v4/dns/domainconnect`). The host
+ * keeps the strict FQDN rule above; the path is restricted to simple segments
+ * (no `..`, `//`, query, fragment, or userinfo) so it can't smuggle anything
+ * past the SSRF checks.
+ */
+export function parseProviderValue(value: string): { host: string; path: string } | null {
+    const v = value.trim().toLowerCase();
+    const slash = v.indexOf('/');
+    const host = slash === -1 ? v : v.slice(0, slash);
+    if (!isValidProviderHost(host)) return null;
+
+    let path = slash === -1 ? '' : v.slice(slash).replace(/\/+$/, '');
+    if (path && !/^(\/[a-z0-9\-._~]+)+$/.test(path)) return null;
+    if (path.includes('..')) return null;
+    return { host, path };
+}
+
+/**
  * Discover whether a domain's DNS provider supports Domain Connect.
- * 1. Look up `_domainconnect.<domain>` TXT → provider host
- * 2. Fetch `https://<host>/v2/<domain>/settings` → provider settings
+ * 1. Look up `_domainconnect.<domain>` TXT → provider host (optionally with a
+ *    path prefix, e.g. Cloudflare's `api.cloudflare.com/client/v4/dns/domainconnect`)
+ * 2. Fetch `https://<host><path>/v2/<domain>/settings` → provider settings
  */
 export async function discoverDomainConnect(
     domain: string,
@@ -63,18 +84,23 @@ export async function discoverDomainConnect(
         return { supported: false };
     }
 
-    const host = txtRecords[0];
-    if (!isValidProviderHost(host)) {
+    const provider = parseProviderValue(txtRecords[0]);
+    if (!provider) {
         return { supported: false };
     }
 
     try {
-        // `redirect: 'error'` stops a validated public host from 3xx-redirecting
-        // the request into an internal target.
-        const res = await fetch(`https://${host}/v2/${encodeURIComponent(domain)}/settings`, {
-            headers: { Accept: 'application/json' },
-            redirect: 'error',
-        });
+        // `redirect: 'manual'` stops a validated public host from
+        // 3xx-redirecting the request into an internal target: the redirect is
+        // never followed, and the 3xx status fails the res.ok check below.
+        // (workerd does not implement redirect: 'error' — it throws.)
+        const res = await fetch(
+            `https://${provider.host}${provider.path}/v2/${encodeURIComponent(domain)}/settings`,
+            {
+                headers: { Accept: 'application/json' },
+                redirect: 'manual',
+            }
+        );
         if (!res.ok) {
             return { supported: false };
         }
@@ -82,7 +108,7 @@ export async function discoverDomainConnect(
         if (!settings.urlSyncUX) {
             return { supported: false };
         }
-        return { supported: true, settings, host };
+        return { supported: true, settings, host: provider.host };
     } catch {
         return { supported: false };
     }

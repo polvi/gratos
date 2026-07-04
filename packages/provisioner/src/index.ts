@@ -5,6 +5,7 @@ import { CloudflareCustomHostnames } from './cf-api';
 import { discoverDomainConnect, buildApplyUrl, signDomainConnectRequest } from './domain-connect';
 
 import type { AuthRPC } from '../../gratos-multi/src/index';
+import type { AuthzRPC } from '../../gratos-authz/src/index';
 
 type Env = {
     DB: D1Database;
@@ -12,6 +13,7 @@ type Env = {
     CF_ZONE_ID: string;
     CORS_ALLOW_ORIGIN?: string;
     AUTH: Service<AuthRPC>;
+    AUTHZ: Service<AuthzRPC>;
     AUTH_TENANT: string;
     DC_SIGNING_KEY?: string;
     PROVISIONER_BASE_URL?: string;
@@ -251,6 +253,15 @@ async function advanceClaim(claim: any, env: Env, opts?: { skipDns?: boolean }):
             'DELETE FROM pending_claims WHERE domain = ?'
         ).bind(claim.domain),
     ]);
+
+    // Record the claimer as the tenant's authz owner in the control plane so
+    // they can manage the domain's authorization from the dash. Best-effort:
+    // the cron reconcile self-heals a failed grant.
+    try {
+        await env.AUTHZ.grantTenantOwners([{ tenant: claim.domain, userId: claim.identity_id }]);
+    } catch (err) {
+        console.error(`authz owner grant failed for ${claim.domain}:`, err);
+    }
 
     // Clean up losing claims' CF hostnames
     if (losingClaims) {
@@ -573,6 +584,13 @@ app.delete('/domains/:id', authMiddleware, async (c) => {
 
     await c.env.DB.prepare('DELETE FROM domains WHERE id = ?').bind(domainId).run();
 
+    // Tear down the tenant's authz data + control-plane ownership.
+    try {
+        await c.env.AUTHZ.cleanupTenant(domain.domain);
+    } catch (err) {
+        console.error(`authz cleanup failed for ${domain.domain}:`, err);
+    }
+
     return c.json({ success: true });
 });
 
@@ -701,7 +719,45 @@ async function handleScheduled(env: Env) {
         }
     }
 
-    // --- Phase 3: Reconcile CF state against DB ---
+    // --- Phase 3: Reconcile authz ownership ---
+    // Idempotently (re)grant the control-plane owner tuple for every claimed
+    // domain and every owned sandbox. Backfills tenants claimed before the
+    // control plane existed and heals failed best-effort grants. Runs before
+    // the CF reconciliation, which returns early if the CF API is unreachable.
+    try {
+        const { results: owned } = await env.DB.prepare(
+            'SELECT domain, identity_id FROM domains'
+        ).all();
+        const entries = ((owned || []) as any[]).map((r) => ({
+            tenant: r.domain as string,
+            userId: r.identity_id as string,
+        }));
+        try {
+            entries.push(...(await env.AUTH.listOwnedSandboxes()));
+        } catch (err) {
+            console.error('Reconcile: listOwnedSandboxes failed:', err);
+        }
+        if (entries.length > 0) {
+            const { written } = await env.AUTHZ.grantTenantOwners(entries);
+            if (written > 0) {
+                console.log(`Reconcile: granted ${written} missing authz owner tuple(s)`);
+            }
+        }
+    } catch (err) {
+        console.error('Reconcile: authz ownership pass failed:', err);
+    }
+
+    // --- Phase 4: Sweep anonymous sandboxes past their TTL ---
+    try {
+        const { swept } = await env.AUTH.sweepSandboxes();
+        if (swept > 0) {
+            console.log(`Sweep: removed ${swept} expired anonymous sandbox pool(s)`);
+        }
+    } catch (err) {
+        console.error('Sweep: sweepSandboxes failed:', err);
+    }
+
+    // --- Phase 5: Reconcile CF state against DB ---
     // DB is the source of truth. Any CF custom hostname not tracked in
     // pending_claims or domains must be deleted.
     const knownCfIds = new Set<string>();
@@ -738,6 +794,7 @@ async function handleScheduled(env: Env) {
             }
         }
     }
+
 }
 
 export default {

@@ -53,7 +53,7 @@ describe('validateSchema', () => {
 
     test('rejects reserved type names', () => {
         expect(errorsOf({ definitions: { user: {} } })[0]).toContain('reserved');
-        expect(errorsOf({ definitions: { gratos_authz: {} } })[0]).toContain('reserved');
+        expect(errorsOf({ definitions: { gratos_tenant: {} } })[0]).toContain('reserved');
         expect(errorsOf({ definitions: { gratos_anything: {} } })[0]).toContain('reserved');
     });
 
@@ -76,13 +76,13 @@ describe('validateSchema', () => {
         expect(errors[0]).toContain('both a relation and a permission');
     });
 
-    test('rejects unknown subject types and gratos_authz as a subject', () => {
+    test('rejects unknown subject types and gratos_tenant as a subject', () => {
         expect(
             errorsOf({ definitions: { doc: { relations: { viewer: { subjects: [{ type: 'ghost' }] } } } } })[0]
         ).toContain('unknown subject type "ghost"');
         expect(
-            errorsOf({ definitions: { doc: { relations: { viewer: { subjects: [{ type: 'gratos_authz' }] } } } } })[0]
-        ).toContain('unknown subject type "gratos_authz"');
+            errorsOf({ definitions: { doc: { relations: { viewer: { subjects: [{ type: 'gratos_tenant' }] } } } } })[0]
+        ).toContain('unknown subject type "gratos_tenant"');
     });
 
     test('rejects subject-set relation that does not exist on the target', () => {
@@ -179,7 +179,7 @@ describe('validateSchema', () => {
 describe('typeDef', () => {
     test('merges built-ins over any tenant doc', () => {
         expect(typeDef(null, 'user')).toBe(BUILTIN_DEFS.user);
-        expect(typeDef(null, 'gratos_authz')).toBe(BUILTIN_DEFS.gratos_authz);
+        expect(typeDef(null, 'gratos_tenant')).toBe(BUILTIN_DEFS.gratos_tenant);
         const result = validateSchema(EXAMPLE_SCHEMA);
         if (!result.ok) throw new Error('example schema invalid');
         expect(typeDef(result.doc, 'document')).toBe(result.doc.definitions.document);

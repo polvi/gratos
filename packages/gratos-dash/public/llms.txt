@@ -112,17 +112,16 @@ The same pattern works in any backend (Express, Hono, etc.): forward `cookie`, r
 
 Optional Zanzibar/SpiceDB-style permissions for your app's resources, served on the same endpoint as your auth API (`PUBLIC_AUTH_ENDPOINT`) with the same session cookie. You define object types with relations and computed permissions, write relationship tuples keyed by AuthGravity user UUIDs, and ask `check(object, permission, subject)`.
 
-Every `/v1/authz/*` call needs a valid session (cookie or `Authorization: Bearer <session_id>`). Mutations (schema, tuple writes) additionally require the caller to be an **authz admin** — admin rights are themselves tuples on the built-in `gratos_authz:root` object.
+Who can do what:
 
-Quick start (works identically against `localhost:8787` in dev via `authgravity listen`):
+- Every `/v1/authz/*` call needs a valid session (cookie or `Authorization: Bearer <session_id>`). Any session may run checks and read the schema/relationships.
+- **Anonymous sandboxes are open**: any registered user in the sandbox pool can edit the schema and write relationships directly. This is the dev flow — no setup step.
+- **Domains and dashboard-created sandboxes are owner-managed**: whoever claimed the domain (or minted the sandbox from the dashboard) manages its authorization — from the dashboard's Authorization panel on https://authgravity.org/domains, or via the management API below. In-tenant sessions get 403 on writes.
+
+Quick start (dev, against `localhost:8787` via `authgravity listen` — no setup, just register a user first):
 
 ```
-# 1. Become admin. The first user to bootstrap while no admin exists wins — do
-#    this right after your first register(). 409 once bootstrapped.
-curl -X POST $ENDPOINT/v1/authz/bootstrap -H "Authorization: Bearer $SESSION_ID"
-# → { "bootstrapped": true, "admin": "<your user_id>" }
-
-# 2. Define your schema (JSON, not the SpiceDB text DSL):
+# 1. Define your schema (JSON, not the SpiceDB text DSL):
 curl -X PUT $ENDPOINT/v1/authz/schema -H "Authorization: Bearer $SESSION_ID" \
   -H 'Content-Type: application/json' -d '{
   "definitions": {
@@ -139,7 +138,7 @@ curl -X PUT $ENDPOINT/v1/authz/schema -H "Authorization: Bearer $SESSION_ID" \
 }'
 # → { "ok": true, "version": 1 }
 
-# 3. Write relationships:
+# 2. Write relationships:
 curl -X POST $ENDPOINT/v1/authz/relationships -H "Authorization: Bearer $SESSION_ID" \
   -H 'Content-Type: application/json' -d '{
   "updates": [
@@ -148,7 +147,7 @@ curl -X POST $ENDPOINT/v1/authz/relationships -H "Authorization: Bearer $SESSION
 }'
 # → { "written": 1, "deleted": 0 }
 
-# 4. Check:
+# 3. Check:
 curl -X POST $ENDPOINT/v1/authz/check -H "Authorization: Bearer $SESSION_ID" \
   -H 'Content-Type: application/json' -d \
   '{ "object": "document:readme", "permission": "view", "subject": "user:<uuid>" }'
@@ -160,15 +159,22 @@ Schema expressions: `{rel}` (another relation/permission on the same type), `{un
 Endpoints (all relative to `PUBLIC_AUTH_ENDPOINT`):
 
 - `GET /v1/authz` → endpoint index (no auth)
-- `POST /v1/authz/bootstrap` → `{bootstrapped, admin}`; 409 if an admin already exists. Deleting the last admin tuple reopens bootstrap.
-- `GET /v1/authz/status` → `{user_id, bootstrapped, admins, admin, schema_version}`
-- `PUT /v1/authz/schema` (admin) bare schema document → `{ok, version}`; 400 with `details` on validation errors
+- `GET /v1/authz/status` → `{user_id, mode: "open-sandbox"|"managed", can_manage, schema_version}`
+- `PUT /v1/authz/schema` (manage) bare schema document → `{ok, version}`; 400 with `details` on validation errors
 - `GET /v1/authz/schema` → `{schema, version, updated_at}`; 404 before first PUT
-- `POST /v1/authz/relationships` (admin) `{updates: [{op: "touch"|"create"|"delete", object, relation, subject}]}` (≤100, atomic) → `{written, deleted}`
+- `POST /v1/authz/relationships` (manage) `{updates: [{op: "touch"|"create"|"delete", object, relation, subject}]}` (≤100, atomic) → `{written, deleted}`
 - `GET /v1/authz/relationships?object_type=…` (or `subject_type=…`; further filters `object_id`, `relation`, `subject_id`, plus `limit`/`cursor`) → `{relationships, cursor}`
 - `POST /v1/authz/check` `{object, permission, subject}` → `{allowed}`
 
-Server-side check (same forward-the-cookie pattern as `/v1/whoami` — or forward the cookie value as a Bearer token):
+Owner management API (production): the same operations, executed as the tenant's owner from anywhere, on the root auth endpoint with your **authgravity.org dashboard session**:
+
+```
+https://authgravity.authgravity.org/v1/authz/tenants/<tenant>/(status|schema|relationships|check)
+```
+
+`<tenant>` is your domain (`myapp.com`) or a sandbox key URL-encoded (`sandbox.authgravity.org%2F<id>`). Ownership is recorded automatically when you claim a domain or mint a sandbox from the dashboard — there is nothing to set up.
+
+Server-side check from your app (same forward-the-cookie pattern as `/v1/whoami` — or forward the cookie value as a Bearer token):
 
 ```typescript
 const res = await fetch(import.meta.env.PUBLIC_AUTH_ENDPOINT + '/v1/authz/check', {
@@ -179,9 +185,7 @@ const res = await fetch(import.meta.env.PUBLIC_AUTH_ENDPOINT + '/v1/authz/check'
 const { allowed } = await res.json();
 ```
 
-To grant another user admin, write a normal tuple: `{"op": "touch", "object": "gratos_authz:root", "relation": "admin", "subject": "user:<uuid>"}`.
-
-A management console (sign in with a passkey, bootstrap, edit the schema, browse tuples, test checks) is served at `$ENDPOINT/authz` — `http://localhost:8787/authz` in dev, `https://authgravity.<yourdomain>/authz` in production. In production, bootstrap immediately after claiming your domain so nobody beats you to it.
+A console is served at `$ENDPOINT/authz` — `http://localhost:8787/authz` in dev (full editor for open sandboxes), `https://authgravity.<yourdomain>/authz` in production (relationship browser + check tester; editing happens in the dashboard).
 
 ## Your database
 

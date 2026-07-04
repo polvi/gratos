@@ -1,7 +1,7 @@
 // All relationship-tuple SQL: check-time lookups (TupleStore), writes, reads.
 
 import { ApiError, ObjectRef, SubjectRef, fmtObject, fmtSubject } from './model';
-import { BUILTIN_OBJECT, SchemaDocument, typeDef } from './schema';
+import { SchemaDocument, TENANT_OBJECT_TYPE, typeDef } from './schema';
 
 // Caps enforced at read time (writes can't practically be capped per-relation).
 export const MAX_USERSETS_PER_RELATION = 100;
@@ -97,23 +97,23 @@ export type RelUpdate = {
 
 export const MAX_UPDATES = 100;
 
-/** Validate one update against the tenant schema (+ built-in constraints). */
-function validateUpdate(schema: SchemaDocument | null, u: RelUpdate): string | null {
+/**
+ * Validate one update against the tenant schema (+ built-in constraints).
+ * Exported for unit tests.
+ */
+export function validateUpdate(schema: SchemaDocument | null, u: RelUpdate): string | null {
     const at = `${fmtObject(u.object)}#${u.relation}@${fmtSubject(u.subject)}`;
 
-    if (u.object.type === BUILTIN_OBJECT.type) {
-        // Only root#admin@user:<id> is writable on the reserved type (how
-        // admins delegate). Everything else about gratos_authz is fixed.
-        if (u.object.id !== BUILTIN_OBJECT.id || u.relation !== 'admin') {
-            return `${at}: only ${BUILTIN_OBJECT.type}:${BUILTIN_OBJECT.id}#admin may be written`;
-        }
-        if (u.subject.type !== 'user' || u.subject.relation) {
-            return `${at}: admin subjects must be plain users`;
-        }
-        return null;
+    // gratos_* types are control-plane/reserved: never writable over HTTP.
+    // gratos_tenant ownership tuples are written only via trusted RPC.
+    if (u.object.type === TENANT_OBJECT_TYPE) {
+        return `${at}: ${TENANT_OBJECT_TYPE} is written only by the control plane`;
     }
-    if (u.subject.type === BUILTIN_OBJECT.type) {
-        return `${at}: ${BUILTIN_OBJECT.type} may not be a subject`;
+    if (u.object.type.startsWith('gratos_')) {
+        return `${at}: "${u.object.type}" is reserved`;
+    }
+    if (u.subject.type.startsWith('gratos_')) {
+        return `${at}: "${u.subject.type}" may not be a subject`;
     }
 
     const def = typeDef(schema, u.object.type);
@@ -189,6 +189,47 @@ export async function applyUpdates(
         else written += changes;
     });
     return { written, deleted };
+}
+
+// --- control-plane writes (trusted RPC only; bypass validateUpdate) ---
+
+export type OwnerGrant = { tenant: string; userId: string };
+
+/** Idempotently grant gratos_tenant:<tenant>#owner@user:<userId> tuples in the root space. */
+export async function grantOwnerTuples(
+    db: D1Database,
+    rootTenant: string,
+    entries: OwnerGrant[]
+): Promise<{ written: number }> {
+    const now = Date.now();
+    let written = 0;
+    for (let i = 0; i < entries.length; i += 50) {
+        const chunk = entries.slice(i, i + 50);
+        const results = await db.batch(
+            chunk.map((e) =>
+                db
+                    .prepare(
+                        `INSERT OR IGNORE INTO relationships
+                         (tenant, object_type, object_id, relation, subject_type, subject_id, subject_relation, created_at)
+                         VALUES (?, ?, ?, 'owner', 'user', ?, '', ?)`
+                    )
+                    .bind(rootTenant, TENANT_OBJECT_TYPE, e.tenant, e.userId, now)
+            )
+        );
+        for (const r of results) written += r.meta?.changes ?? 0;
+    }
+    return { written };
+}
+
+/** Full teardown for a deleted tenant: its authz data + its control-plane tuples. */
+export async function deleteTenantData(db: D1Database, rootTenant: string, tenantKey: string): Promise<void> {
+    await db.batch([
+        db.prepare('DELETE FROM relationships WHERE tenant = ?').bind(tenantKey),
+        db
+            .prepare('DELETE FROM relationships WHERE tenant = ? AND object_type = ? AND object_id = ?')
+            .bind(rootTenant, TENANT_OBJECT_TYPE, tenantKey),
+        db.prepare('DELETE FROM schemas WHERE tenant = ?').bind(tenantKey),
+    ]);
 }
 
 // --- filtered reads ---

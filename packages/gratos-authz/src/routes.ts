@@ -1,17 +1,24 @@
 // /v1/authz/* API routes. All require a valid tenant session (enforced by the
-// middleware chain in index.ts); mutations additionally require the caller to
-// hold the `manage` permission on the built-in gratos_authz:root object.
+// middleware chain in index.ts). Mutations are allowed for exactly two
+// callers: the tenant's owner acting through the on-behalf routes
+// (/v1/authz/tenants/:target/*, gated by the root-space control plane), and
+// any authenticated user of an ANONYMOUS sandbox (throwaway pools are open).
+// Tenant-pool users on managed tenants get reads + checks only.
 
-import { Hono } from 'hono';
+import { Context, Hono } from 'hono';
 import { ApiError, parseObjectRef, parseSubjectRef } from './model';
-import { BUILTIN_OBJECT, SchemaDocument, loadSchema, saveSchema, validateSchema } from './schema';
+import { SchemaDocument, TENANT_OBJECT_TYPE, loadSchema, saveSchema, validateSchema } from './schema';
 import { checkPermission, newBudget } from './check';
 import { D1TupleStore, MAX_UPDATES, RelUpdate, applyUpdates, readRelationships } from './tuples';
 import type { Variables } from './middleware';
 
 export type Env = {
     DB: D1Database;
+    /** Tenant key of the control-plane space: authgravity.org (prod) / localhost (dev). */
+    ROOT_TENANT: string;
 };
+
+type Ctx = Context<{ Bindings: Env; Variables: Variables }>;
 
 export async function runCheck(
     db: D1Database,
@@ -34,94 +41,50 @@ export async function runCheck(
     return result.allowed;
 }
 
-async function requireManage(db: D1Database, tenant: string, schema: SchemaDocument | null, userId: string) {
-    const allowed = await runCheck(
-        db,
-        tenant,
-        schema,
-        `${BUILTIN_OBJECT.type}:${BUILTIN_OBJECT.id}`,
-        'manage',
-        `user:${userId}`
-    );
-    if (!allowed) {
-        throw new ApiError(403, 'admin required — bootstrap first or ask an admin for the admin relation');
+function canManage(c: Ctx): boolean {
+    return c.get('superuser') === true || c.get('sandboxMode') === 'anonymous';
+}
+
+function requireManage(c: Ctx) {
+    if (!canManage(c)) {
+        throw new ApiError(403, 'managed by the tenant owner — use the AuthGravity dashboard');
     }
 }
 
-async function countAdmins(db: D1Database, tenant: string): Promise<number> {
-    const row = await db
-        .prepare(
-            `SELECT COUNT(*) AS count FROM relationships
-             WHERE tenant = ? AND object_type = ? AND object_id = ? AND relation = 'admin'`
-        )
-        .bind(tenant, BUILTIN_OBJECT.type, BUILTIN_OBJECT.id)
-        .first<{ count: number }>();
-    return row?.count ?? 0;
-}
+// --- shared handlers (tenant comes from context: host-derived, or the
+// on-behalf target after the owner gate rewrites it) ---
 
-export const authzRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
-
-authzRoutes.onError((err, c) => {
-    if (err instanceof ApiError) {
-        return c.json({ error: err.message, ...(err.details ? { details: err.details } : {}) }, err.status);
-    }
-    console.error('authz error:', err);
-    return c.json({ error: 'Internal error' }, 500);
-});
-
-// Tenant + caller status, used by the console.
-authzRoutes.get('/v1/authz/status', async (c) => {
+async function handleStatus(c: Ctx) {
     const tenant = c.get('tenant');
-    const userId = c.get('userId')!;
-    const [admins, schema] = await Promise.all([countAdmins(c.env.DB, tenant), loadSchema(c.env.DB, tenant)]);
-    const admin =
-        admins > 0 && (await runCheck(c.env.DB, tenant, schema?.doc ?? null, 'gratos_authz:root', 'manage', `user:${userId}`));
+    const schema = await loadSchema(c.env.DB, tenant);
     return c.json({
-        user_id: userId,
-        bootstrapped: admins > 0,
-        admins,
-        admin,
+        user_id: c.get('userId'),
+        mode: c.get('sandboxMode') === 'anonymous' ? 'open-sandbox' : 'managed',
+        can_manage: canManage(c),
         schema_version: schema?.version ?? null,
     });
-});
+}
 
-// First valid session in the tenant becomes admin, atomically, while the
-// admin set is empty. Deleting the last admin tuple deliberately reopens this.
-authzRoutes.post('/v1/authz/bootstrap', async (c) => {
-    const tenant = c.get('tenant');
-    const userId = c.get('userId')!;
-    const result = await c.env.DB.prepare(
-        `INSERT INTO relationships
-             (tenant, object_type, object_id, relation, subject_type, subject_id, subject_relation, created_at)
-         SELECT ?1, ?2, ?3, 'admin', 'user', ?4, '', ?5
-         WHERE NOT EXISTS (
-             SELECT 1 FROM relationships
-             WHERE tenant = ?1 AND object_type = ?2 AND object_id = ?3 AND relation = 'admin'
-         )`
-    )
-        .bind(tenant, BUILTIN_OBJECT.type, BUILTIN_OBJECT.id, userId, Date.now())
-        .run();
-
-    if ((result.meta?.changes ?? 0) === 0) {
-        return c.json({ error: 'already bootstrapped' }, 409);
-    }
-    return c.json({ bootstrapped: true, admin: userId });
-});
-
-authzRoutes.post('/v1/authz/check', async (c) => {
+async function handleCheck(c: Ctx) {
     const tenant = c.get('tenant');
     const body = await c.req.json().catch(() => null);
     if (!body || typeof body.permission !== 'string') {
         throw new ApiError(400, 'body must be {object, permission, subject}');
     }
+    // Control-plane objects are not observable over HTTP (they would let any
+    // root-pool user probe the customer -> owner map).
+    const obj = parseObjectRef(body.object);
+    if (obj.type === TENANT_OBJECT_TYPE) {
+        throw new ApiError(400, `${TENANT_OBJECT_TYPE} is not checkable via the API`);
+    }
     const schema = await loadSchema(c.env.DB, tenant);
     const allowed = await runCheck(c.env.DB, tenant, schema?.doc ?? null, body.object, body.permission, body.subject);
     return c.json({ allowed });
-});
+}
 
-authzRoutes.post('/v1/authz/relationships', async (c) => {
+async function handleWriteRels(c: Ctx) {
     const tenant = c.get('tenant');
-    const userId = c.get('userId')!;
+    requireManage(c);
     const body = await c.req.json().catch(() => null);
     if (!body || !Array.isArray(body.updates)) {
         throw new ApiError(400, 'body must be {updates: [{op, object, relation, subject}]}');
@@ -146,14 +109,16 @@ authzRoutes.post('/v1/authz/relationships', async (c) => {
     });
 
     const schema = await loadSchema(c.env.DB, tenant);
-    await requireManage(c.env.DB, tenant, schema?.doc ?? null, userId);
     const result = await applyUpdates(c.env.DB, tenant, schema?.doc ?? null, updates);
     return c.json(result);
-});
+}
 
-authzRoutes.get('/v1/authz/relationships', async (c) => {
+async function handleReadRels(c: Ctx) {
     const tenant = c.get('tenant');
     const q = c.req.query();
+    if (q.object_type === TENANT_OBJECT_TYPE || q.subject_type === TENANT_OBJECT_TYPE) {
+        throw new ApiError(400, `${TENANT_OBJECT_TYPE} is not readable via the API`);
+    }
     const limit = Math.min(Math.max(parseInt(q.limit || '100', 10) || 100, 1), 1000);
     const filter = {
         object_type: q.object_type,
@@ -165,23 +130,20 @@ authzRoutes.get('/v1/authz/relationships', async (c) => {
     };
     const result = await readRelationships(c.env.DB, tenant, filter, limit, q.cursor);
     return c.json(result);
-});
+}
 
-authzRoutes.get('/v1/authz/schema', async (c) => {
+async function handleGetSchema(c: Ctx) {
     const tenant = c.get('tenant');
     const stored = await loadSchema(c.env.DB, tenant);
     if (!stored) return c.json({ error: 'no schema' }, 404);
     return c.json({ schema: stored.doc, version: stored.version, updated_at: stored.updatedAt });
-});
+}
 
-authzRoutes.put('/v1/authz/schema', async (c) => {
+async function handlePutSchema(c: Ctx) {
     const tenant = c.get('tenant');
-    const userId = c.get('userId')!;
+    requireManage(c);
     const body = await c.req.json().catch(() => null);
     if (!body) throw new ApiError(400, 'body must be a schema document');
-
-    const current = await loadSchema(c.env.DB, tenant);
-    await requireManage(c.env.DB, tenant, current?.doc ?? null, userId);
 
     const result = validateSchema(body);
     if (!result.ok) {
@@ -189,4 +151,69 @@ authzRoutes.put('/v1/authz/schema', async (c) => {
     }
     const version = await saveSchema(c.env.DB, tenant, result.doc);
     return c.json({ ok: true, version });
+}
+
+// --- on-behalf owner gate ---
+
+/**
+ * Wrap a handler for /v1/authz/tenants/:target/* — the caller must hold a
+ * ROOT_TENANT session (dash pool) and manage on the control-plane object
+ * gratos_tenant:<target>. On success the context is retargeted at the tenant
+ * with full manage rights.
+ */
+function onBehalf(handler: (c: Ctx) => Promise<Response>) {
+    return async (c: Ctx) => {
+        if (c.get('tenant') !== c.env.ROOT_TENANT) {
+            throw new ApiError(403, 'tenant management requires a session on the root auth endpoint');
+        }
+        let target = c.req.param('target' as never) as string;
+        // Sandbox tenant keys contain '/', sent percent-encoded; cover both
+        // router decode behaviors (tenant keys never contain a literal '%').
+        if (target.includes('%')) target = decodeURIComponent(target);
+        if (!target || target === c.env.ROOT_TENANT) {
+            throw new ApiError(403, 'this tenant cannot be managed via the API');
+        }
+        const userId = c.get('userId')!;
+        const allowed = await runCheck(
+            c.env.DB,
+            c.env.ROOT_TENANT,
+            null,
+            `${TENANT_OBJECT_TYPE}:${target}`,
+            'manage',
+            `user:${userId}`
+        );
+        if (!allowed) {
+            throw new ApiError(403, "you don't manage this tenant");
+        }
+        c.set('tenant', target);
+        c.set('superuser', true);
+        c.set('sandboxMode', undefined);
+        return handler(c);
+    };
+}
+
+export const authzRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+authzRoutes.onError((err, c) => {
+    if (err instanceof ApiError) {
+        return c.json({ error: err.message, ...(err.details ? { details: err.details } : {}) }, err.status);
+    }
+    console.error('authz error:', err);
+    return c.json({ error: 'Internal error' }, 500);
 });
+
+// Tenant-host routes (tenant = the request's own host).
+authzRoutes.get('/v1/authz/status', handleStatus);
+authzRoutes.post('/v1/authz/check', handleCheck);
+authzRoutes.post('/v1/authz/relationships', handleWriteRels);
+authzRoutes.get('/v1/authz/relationships', handleReadRels);
+authzRoutes.get('/v1/authz/schema', handleGetSchema);
+authzRoutes.put('/v1/authz/schema', handlePutSchema);
+
+// On-behalf management routes (caller = root-pool tenant owner).
+authzRoutes.get('/v1/authz/tenants/:target/status', onBehalf(handleStatus));
+authzRoutes.post('/v1/authz/tenants/:target/check', onBehalf(handleCheck));
+authzRoutes.post('/v1/authz/tenants/:target/relationships', onBehalf(handleWriteRels));
+authzRoutes.get('/v1/authz/tenants/:target/relationships', onBehalf(handleReadRels));
+authzRoutes.get('/v1/authz/tenants/:target/schema', onBehalf(handleGetSchema));
+authzRoutes.put('/v1/authz/tenants/:target/schema', onBehalf(handlePutSchema));

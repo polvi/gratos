@@ -17,6 +17,12 @@
 			"binding": "AUTH",
 			"service": "gratos-multi",
 			"entrypoint": "AuthRPC"
+		},
+		{
+			// Authz control plane: owner grants on claim + cron reconcile.
+			"binding": "AUTHZ",
+			"service": "gratos-authz",
+			"entrypoint": "AuthzRPC"
 		}
 	],
 	"d1_databases": [
@@ -49,6 +55,11 @@
 					"binding": "AUTH",
 					"service": "gratos-multi-prod",
 					"entrypoint": "AuthRPC"
+				},
+				{
+					"binding": "AUTHZ",
+					"service": "gratos-authz-prod",
+					"entrypoint": "AuthzRPC"
 				}
 			],
 			"d1_databases": [

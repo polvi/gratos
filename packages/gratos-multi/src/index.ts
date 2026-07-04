@@ -7,11 +7,14 @@ import { authRoutes } from './auth';
 import { sessionRoutes, getSessionId } from './session';
 import { getUser } from './db';
 
+import type { AuthzRPC } from '../../gratos-authz/src/index';
+
 export type Env = {
     DB: D1Database;
     KV: KVNamespace;
-    // gratos-authz worker (no public route); mounted at /authz + /v1/authz/*.
-    AUTHZ: Fetcher;
+    // gratos-authz worker (no public route); mounted at /authz + /v1/authz/*,
+    // plus control-plane RPC (grantTenantOwners/cleanupTenant).
+    AUTHZ: Service<AuthzRPC>;
 };
 
 export type Variables = {
@@ -57,9 +60,28 @@ export class AuthRPC extends WorkerEntrypoint<Env> {
             await this.env.DB.prepare('DELETE FROM public_keys WHERE tenant = ?').bind(tenant).run();
             await this.env.DB.prepare('DELETE FROM users WHERE tenant = ?').bind(tenant).run();
             await this.env.DB.prepare('DELETE FROM sandboxes WHERE id = ?').bind(tenant).run();
+            try {
+                await this.env.AUTHZ.cleanupTenant(tenant);
+            } catch (e) {
+                console.error('authz cleanup failed for swept sandbox', tenant, e);
+            }
             swept++;
         }
         return { swept };
+    }
+
+    /**
+     * Owned sandboxes and their root-pool owners, for the provisioner's
+     * authz-ownership reconcile (self-heals failed mint-time grants).
+     */
+    async listOwnedSandboxes(): Promise<Array<{ tenant: string; userId: string }>> {
+        const { results } = await this.env.DB.prepare(
+            'SELECT id, user_id FROM sandboxes WHERE user_id IS NOT NULL'
+        ).all();
+        return ((results || []) as Array<{ id: string; user_id: string }>).map((r) => ({
+            tenant: r.id,
+            userId: r.user_id,
+        }));
     }
 
     /**
@@ -305,6 +327,17 @@ app.post('/sandbox', async (c) => {
         // table may not exist yet in older deployments; non-fatal
     }
 
+    // Owned sandboxes get a control-plane ownership tuple so the owner can
+    // manage the pool's authz from the dash. Best-effort: the provisioner's
+    // cron reconcile self-heals a failed grant.
+    if (ownerId) {
+        try {
+            await c.env.AUTHZ.grantTenantOwners([{ tenant, userId: ownerId }]);
+        } catch (e) {
+            console.error('authz owner grant failed for sandbox', tenant, e);
+        }
+    }
+
     return c.json({ id, endpoint, mode: 'sandbox', owned: !!ownerId });
 });
 
@@ -350,6 +383,11 @@ app.delete('/sandboxes/:sid', async (c) => {
     await c.env.DB.prepare('DELETE FROM public_keys WHERE tenant = ?').bind(tenant).run();
     await c.env.DB.prepare('DELETE FROM users WHERE tenant = ?').bind(tenant).run();
     await c.env.DB.prepare('DELETE FROM sandboxes WHERE id = ?').bind(tenant).run();
+    try {
+        await c.env.AUTHZ.cleanupTenant(tenant);
+    } catch (e) {
+        console.error('authz cleanup failed for sandbox', tenant, e);
+    }
 
     return c.json({ success: true });
 });
@@ -381,6 +419,17 @@ app.all('/*', async (c, next) => {
             if (key.toLowerCase().startsWith('x-gratos-')) headers.delete(key);
         }
         headers.set('X-Gratos-Tenant', tenantInfo.tenant);
+        // Sandbox pools: tell authz whether the pool is owned or anonymous
+        // (anonymous pools are open to manage). Set only when the sandboxes
+        // row exists — a missing row fails closed to managed mode.
+        if (tenantInfo.sandbox) {
+            const row = (await c.env.DB.prepare('SELECT user_id FROM sandboxes WHERE id = ?')
+                .bind(tenantInfo.tenant)
+                .first()) as { user_id: string | null } | null;
+            if (row) {
+                headers.set('X-Gratos-Sandbox', row.user_id ? 'owned' : 'anonymous');
+            }
+        }
         const sessionId = getSessionId(c);
         if (sessionId) {
             const userId = await c.env.KV.get(`session:${tenantInfo.tenant}:${sessionId}`);

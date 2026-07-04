@@ -1,122 +1,103 @@
 --------------------------- MODULE Gratos_Authz ----------------------------
 (***************************************************************************)
-(* Bootstrap/admin-tuple lifecycle in the gratos-authz worker (single      *)
-(* tenant; permission-graph evaluation is out of scope).                   *)
+(* Tenant-ownership control plane in the gratos-authz worker ("root       *)
+(* tenant as authz control plane"; permission-graph evaluation is out of   *)
+(* scope). The old bootstrap endpoint is gone.                             *)
 (*                                                                         *)
-(* Admin state is the set of gratos_authz:root#admin@user:<id> tuples.     *)
-(* POST /v1/authz/bootstrap lets any user with a valid tenant session try  *)
-(* to become the first admin. The handler is a single conditional INSERT   *)
-(* (INSERT ... SELECT ... WHERE NOT EXISTS any admin tuple), so the        *)
-(* empty-check and the insert are atomic in D1; meta.changes == 0 is the   *)
-(* 409 path. We model it two-phase — StartBootstrap observes admins = {},  *)
-(* CommitBootstrap re-checks admins = {} atomically — to expose the        *)
-(* check-then-insert race the conditional INSERT closes: dropping the      *)
-(* re-check (a naive read-then-INSERT) lets two concurrent callers both    *)
-(* win, violating BootstrapUnique.                                         *)
+(* Ownership is the set of gratos_tenant:<t>#owner@user:<u> tuples in the  *)
+(* root space. They are written ONLY by trusted onboarding actions —       *)
+(* domain claim in the provisioner / owned-sandbox mint in gratos-multi —  *)
+(* via AuthzRPC.grantTenantOwners (idempotent). No HTTP path can create or *)
+(* delete them. Anonymous sandbox tenants never receive owners.            *)
 (*                                                                         *)
-(* Admins grant/revoke admin tuples via the normal tuple API and perform   *)
-(* other schema/tuple writes (Mutate), all gated on membership in admins   *)
-(* at the time of the write. Revoking the last admin empties the set and   *)
-(* deliberately REOPENS bootstrap — that is a design decision, not a bug,  *)
-(* and the spec exercises reachable states with admins = {}.               *)
+(* A tenant's schema/tuple mutations (Mutate) are allowed for exactly:     *)
+(* (a) the tenant's owner acting through the on-behalf routes (gated by a  *)
+(* root-space check of the owner tuple), or (b) ANY authenticated user     *)
+(* when the tenant is an anonymous sandbox (throwaway pools are open).     *)
+(*                                                                         *)
+(* AuthzRPC.cleanupTenant (Cleanup) deletes a tenant's authz data and its  *)
+(* ownership tuples on domain/sandbox delete and sandbox sweep; it refuses *)
+(* the root tenant (the root tenant is simply not in Tenants here). The    *)
+(* cron reconcile re-grants missing owner tuples from the source-of-truth  *)
+(* tables — since grants are idempotent and Claim may fire repeatedly,     *)
+(* reconcile is just Claim firing again.                                   *)
 (*                                                                         *)
 (* Checked properties:                                                     *)
 (*   TypeOK                                                                *)
-(*   BootstrapUnique    — at most one user ever holds admin without having *)
-(*                        been granted it: concurrent bootstrap attempts   *)
-(*                        cannot produce two winners at once.              *)
-(*   MutatorsWereAdmins — every user that performed a gated write was an   *)
-(*                        admin at some point.                             *)
+(*   OwnersWereClaimed      — every current owner pair came from the       *)
+(*                            trusted grant path (no other source of       *)
+(*                            ownership exists).                           *)
+(*   NoAnonOwners           — anonymous sandbox tenants never have owners. *)
+(*   MutatorsWereAuthorized — every gated mutation was performed by a user *)
+(*                            authorized at the time: owner of the tenant, *)
+(*                            or the tenant is an anonymous sandbox.       *)
 (***************************************************************************)
-EXTENDS Naturals, FiniteSets
+EXTENDS FiniteSets
 
-CONSTANTS Users
+CONSTANTS
+    Users,
+    Tenants,
+    AnonSandbox \* anonymous sandbox tenants (subset of Tenants)
+
+ASSUME AnonSandbox \subseteq Tenants
 
 VARIABLES
-    admins,     \* users currently holding a root#admin tuple
-    inflight,   \* bootstrap callers that observed admins = {} (pre-INSERT)
-    everAdmins, \* history: users that ever held admin
-    granted,    \* history: users that ever received admin via Grant
-    mutators    \* history: users that ever performed a gated Mutate
+    owners,        \* current gratos_tenant:<t>#owner@user:<u> tuples, per tenant
+    claimed,       \* history: <<t,u>> pairs ever granted via the trusted path
+    mutators,      \* history: <<t,u>> such that u performed a gated mutation on t
+    everAuthorized \* history: <<t,u>> authorized at some point (owner then, or anon sandbox)
 
-vars == <<admins, inflight, everAdmins, granted, mutators>>
+vars == <<owners, claimed, mutators, everAuthorized>>
 
 Init ==
-    /\ admins = {}
-    /\ inflight = {}
-    /\ everAdmins = {}
-    /\ granted = {}
+    /\ owners = [t \in Tenants |-> {}]
+    /\ claimed = {}
     /\ mutators = {}
+    /\ everAuthorized = {}
 
-\* Bootstrap phase 1: handler is entered while no admin tuple exists.
-StartBootstrap(u) ==
-    /\ admins = {}
-    /\ u \notin inflight
-    /\ inflight' = inflight \cup {u}
-    /\ UNCHANGED <<admins, everAdmins, granted, mutators>>
+\* Trusted onboarding grant (provisioner domain claim / owned-sandbox mint
+\* calling AuthzRPC.grantTenantOwners). Idempotent — may fire repeatedly,
+\* which also models the cron reconcile re-granting from source of truth.
+Claim(t, u) ==
+    /\ t \notin AnonSandbox
+    /\ owners' = [owners EXCEPT ![t] = @ \cup {u}]
+    /\ claimed' = claimed \cup {<<t, u>>}
+    /\ UNCHANGED <<mutators, everAuthorized>>
 
-\* Bootstrap phase 2, success: the conditional INSERT's WHERE NOT EXISTS
-\* re-check passes atomically with the insert (meta.changes == 1).
-CommitBootstrap(u) ==
-    /\ u \in inflight
-    /\ admins = {}
-    /\ admins' = admins \cup {u}
-    /\ everAdmins' = everAdmins \cup {u}
-    /\ inflight' = inflight \ {u}
-    /\ UNCHANGED <<granted, mutators>>
+\* Gated schema/tuple mutation: tenant owner via on-behalf routes, or any
+\* authenticated user when the tenant is an anonymous (open) sandbox.
+Mutate(t, u) ==
+    /\ u \in owners[t] \/ t \in AnonSandbox
+    /\ mutators' = mutators \cup {<<t, u>>}
+    /\ everAuthorized' = everAuthorized \cup {<<t, u>>}
+    /\ UNCHANGED <<owners, claimed>>
 
-\* Bootstrap phase 2, failure: an admin tuple appeared since the observation,
-\* meta.changes == 0, handler returns 409.
-AbortBootstrap(u) ==
-    /\ u \in inflight
-    /\ admins # {}
-    /\ inflight' = inflight \ {u}
-    /\ UNCHANGED <<admins, everAdmins, granted, mutators>>
-
-\* An admin writes root#admin@user:u via the normal tuple API.
-Grant(a, u) ==
-    /\ a \in admins
-    /\ u \notin admins
-    /\ admins' = admins \cup {u}
-    /\ everAdmins' = everAdmins \cup {u}
-    /\ granted' = granted \cup {u}
-    /\ UNCHANGED <<inflight, mutators>>
-
-\* An admin deletes an admin tuple (self-revoke allowed). Deleting the last
-\* admin empties the set and reopens bootstrap — intentional.
-Revoke(a, u) ==
-    /\ a \in admins
-    /\ u \in admins
-    /\ admins' = admins \ {u}
-    /\ UNCHANGED <<inflight, everAdmins, granted, mutators>>
-
-\* Any other schema/tuple write, gated on admin membership at write time.
-Mutate(a) ==
-    /\ a \in admins
-    /\ a \notin mutators
-    /\ mutators' = mutators \cup {a}
-    /\ UNCHANGED <<admins, inflight, everAdmins, granted>>
+\* AuthzRPC.cleanupTenant: drop the tenant's authz data and ownership tuples
+\* (domain/sandbox delete, sandbox sweep). History variables are unchanged.
+Cleanup(t) ==
+    /\ owners' = [owners EXCEPT ![t] = {}]
+    /\ UNCHANGED <<claimed, mutators, everAuthorized>>
 
 Next ==
-    \/ \E u \in Users : StartBootstrap(u) \/ CommitBootstrap(u)
-                        \/ AbortBootstrap(u) \/ Mutate(u)
-    \/ \E a \in Users, u \in Users : Grant(a, u) \/ Revoke(a, u)
+    \/ \E t \in Tenants, u \in Users : Claim(t, u) \/ Mutate(t, u)
+    \/ \E t \in Tenants : Cleanup(t)
 
 Spec == Init /\ [][Next]_vars
 
 TypeOK ==
-    /\ admins \subseteq Users
-    /\ inflight \subseteq Users
-    /\ everAdmins \subseteq Users
-    /\ granted \subseteq everAdmins
-    /\ mutators \subseteq Users
-    /\ admins \subseteq everAdmins
+    /\ owners \in [Tenants -> SUBSET Users]
+    /\ claimed \subseteq Tenants \X Users
+    /\ mutators \subseteq Tenants \X Users
+    /\ everAuthorized \subseteq Tenants \X Users
 
-\* Concurrent bootstrap cannot yield two winners: at most one current admin
-\* holds the role without having been granted it.
-BootstrapUnique == Cardinality(admins \ granted) <= 1
+\* Ownership only ever comes from the trusted grant path.
+OwnersWereClaimed ==
+    \A t \in Tenants : \A u \in owners[t] : <<t, u>> \in claimed
 
-\* Gated writes only ever came from (sometime-)admins.
-MutatorsWereAdmins == mutators \subseteq everAdmins
+\* Anonymous sandboxes are ownerless throwaway pools.
+NoAnonOwners == \A t \in AnonSandbox : owners[t] = {}
+
+\* Every gated mutation was authorized when it happened.
+MutatorsWereAuthorized == mutators \subseteq everAuthorized
 
 =============================================================================

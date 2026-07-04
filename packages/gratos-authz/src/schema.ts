@@ -37,18 +37,20 @@ export type PermissionExpr =
     | { exclusion: { base: PermissionExpr; subtract: PermissionExpr } };
 
 // Built-in definitions merged into every tenant's effective schema.
-// `gratos_authz:root` is the singleton object gating this service itself:
-// bootstrap writes the first root#admin tuple; schema/tuple writes require
-// the `manage` permission on it. Tenants cannot redefine built-ins.
-export const BUILTIN_OBJECT = { type: 'gratos_authz', id: 'root' } as const;
+// `gratos_tenant:<tenantKey>` objects live ONLY in the root tenant's authz
+// space (ROOT_TENANT) and form the control plane: onboarding (domain claim,
+// owned-sandbox mint) writes `gratos_tenant:<key>#owner@user:<dash-uuid>`
+// via trusted RPC, and holding `manage` on that object authorizes the
+// on-behalf management routes for the tenant. Never writable over HTTP.
+export const TENANT_OBJECT_TYPE = 'gratos_tenant';
 export const BUILTIN_DEFS: Record<string, TypeDefinition> = {
     user: {},
-    gratos_authz: {
+    [TENANT_OBJECT_TYPE]: {
         relations: {
-            admin: { subjects: [{ type: 'user' }] },
+            owner: { subjects: [{ type: 'user' }] },
         },
         permissions: {
-            manage: { rel: 'admin' },
+            manage: { rel: 'owner' },
         },
     },
 };
@@ -128,7 +130,7 @@ export function validateSchema(input: unknown): ValidationResult {
     const permissionNames = (t: TypeDefinition) => Object.keys(t.permissions ?? {});
 
     // Resolve a subject type against tenant defs + built-ins ('user' only —
-    // gratos_authz may not be referenced by tenant schemas).
+    // gratos_* types may not be referenced by tenant schemas).
     const subjectTypeDef = (type: string): TypeDefinition | null => {
         if (type === 'user') return BUILTIN_DEFS.user;
         if (isReservedType(type)) return null;

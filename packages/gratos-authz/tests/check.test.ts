@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { checkPermission, newBudget } from '../src/check';
 import { ApiError, ObjectRef, SubjectRef, parseObjectRef, parseSubjectRef } from '../src/model';
-import { validateSchema, SchemaDocument, BUILTIN_OBJECT } from '../src/schema';
+import { validateSchema, SchemaDocument } from '../src/schema';
 import { Budget, TupleStore, MAX_USERSETS_PER_RELATION, RelationLookup } from '../src/tuples';
 import { EXAMPLE_SCHEMA } from './schema.test';
 
@@ -120,12 +120,13 @@ describe('checkPermission', () => {
         expect((await check('document:readme', 'edit', 'user:alice')).allowed).toBe(true);
     });
 
-    test('built-in admin gate (1 query)', async () => {
-        const tuples = ['gratos_authz:root#admin@user:alice'];
-        const r = await check(`${BUILTIN_OBJECT.type}:${BUILTIN_OBJECT.id}`, 'manage', 'user:alice', tuples);
+    test('built-in tenant ownership gate (1 query)', async () => {
+        // The on-behalf owner gate runs exactly this check in the root space.
+        const tuples = ['gratos_tenant:hippo.love#owner@user:alice'];
+        const r = await check('gratos_tenant:hippo.love', 'manage', 'user:alice', tuples);
         expect(r.allowed).toBe(true);
         expect(r.queries).toBe(1);
-        expect((await check('gratos_authz:root', 'manage', 'user:bob', tuples)).allowed).toBe(false);
+        expect((await check('gratos_tenant:hippo.love', 'manage', 'user:bob', tuples)).allowed).toBe(false);
     });
 
     test('cyclic group data terminates (2 queries, denied)', async () => {
