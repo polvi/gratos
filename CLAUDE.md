@@ -12,6 +12,7 @@ Gratos is a zero-trust, serverless, headless passkey authentication service. It 
 
 **Development:**
 - Auth API: `bun --cwd packages/gratos-multi dev` (port 8789)
+- Authz: `bun --cwd packages/gratos-authz dev` (port 8790; run alongside gratos-multi — the dev registry wires the AUTHZ service binding)
 - Provisioner: `bun --cwd packages/provisioner dev` (port 8788)
 - Dash (Astro): `bun --cwd packages/gratos-dash dev`
 
@@ -23,6 +24,7 @@ Gratos is a zero-trust, serverless, headless passkey authentication service. It 
 Bun workspace, `packages/*`:
 
 - **packages/gratos-multi** — The auth API Worker (Hono, `@simplewebauthn/server`). Multi-tenant: the tenant/rpId/cookieDomain are derived from the request Host (`src/tenant.ts`). Isolated user pool per tenant. Deployed at `authgravity.authgravity.org`. Also exports a `WorkerEntrypoint` RPC class `AuthRPC` (`resolveSession`, `getTenantStats`, `sweepSandboxes`) used by other Workers via service binding.
+- **packages/gratos-authz** — Zanzibar/SpiceDB-style authorization Worker (Hono, own D1 `gratos-authz-db`, tenant-column pattern). **Internal-only**: no routes, `workers_dev: false`; gratos-multi mounts it at `/authz` (management console) and `/v1/authz/*` on every tenant host via the `AUTHZ` service binding, forwarding trusted `X-Gratos-Tenant`/`X-Gratos-User` headers after resolving the session. Tenants PUT a JSON schema (relations + permissions with union/intersection/exclusion/arrow), write relationship tuples, and POST checks. Admin rights are dogfooded as tuples on the built-in `gratos_authz:root` object; `POST /v1/authz/bootstrap` makes the first caller admin while the admin set is empty (deleting the last admin reopens bootstrap). Exports `AuthzRPC.check(tenant, object, permission, subject)` for other Workers. Deploy order: gratos-authz before gratos-multi.
 - **packages/provisioner** — Domain-claim Worker (Hono + cron). Users claim a domain by adding `CNAME authgravity.<domain> → cname.authgravity.net`; the provisioner verifies DNS and creates a Cloudflare Custom Hostname. Deployed at `provision.api.authgravity.org`; has a service binding `AUTH → gratos-multi`.
 - **packages/gratos-dash** — Astro SSR site (`@astrojs/cloudflare`, `@astrojs/preact`) at `authgravity.org`. Pages: `/`, `/about`, `/docs`, `/domains`, `/login`, `/signup`. Env: `PUBLIC_GRATOS_SERVER`, `PUBLIC_PROVISIONER_SERVER`. Auth UI (AuthProvider/useAuth, LoginButton, RegisterButton) lives in `src/components/auth.tsx`; external apps integrate via the llms.txt recipe, not a published component library.
 - **packages/cli** — Published as `@authgravity/cli` (binary `authgravity`, Stripe-style subcommands). `authgravity listen` runs a local dev proxy (Bun + Hono, default port 8787): mints an instant sandbox, reverse-proxies auth calls to it, and translates the sandbox's Bearer session into a first-party httpOnly `session_id` cookie on `localhost` — so local apps run the exact same cookie-based auth code as production (including SSR `/whoami` checks).
@@ -54,6 +56,15 @@ Unversioned:
 - `POST /sandbox` — Mint an instant sandbox auth endpoint (anonymous OK; with a valid session the sandbox is owned by that user)
 - `GET /sandboxes`, `DELETE /sandboxes/:sid` — List/delete the requester's owned sandboxes (session required)
 - `GET /`, `GET /demo` — Health + self-contained demo page
+
+Authz (served on every tenant host, forwarded to gratos-authz; session required, mutations admin-gated):
+
+- `POST /v1/authz/bootstrap` — First caller becomes admin while the admin set is empty (409 after)
+- `GET /v1/authz/status` — `{user_id, bootstrapped, admins, admin, schema_version}`
+- `GET|PUT /v1/authz/schema` — Tenant schema document (PUT is admin-only, validated)
+- `POST|GET /v1/authz/relationships` — Batch tuple writes (admin-only, atomic) / filtered reads
+- `POST /v1/authz/check` — `{object, permission, subject}` → `{allowed}`
+- `GET /authz` — Self-contained management console (like `/demo`)
 
 Domain claiming lives in the provisioner: `POST /claims`, `GET /claims/:id`, `POST /claims/:id/activate`, `GET /domains`, etc.
 

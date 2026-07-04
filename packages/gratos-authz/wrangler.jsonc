@@ -1,0 +1,31 @@
+{
+	// Internal-only worker: no routes, no workers.dev. Reachable exclusively via
+	// the AUTHZ service binding from gratos-multi, which authenticates requests
+	// and forwards them with trusted X-Gratos-Tenant / X-Gratos-User headers.
+	"name": "gratos-authz",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-02-18",
+	"compatibility_flags": ["nodejs_compat"],
+	"workers_dev": false,
+	"preview_urls": false,
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "gratos-authz-db",
+			"database_id": "LOCALLY-GENERATED-ID"
+		}
+	],
+	"env": {
+		"prod": {
+			"workers_dev": false,
+			"preview_urls": false,
+			"d1_databases": [
+				{
+					"binding": "DB",
+					"database_name": "gratos-authz-db",
+					"database_id": "878826ab-1ca7-4d29-ba17-7f76ecc1d920"
+				}
+			]
+		}
+	}
+}

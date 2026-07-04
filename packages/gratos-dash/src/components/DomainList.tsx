@@ -321,25 +321,47 @@ function ActiveDetails({ domain, provisionerBaseUrl }: { domain: Domain; provisi
 
             <InstallationPrompt domain={domain.domain} />
 
-            <a
-                href={`https://${endpoint}/demo`}
-                target="_blank"
-                rel="noopener"
-                style={{
-                    display: 'inline-block',
-                    padding: '0.375rem 0.75rem',
-                    background: sslReady ? '#f4f4f5' : '#e4e4e7',
-                    border: '1px solid #d4d4d8',
-                    borderRadius: '0.375rem',
-                    fontSize: '0.75rem',
-                    color: sslReady ? '#18181b' : '#a1a1aa',
-                    textDecoration: 'none',
-                    fontWeight: 500,
-                    pointerEvents: sslReady ? 'auto' : 'none',
-                }}
-            >
-                {sslReady ? 'Open Demo' : 'Waiting for SSL...'}
-            </a>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <a
+                    href={`https://${endpoint}/demo`}
+                    target="_blank"
+                    rel="noopener"
+                    style={{
+                        display: 'inline-block',
+                        padding: '0.375rem 0.75rem',
+                        background: sslReady ? '#f4f4f5' : '#e4e4e7',
+                        border: '1px solid #d4d4d8',
+                        borderRadius: '0.375rem',
+                        fontSize: '0.75rem',
+                        color: sslReady ? '#18181b' : '#a1a1aa',
+                        textDecoration: 'none',
+                        fontWeight: 500,
+                        pointerEvents: sslReady ? 'auto' : 'none',
+                    }}
+                >
+                    {sslReady ? 'Open Demo' : 'Waiting for SSL...'}
+                </a>
+                {sslReady && (
+                    <a
+                        href={`https://${endpoint}/authz`}
+                        target="_blank"
+                        rel="noopener"
+                        style={{
+                            display: 'inline-block',
+                            padding: '0.375rem 0.75rem',
+                            background: '#f4f4f5',
+                            border: '1px solid #d4d4d8',
+                            borderRadius: '0.375rem',
+                            fontSize: '0.75rem',
+                            color: '#18181b',
+                            textDecoration: 'none',
+                            fontWeight: 500,
+                        }}
+                    >
+                        Authz Console
+                    </a>
+                )}
+            </div>
         </div>
     );
 }
@@ -509,7 +531,8 @@ function SandboxSection({ apiBaseUrl }: { apiBaseUrl: string }) {
             <p style={{ color: '#71717a', fontSize: '0.8rem', marginBottom: '1rem', lineHeight: 1.5 }}>
                 Instant, isolated auth endpoints for local development — no domain, no DNS.
                 Run <span style={codeStyle}>npx @authgravity/cli listen --endpoint &lt;endpoint&gt;</span> next
-                to your dev server.
+                to your dev server. The authz console is then available
+                at <span style={codeStyle}>localhost:8787/authz</span>.
             </p>
 
             {error && (

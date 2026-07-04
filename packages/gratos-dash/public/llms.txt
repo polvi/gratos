@@ -108,6 +108,81 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
 The same pattern works in any backend (Express, Hono, etc.): forward `cookie`, read `{ user_id }`.
 
+## Authorization (relationship-based access control)
+
+Optional Zanzibar/SpiceDB-style permissions for your app's resources, served on the same endpoint as your auth API (`PUBLIC_AUTH_ENDPOINT`) with the same session cookie. You define object types with relations and computed permissions, write relationship tuples keyed by AuthGravity user UUIDs, and ask `check(object, permission, subject)`.
+
+Every `/v1/authz/*` call needs a valid session (cookie or `Authorization: Bearer <session_id>`). Mutations (schema, tuple writes) additionally require the caller to be an **authz admin** — admin rights are themselves tuples on the built-in `gratos_authz:root` object.
+
+Quick start (works identically against `localhost:8787` in dev via `authgravity listen`):
+
+```
+# 1. Become admin. The first user to bootstrap while no admin exists wins — do
+#    this right after your first register(). 409 once bootstrapped.
+curl -X POST $ENDPOINT/v1/authz/bootstrap -H "Authorization: Bearer $SESSION_ID"
+# → { "bootstrapped": true, "admin": "<your user_id>" }
+
+# 2. Define your schema (JSON, not the SpiceDB text DSL):
+curl -X PUT $ENDPOINT/v1/authz/schema -H "Authorization: Bearer $SESSION_ID" \
+  -H 'Content-Type: application/json' -d '{
+  "definitions": {
+    "document": {
+      "relations": {
+        "owner":  { "subjects": [{ "type": "user" }] },
+        "viewer": { "subjects": [{ "type": "user" }] }
+      },
+      "permissions": {
+        "view": { "union": [{ "rel": "viewer" }, { "rel": "owner" }] }
+      }
+    }
+  }
+}'
+# → { "ok": true, "version": 1 }
+
+# 3. Write relationships:
+curl -X POST $ENDPOINT/v1/authz/relationships -H "Authorization: Bearer $SESSION_ID" \
+  -H 'Content-Type: application/json' -d '{
+  "updates": [
+    { "op": "touch", "object": "document:readme", "relation": "viewer", "subject": "user:<uuid>" }
+  ]
+}'
+# → { "written": 1, "deleted": 0 }
+
+# 4. Check:
+curl -X POST $ENDPOINT/v1/authz/check -H "Authorization: Bearer $SESSION_ID" \
+  -H 'Content-Type: application/json' -d \
+  '{ "object": "document:readme", "permission": "view", "subject": "user:<uuid>" }'
+# → { "allowed": true }
+```
+
+Schema expressions: `{rel}` (another relation/permission on the same type), `{union: [...]}`, `{intersection: [...]}`, `{exclusion: {base, subtract}}`, and `{arrow: {via, permission}}` for parent traversal (e.g. `view = viewer + parent->view` is `{"union": [{"rel": "viewer"}, {"arrow": {"via": "parent", "permission": "view"}}]}`). Relations may allow subject sets like `group:eng#member` (declare `{"type": "group", "relation": "member"}` in `subjects`).
+
+Endpoints (all relative to `PUBLIC_AUTH_ENDPOINT`):
+
+- `GET /v1/authz` → endpoint index (no auth)
+- `POST /v1/authz/bootstrap` → `{bootstrapped, admin}`; 409 if an admin already exists. Deleting the last admin tuple reopens bootstrap.
+- `GET /v1/authz/status` → `{user_id, bootstrapped, admins, admin, schema_version}`
+- `PUT /v1/authz/schema` (admin) bare schema document → `{ok, version}`; 400 with `details` on validation errors
+- `GET /v1/authz/schema` → `{schema, version, updated_at}`; 404 before first PUT
+- `POST /v1/authz/relationships` (admin) `{updates: [{op: "touch"|"create"|"delete", object, relation, subject}]}` (≤100, atomic) → `{written, deleted}`
+- `GET /v1/authz/relationships?object_type=…` (or `subject_type=…`; further filters `object_id`, `relation`, `subject_id`, plus `limit`/`cursor`) → `{relationships, cursor}`
+- `POST /v1/authz/check` `{object, permission, subject}` → `{allowed}`
+
+Server-side check (same forward-the-cookie pattern as `/v1/whoami` — or forward the cookie value as a Bearer token):
+
+```typescript
+const res = await fetch(import.meta.env.PUBLIC_AUTH_ENDPOINT + '/v1/authz/check', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', ...(cookie ? { cookie } : {}) },
+  body: JSON.stringify({ object: `document:${id}`, permission: 'view', subject: `user:${userId}` }),
+});
+const { allowed } = await res.json();
+```
+
+To grant another user admin, write a normal tuple: `{"op": "touch", "object": "gratos_authz:root", "relation": "admin", "subject": "user:<uuid>"}`.
+
+A management console (sign in with a passkey, bootstrap, edit the schema, browse tuples, test checks) is served at `$ENDPOINT/authz` — `http://localhost:8787/authz` in dev, `https://authgravity.<yourdomain>/authz` in production. In production, bootstrap immediately after claiming your domain so nobody beats you to it.
+
 ## Your database
 
 AuthGravity gives you a stable UUID and stores nothing else. Key your users table by it, create rows on first sight, and collect email/name later (e.g. at checkout — Stripe collects the email for you):

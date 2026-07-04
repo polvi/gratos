@@ -243,6 +243,52 @@ app.post('/webhooks/stripe', async (req, res) =&gt; {
   res.json({ received: true });
 });`;
 
+const authzBootstrapExample = `# Become the authz admin for your tenant — the first user to bootstrap while
+# no admin exists wins. Do this right after your first register(). 409 after.
+curl -X POST $ENDPOINT/v1/authz/bootstrap -H "Authorization: Bearer $SESSION_ID"
+# → { "bootstrapped": true, "admin": "&lt;your user_id&gt;" }`;
+
+const authzSchemaExample = `curl -X PUT $ENDPOINT/v1/authz/schema -H "Authorization: Bearer $SESSION_ID" \\
+  -H 'Content-Type: application/json' -d '{
+  "definitions": {
+    "document": {
+      "relations": {
+        "owner":  { "subjects": [{ "type": "user" }] },
+        "viewer": { "subjects": [{ "type": "user" }] }
+      },
+      "permissions": {
+        "view": { "union": [{ "rel": "viewer" }, { "rel": "owner" }] }
+      }
+    }
+  }
+}'
+# → { "ok": true, "version": 1 }`;
+
+const authzWriteExample = `curl -X POST $ENDPOINT/v1/authz/relationships -H "Authorization: Bearer $SESSION_ID" \\
+  -H 'Content-Type: application/json' -d '{
+  "updates": [
+    { "op": "touch", "object": "document:readme", "relation": "viewer", "subject": "user:&lt;uuid&gt;" }
+  ]
+}'
+# → { "written": 1, "deleted": 0 }`;
+
+const authzCheckExample = `curl -X POST $ENDPOINT/v1/authz/check -H "Authorization: Bearer $SESSION_ID" \\
+  -H 'Content-Type: application/json' -d \\
+  '{ "object": "document:readme", "permission": "view", "subject": "user:&lt;uuid&gt;" }'
+# → { "allowed": true }`;
+
+const authzServerCheckExample = `// Same forward-the-cookie pattern as /v1/whoami
+const res = await fetch(import.meta.env.PUBLIC_AUTH_ENDPOINT + '/v1/authz/check', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', ...(cookie ? { cookie } : {}) },
+  body: JSON.stringify({
+    object: \`document:\${id}\`,
+    permission: 'view',
+    subject: \`user:\${userId}\`,
+  }),
+});
+const { allowed } = await res.json();`;
+
 const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
   const cookieHeader = req.headers.cookie;
 
@@ -549,6 +595,82 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
     <h3>Express / Node.js example</h3>
 
     <pre><code set:html={expressExample} /></pre>
+
+    <h2>Authorization (Relationship-Based Access Control)</h2>
+
+    <p>
+      Optional Zanzibar/SpiceDB-style permissions for your app's resources, served on the
+      <strong>same endpoint as your auth API</strong> with the same session cookie. You define object
+      types with relations and computed permissions, write relationship tuples keyed by AuthGravity
+      user UUIDs, and ask <code>check(object, permission, subject)</code>. Works identically against
+      <code>http://localhost:8787</code> in dev (via <code>authgravity listen</code>) and
+      <code>https://authgravity.myapp.com</code> in production.
+    </p>
+
+    <p>
+      Every <code>/v1/authz/*</code> call needs a valid session (cookie or
+      <code>Authorization: Bearer &lt;session_id&gt;</code>). Mutations — schema and tuple writes —
+      additionally require the caller to be an <strong>authz admin</strong>. Admin rights are
+      themselves relationship tuples on the built-in <code>gratos_authz:root</code> object, so
+      granting another admin is just a normal tuple write:
+      <code>{'{ "op": "touch", "object": "gratos_authz:root", "relation": "admin", "subject": "user:<uuid>" }'}</code>.
+    </p>
+
+    <h3>1. Bootstrap</h3>
+
+    <pre><code set:html={authzBootstrapExample} /></pre>
+
+    <p>
+      In production, bootstrap immediately after claiming your domain so nobody beats you to it.
+      Deleting the last admin tuple reopens bootstrap.
+    </p>
+
+    <h3>2. Define your schema</h3>
+
+    <pre><code set:html={authzSchemaExample} /></pre>
+
+    <p>
+      Schema expressions: <code>{'{rel}'}</code> (another relation or permission on the same type),
+      <code>{'{union: [...]}'}</code>, <code>{'{intersection: [...]}'}</code>,
+      <code>{'{exclusion: {base, subtract}}'}</code>, and <code>{'{arrow: {via, permission}}'}</code>
+      for parent traversal (<code>view = viewer + parent-&gt;view</code>). Relations may allow subject
+      sets like <code>group:eng#member</code> — declare
+      <code>{'{ "type": "group", "relation": "member" }'}</code> in <code>subjects</code>.
+    </p>
+
+    <h3>3. Write relationships</h3>
+
+    <pre><code set:html={authzWriteExample} /></pre>
+
+    <h3>4. Check permissions</h3>
+
+    <pre><code set:html={authzCheckExample} /></pre>
+
+    <p>From your backend, forward the incoming cookie exactly like <code>/v1/whoami</code>:</p>
+
+    <pre><code set:html={authzServerCheckExample} /></pre>
+
+    <h3>Authz endpoints</h3>
+
+    <ul>
+      <li><code>GET /v1/authz</code> → endpoint index (no auth)</li>
+      <li><code>POST /v1/authz/bootstrap</code> → <code>{'{bootstrapped, admin}'}</code>; 409 once an admin exists</li>
+      <li><code>GET /v1/authz/status</code> → <code>{'{user_id, bootstrapped, admins, admin, schema_version}'}</code></li>
+      <li><code>PUT /v1/authz/schema</code> (admin) → <code>{'{ok, version}'}</code>; 400 with <code>details</code> on validation errors</li>
+      <li><code>GET /v1/authz/schema</code> → <code>{'{schema, version, updated_at}'}</code>; 404 before first PUT</li>
+      <li><code>POST /v1/authz/relationships</code> (admin) — batch of <code>touch</code>/<code>create</code>/<code>delete</code> updates (≤100, atomic) → <code>{'{written, deleted}'}</code></li>
+      <li><code>GET /v1/authz/relationships?object_type=…</code> (or <code>subject_type=…</code>) → <code>{'{relationships, cursor}'}</code></li>
+      <li><code>POST /v1/authz/check</code> → <code>{'{allowed}'}</code></li>
+    </ul>
+
+    <h3>Management console</h3>
+
+    <p>
+      A self-contained console is served at <code>/authz</code> on your auth endpoint —
+      <code>http://localhost:8787/authz</code> in dev, <code>https://authgravity.myapp.com/authz</code>
+      in production. Sign in with a passkey to bootstrap, edit the schema, browse relationships, and
+      test checks.
+    </p>
 
     <h2>Architecting Your App with AuthGravity</h2>
 

@@ -6,6 +6,7 @@
     "build-dash": "bun --cwd packages/gratos-dash build",
     "dev-dash": "bun --cwd packages/gratos-dash dev",
     "dev-provisioner": "bun --cwd packages/provisioner dev",
+    "dev-authz": "bun --cwd packages/gratos-authz dev",
     "cli": "bun --cwd packages/cli dev"
   },
   "workspaces": [
@@ -13,7 +14,7 @@
   ],
   "devDependencies": {
     "bun-types": "^1.3.5",
-    "wrangler": "^4.58.0",
+    "wrangler": "^4.107.0",
     "typescript": "^5.9.3"
   }
 }

@@ -10,6 +10,8 @@ import { getUser } from './db';
 export type Env = {
     DB: D1Database;
     KV: KVNamespace;
+    // gratos-authz worker (no public route); mounted at /authz + /v1/authz/*.
+    AUTHZ: Fetcher;
 };
 
 export type Variables = {
@@ -367,6 +369,26 @@ app.all('/*', async (c, next) => {
         const u = new URL(c.req.url);
         u.pathname = u.pathname.slice(tenantInfo.sandboxPrefix!.length) || '/';
         req = new Request(u.toString(), c.req.raw);
+    }
+
+    // Authz routes are served by the gratos-authz worker (which has no public
+    // route of its own). Forward with the resolved tenant + user as trusted
+    // headers; inbound X-Gratos-* headers are stripped so they can't be forged.
+    const path = new URL(req.url).pathname;
+    if (path === '/authz' || path === '/v1/authz' || path.startsWith('/v1/authz/')) {
+        const headers = new Headers(req.headers);
+        for (const key of [...headers.keys()]) {
+            if (key.toLowerCase().startsWith('x-gratos-')) headers.delete(key);
+        }
+        headers.set('X-Gratos-Tenant', tenantInfo.tenant);
+        const sessionId = getSessionId(c);
+        if (sessionId) {
+            const userId = await c.env.KV.get(`session:${tenantInfo.tenant}:${sessionId}`);
+            if (userId && (await getUser(c.env.DB, tenantInfo.tenant, userId))) {
+                headers.set('X-Gratos-User', userId);
+            }
+        }
+        return c.env.AUTHZ.fetch(new Request(req, { headers }));
     }
 
     // Try auth routes first, then session routes

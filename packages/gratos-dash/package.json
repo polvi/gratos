@@ -17,6 +17,6 @@
         "@simplewebauthn/browser": "^13.3.0",
         "astro": "6.0.5",
         "preact": "^10.28.2",
-        "wrangler": "^4.106.0"
+        "wrangler": "^4.107.0"
     }
 }

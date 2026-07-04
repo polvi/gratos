@@ -18,6 +18,15 @@
 			"id": "4a69a0c80e604ac19285eec842682190"
 		}
 	],
+	"services": [
+		{
+			// The authz worker has no public route; this worker mounts it at
+			// /authz and /v1/authz/* on every tenant host, forwarding requests
+			// with trusted X-Gratos-Tenant / X-Gratos-User headers.
+			"binding": "AUTHZ",
+			"service": "gratos-authz"
+		}
+	],
 	"env": {
 		"prod": {
 			"routes": [
@@ -45,6 +54,12 @@
 				{
 					"binding": "KV",
 					"id": "4a69a0c80e604ac19285eec842682190"
+				}
+			],
+			"services": [
+				{
+					"binding": "AUTHZ",
+					"service": "gratos-authz-prod"
 				}
 			]
 		}

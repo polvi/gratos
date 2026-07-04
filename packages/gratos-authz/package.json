@@ -1,10 +1,11 @@
 {
-    "name": "@gratos/provisioner",
+    "name": "@gratos/authz",
     "version": "0.1.0",
     "type": "module",
     "scripts": {
-        "dev": "wrangler dev --compatibility-flags nodejs_compat --port 8788",
-        "deploy": "wrangler deploy --minify src/index.ts --env=prod"
+        "dev": "wrangler dev --compatibility-flags nodejs_compat --port 8790 --inspector-port 9790",
+        "deploy": "wrangler deploy --minify src/index.ts --env=prod",
+        "test": "bun test"
     },
     "dependencies": {
         "hono": "^4.11.3"
