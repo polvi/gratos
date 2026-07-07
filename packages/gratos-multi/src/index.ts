@@ -5,7 +5,9 @@ import { WorkerEntrypoint } from 'cloudflare:workers';
 import { resolveTenant } from './tenant';
 import { authRoutes } from './auth';
 import { sessionRoutes, getSessionId } from './session';
+import { keyRoutes } from './keys';
 import { getUser } from './db';
+import { parseSessionValue, resolveSession } from './sessions';
 
 import type { AuthzRPC } from '../../gratos-authz/src/index';
 
@@ -31,10 +33,10 @@ export class AuthRPC extends WorkerEntrypoint<Env> {
      * Returns the user ID if valid, or null if expired/invalid.
      */
     async resolveSession(tenant: string, sessionId: string): Promise<string | null> {
-        const userId = await this.env.KV.get(`session:${tenant}:${sessionId}`);
-        if (!userId) return null;
+        const session = parseSessionValue(await this.env.KV.get(`session:${tenant}:${sessionId}`));
+        if (!session) return null;
 
-        const user = await getUser(this.env.DB, tenant, userId);
+        const user = await getUser(this.env.DB, tenant, session.userId);
         if (!user) return null;
 
         return (user as any).id;
@@ -185,38 +187,169 @@ app.get('/demo', (c) => {
     import { render, h } from 'https://esm.sh/preact@10.28.2';
     import { useState, useEffect } from 'https://esm.sh/preact@10.28.2/hooks';
     import { startRegistration, startAuthentication } from 'https://esm.sh/@simplewebauthn/browser@13.2.2';
+    import { p256 } from 'https://esm.sh/@noble/curves@2.2.0/nist.js';
+    import { sha256 } from 'https://esm.sh/@noble/hashes@2.2.0/sha2.js';
+    import { hkdf } from 'https://esm.sh/@noble/hashes@2.2.0/hkdf.js';
 
     const API = '${apiBaseUrl}';
+
+    // --- account-key spec (matches the published vectors) ---
+    const B32 = 'abcdefghijklmnopqrstuvwxyz234567';
+    const b64u = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');
+    function b32enc(bytes, chars) {
+      let bits = 0, value = 0, out = '';
+      for (const byte of bytes) {
+        value = (value << 8) | byte; bits += 8;
+        while (bits >= 5) { out += B32[(value >>> (bits - 5)) & 31]; bits -= 5; }
+      }
+      if (bits > 0) out += B32[(value << (5 - bits)) & 31];
+      return out.slice(0, chars);
+    }
+    function b32dec(s, byteLen) {
+      let bits = 0, value = 0; const out = [];
+      for (const ch of s) {
+        const idx = B32.indexOf(ch);
+        if (idx === -1) throw new Error('invalid character "' + ch + '"');
+        value = (value << 5) | idx; bits += 5;
+        if (bits >= 8) { out.push((value >>> (bits - 8)) & 0xff); bits -= 8; }
+      }
+      return new Uint8Array(out.slice(0, byteLen));
+    }
+    function checksum4(entropy) {
+      const d = sha256(entropy);
+      const v = (d[0] << 12) | (d[1] << 4) | (d[2] >>> 4);
+      return B32[(v >>> 15) & 31] + B32[(v >>> 10) & 31] + B32[(v >>> 5) & 31] + B32[v & 31];
+    }
+    const encodeCompact = (entropy) => 'agak1_' + b32enc(entropy, 26) + checksum4(entropy);
+    function decodeCompact(s) {
+      const n = s.trim().toLowerCase();
+      if (!n.startsWith('agak1_')) throw new Error('not an account key');
+      const body = n.slice(6);
+      if (body.length !== 30) throw new Error('wrong length');
+      const entropy = b32dec(body.slice(0, 26), 16);
+      if (checksum4(entropy) !== body.slice(26)) throw new Error('checksum mismatch — check for typos');
+      return entropy;
+    }
+    async function encodeWords(entropy) {
+      const words = await (await fetch(API + '/v1/key/wordlist.json')).json();
+      const check = sha256(entropy)[0] >>> 4;
+      let bits = '';
+      for (const b of entropy) bits += b.toString(2).padStart(8, '0');
+      bits += check.toString(2).padStart(4, '0');
+      const out = [];
+      for (let i = 0; i < 12; i++) out.push(words[parseInt(bits.slice(i * 11, (i + 1) * 11), 2)]);
+      return out.join(' ');
+    }
+    async function decodeWords(input) {
+      const words = await (await fetch(API + '/v1/key/wordlist.json')).json();
+      const parts = input.trim().toLowerCase().split(/\\s+/);
+      if (parts.length !== 12) throw new Error('expected 12 words');
+      let bits = '';
+      for (const w of parts) {
+        const idx = words.indexOf(w);
+        if (idx === -1) throw new Error('unknown word "' + w + '"');
+        bits += idx.toString(2).padStart(11, '0');
+      }
+      const entropy = new Uint8Array(16);
+      for (let i = 0; i < 16; i++) entropy[i] = parseInt(bits.slice(i * 8, (i + 1) * 8), 2);
+      if ((sha256(entropy)[0] >>> 4) !== parseInt(bits.slice(128), 2)) throw new Error('checksum mismatch');
+      return entropy;
+    }
+    function derivePriv(entropy, tenant) {
+      const enc = new TextEncoder();
+      const okm = hkdf(sha256, entropy, enc.encode(tenant), enc.encode('authgravity/softkey/v1'), 40);
+      let x = 0n;
+      for (const b of okm) x = (x << 8n) | BigInt(b);
+      const d = (x % (p256.Point.Fn.ORDER - 1n)) + 1n;
+      const bytes = new Uint8Array(32);
+      let v = d;
+      for (let i = 31; i >= 0; i--) { bytes[i] = Number(v & 0xffn); v >>= 8n; }
+      return bytes;
+    }
+    const payloadFor = (context, challenge, tenant) => context + '\\n' + challenge + '\\n' + tenant;
+
+    async function keyCeremony(kind, priv, extra, endpoint) {
+      const opts = await (await fetch(API + '/v1/key/' + endpoint + '/options', { credentials: 'include' })).json();
+      const payload = new TextEncoder().encode(payloadFor(opts.context, opts.challenge, opts.tenant));
+      let publicKey, signature;
+      if (priv instanceof Uint8Array) {
+        publicKey = p256.getPublicKey(priv, false);
+        signature = p256.sign(payload, priv, { prehash: true });
+      } else {
+        publicKey = new Uint8Array(await crypto.subtle.exportKey('raw', priv.publicKey));
+        signature = new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, priv.privateKey, payload));
+      }
+      const res = await fetch(API + '/v1/key/' + endpoint + '/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ challenge: opts.challenge, public_key: b64u(publicKey), signature: b64u(signature), ...extra }),
+      });
+      return { ok: res.ok, data: await res.json(), tenant: opts.tenant };
+    }
+
+    // --- device key storage (non-extractable, origin-scoped) ---
+    function idb() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open('gratos-keys', 1);
+        req.onupgradeneeded = () => req.result.createObjectStore('keys');
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+    async function idbGet(k) {
+      const db = await idb();
+      return new Promise((resolve) => {
+        const tx = db.transaction('keys').objectStore('keys').get(k);
+        tx.onsuccess = () => resolve(tx.result ?? null);
+        tx.onerror = () => resolve(null);
+      });
+    }
+    async function idbSet(k, v) {
+      const db = await idb();
+      return new Promise((resolve) => {
+        const tx = db.transaction('keys', 'readwrite').objectStore('keys').put(v, k);
+        tx.onsuccess = () => resolve(true);
+        tx.onerror = () => resolve(false);
+      });
+    }
+    async function enableDeviceKey() {
+      const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+      const r = await keyCeremony('devicekey', pair, { kind: 'devicekey', label: 'this device' }, 'register');
+      if (r.ok) await idbSet('device', pair);
+      return r;
+    }
 
     function App() {
       const [user, setUser] = useState(null);
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState('');
+      const [view, setView] = useState('welcome'); // welcome | keypanel | savekey
+      const [hasDeviceKey, setHasDeviceKey] = useState(false);
+      const [newKey, setNewKey] = useState(null); // {compact, words, confirm}
+      const [pasted, setPasted] = useState('');
+      const [notice, setNotice] = useState('');
 
       const checkSession = async () => {
         try {
           const res = await fetch(API + '/v1/whoami', { credentials: 'include' });
-          if (res.ok) {
-            const data = await res.json();
-            setUser(data);
-          }
+          if (res.ok) setUser(await res.json());
         } catch {}
         setLoading(false);
       };
 
-      useEffect(() => { checkSession(); }, []);
+      useEffect(() => {
+        checkSession();
+        idbGet('device').then((k) => setHasDeviceKey(!!k));
+      }, []);
 
       const register = async () => {
         setError('');
         try {
-          // The passkey label defaults to "Me" (set server-side, never stored).
-          const optRes = await fetch(API + '/v1/register/options', { credentials: 'include' });
-          const opts = await optRes.json();
+          const opts = await (await fetch(API + '/v1/register/options', { credentials: 'include' })).json();
           const cred = await startRegistration({ optionsJSON: opts });
           const verRes = await fetch(API + '/v1/register/verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
             body: JSON.stringify(cred),
           });
           if (verRes.ok) { await checkSession(); }
@@ -227,13 +360,10 @@ app.get('/demo', (c) => {
       const login = async () => {
         setError('');
         try {
-          const optRes = await fetch(API + '/v1/login/options', { credentials: 'include' });
-          const opts = await optRes.json();
+          const opts = await (await fetch(API + '/v1/login/options', { credentials: 'include' })).json();
           const cred = await startAuthentication({ optionsJSON: opts });
           const verRes = await fetch(API + '/v1/login/verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
             body: JSON.stringify(cred),
           });
           if (verRes.ok) { await checkSession(); }
@@ -243,25 +373,131 @@ app.get('/demo', (c) => {
 
       const logout = async () => {
         await fetch(API + '/v1/logout', { method: 'POST', credentials: 'include' });
-        setUser(null);
+        setUser(null); setView('welcome'); setNewKey(null); setNotice('');
+      };
+
+      // account key: create (signup or recovery enrollment while signed in)
+      const createAccountKey = async () => {
+        setError('');
+        const entropy = crypto.getRandomValues(new Uint8Array(16));
+        const compact = encodeCompact(entropy);
+        setNewKey({ compact, words: await encodeWords(entropy), entropy, confirm: '' });
+        setView('savekey');
+      };
+
+      const confirmSaved = async () => {
+        setError('');
+        try {
+          if (newKey.confirm.trim().toLowerCase() !== newKey.compact) {
+            setError('Pasted key does not match — copy it again.');
+            return;
+          }
+          const optsRes = await fetch(API + '/v1/key/login/options', { credentials: 'include' });
+          const tenant = (await optsRes.json()).tenant;
+          const priv = derivePriv(newKey.entropy, tenant);
+          const r = await keyCeremony('softkey', priv, { kind: 'softkey', label: user ? 'recovery key' : 'account key' }, 'register');
+          if (!r.ok) { setError(r.data.error || 'Registration failed'); return; }
+          setNewKey(null); setView('welcome');
+          setNotice(user ? 'Recovery key saved to your account.' : '');
+          await checkSession();
+        } catch (e) { setError(String(e)); }
+      };
+
+      // Bring-your-own phrase: claim a new account from an externally-minted
+      // seed, or recover an existing one — same words either way. Try register
+      // first (creates the account); a 409 means it already exists, so log in.
+      const claimWithPhrase = async () => {
+        setError('');
+        try {
+          const input = pasted.trim();
+          const tenant = (await (await fetch(API + '/v1/key/login/options', { credentials: 'include' })).json()).tenant;
+          const entropy = input.startsWith('agak1_') ? decodeCompact(input) : await decodeWords(input);
+          const priv = derivePriv(entropy, tenant);
+          const reg = await keyCeremony('softkey', priv, { kind: 'softkey', label: 'imported key' }, 'register');
+          if (reg.ok) { setPasted(''); setNotice('Account claimed.'); await checkSession(); return; }
+          if (reg.data.error && String(reg.data.error).includes('already registered')) {
+            const login = await keyCeremony('softkey', priv, {}, 'login');
+            if (login.ok) { setPasted(''); await checkSession(); return; }
+            setError(login.data.error || 'Sign-in failed'); return;
+          }
+          setError(reg.data.error || 'Could not claim account');
+        } catch (e) { setError(String(e)); }
+      };
+
+      const silentLogin = async () => {
+        setError('');
+        const pair = await idbGet('device');
+        if (!pair) { setHasDeviceKey(false); return; }
+        const r = await keyCeremony('devicekey', pair, {}, 'login');
+        if (r.ok) await checkSession();
+        else setError(r.data.error || 'Silent sign-in failed — the device key may have been removed.');
+      };
+
+      const addDeviceKey = async () => {
+        setError('');
+        const r = await enableDeviceKey();
+        if (r.ok) { setHasDeviceKey(true); setNotice('Silent sign-in enabled on this device.'); }
+        else setError(r.data.error || 'Could not enable silent sign-in');
       };
 
       if (loading) return h('p', null, 'Loading...');
 
+      if (view === 'savekey' && newKey) return h('div', { class: 'card' },
+        h('h2', null, user ? 'Your recovery key' : 'Your account key'),
+        h('p', null, 'Save this now — it is the only way back into the account. It will not be shown again.'),
+        h('p', { style: 'font-family: monospace; background: #f4f4f5; padding: 0.5rem; border-radius: 0.25rem; word-break: break-all;' }, newKey.compact),
+        h('p', { style: 'font-size: 0.8rem; color: #52525b;' }, 'Or as words: ', h('em', null, newKey.words)),
+        h('button', { onClick: () => navigator.clipboard.writeText(newKey.compact) }, 'Copy key'),
+        h('p', { style: 'margin-top: 1rem; font-size: 0.875rem;' }, 'Paste it back to confirm you saved it:'),
+        h('input', {
+          value: newKey.confirm, style: 'width: 100%; padding: 0.5rem; font-family: monospace; margin-bottom: 0.5rem;',
+          onInput: (e) => setNewKey({ ...newKey, confirm: e.target.value }),
+        }),
+        h('button', { onClick: confirmSaved, style: 'background: #18181b; color: white; border: none;' }, 'I saved it'),
+        error && h('p', { style: 'color: #ef4444; font-size: 0.875rem; margin-top: 0.5rem;' }, error),
+      );
+
       if (user) return h('div', { class: 'card' },
         h('div', { class: 'user-info' },
-          h('p', null, 'Signed in as ', h('strong', null, user.user_id || user.id)),
+          h('p', null, 'Signed in as ', h('strong', null, user.user_id || user.id),
+            user.amr ? h('span', { style: 'color: #86efac; font-size: 0.8rem;' }, ' (' + user.amr + ')') : null),
         ),
-        h('button', { onClick: logout, style: 'margin-top: 1rem' }, 'Sign Out'),
+        notice && h('p', { style: 'color: #16a34a; font-size: 0.875rem; margin-top: 0.5rem;' }, notice),
+        h('div', { style: 'display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1rem;' },
+          !hasDeviceKey && h('button', { onClick: addDeviceKey }, 'Enable silent sign-in on this device'),
+          h('button', { onClick: createAccountKey }, 'Create a recovery key'),
+          h('button', { onClick: logout }, 'Sign Out'),
+        ),
+        error && h('p', { style: 'color: #ef4444; font-size: 0.875rem; margin-top: 0.5rem;' }, error),
+      );
+
+      if (view === 'keypanel') return h('div', { class: 'card' },
+        h('h2', null, 'Account key'),
+        h('p', null, 'No passkey needed — a generated key you keep in your password manager or on paper.'),
+        h('div', { style: 'display: flex; flex-direction: column; gap: 0.75rem;' },
+          h('button', { onClick: createAccountKey, style: 'background: #18181b; color: white; border: none;' }, 'Create a new account key'),
+          h('p', { style: 'text-align: center; color: #a1a1aa; font-size: 0.875rem; margin: 0;' }, 'or bring your own recovery phrase / key'),
+          h('input', {
+            placeholder: 'agak1_… or your 12 words', value: pasted,
+            style: 'width: 100%; padding: 0.5rem; font-family: monospace;',
+            onInput: (e) => setPasted(e.target.value),
+          }),
+          h('button', { onClick: claimWithPhrase }, 'Claim or recover account'),
+          h('p', { style: 'font-size: 0.75rem; color: #a1a1aa; margin: 0;' }, 'Creates the account if it is new on this site, or signs you in if it already exists. Works with any standard 12-word phrase.'),
+          h('button', { onClick: () => { setView('welcome'); setError(''); }, style: 'border: none; color: #71717a; background: none;' }, 'Back'),
+        ),
+        error && h('p', { style: 'color: #ef4444; font-size: 0.875rem; margin-top: 0.5rem;' }, error),
       );
 
       return h('div', null,
         h('h1', { style: 'font-size: 1.75rem; font-weight: 700; margin-bottom: 0.5rem;' }, 'Welcome'),
         h('p', null, 'Sign in or create an account with a passkey.'),
         h('div', { style: 'display: flex; flex-direction: column; gap: 1rem;' },
+          hasDeviceKey && h('button', { onClick: silentLogin, style: 'background: #16a34a; color: white; border: none;' }, 'Sign in (this device)'),
           h('button', { onClick: () => register(), style: 'background: #18181b; color: white; border: none;' }, 'Create Account'),
           h('p', { style: 'text-align: center; color: #a1a1aa; font-size: 0.875rem; margin: 0;' }, 'or'),
           h('button', { onClick: login }, 'Login'),
+          h('button', { onClick: () => { setView('keypanel'); setError(''); }, style: 'border: none; color: #71717a; background: none; font-size: 0.875rem;' }, 'No passkey? Use an account key'),
         ),
         error && h('p', { style: 'color: #ef4444; font-size: 0.875rem; margin-top: 0.5rem;' }, error),
       );
@@ -283,8 +519,8 @@ async function resolveRequestUser(c: any): Promise<string | null> {
     const sessionId = getSessionId(c);
     if (!sessionId) return null;
     const tenantInfo = resolveTenant(new URL(c.req.url));
-    const userId = await c.env.KV.get(`session:${tenantInfo.tenant}:${sessionId}`);
-    return userId || null;
+    const session = await resolveSession(c.env.KV, tenantInfo.tenant, sessionId);
+    return session?.userId ?? null;
 }
 
 // Mint an instant, zero-DNS sandbox auth endpoint. Unauthenticated so a coding
@@ -399,6 +635,7 @@ app.all('/*', async (c, next) => {
 
     const auth = authRoutes(tenantInfo);
     const session = sessionRoutes(tenantInfo);
+    const keys = keyRoutes(tenantInfo);
 
     // For path-based sandbox tenants, strip the "/<id>" prefix so the existing
     // auth/session routes (mounted at root) match "/v1/register/options" etc.
@@ -432,17 +669,21 @@ app.all('/*', async (c, next) => {
         }
         const sessionId = getSessionId(c);
         if (sessionId) {
-            const userId = await c.env.KV.get(`session:${tenantInfo.tenant}:${sessionId}`);
-            if (userId && (await getUser(c.env.DB, tenantInfo.tenant, userId))) {
-                headers.set('X-Gratos-User', userId);
+            const session = await resolveSession(c.env.KV, tenantInfo.tenant, sessionId);
+            if (session && (await getUser(c.env.DB, tenantInfo.tenant, session.userId))) {
+                headers.set('X-Gratos-User', session.userId);
+                headers.set('X-Gratos-Amr', session.amr);
             }
         }
         return c.env.AUTHZ.fetch(new Request(req, { headers }));
     }
 
-    // Try auth routes first, then session routes
+    // Try auth routes first, then key routes, then session routes
     const authResponse = await auth.fetch(req, c.env);
     if (authResponse.status !== 404) return authResponse;
+
+    const keyResponse = await keys.fetch(req, c.env, c.executionCtx);
+    if (keyResponse.status !== 404) return keyResponse;
 
     const sessionResponse = await session.fetch(req, c.env);
     if (sessionResponse.status !== 404) return sessionResponse;

@@ -4,6 +4,7 @@ import { getCookie, deleteCookie } from 'hono/cookie';
 import type { Env, Variables } from './index';
 import type { TenantInfo } from './tenant';
 import { getUser } from './db';
+import { resolveSession } from './sessions';
 
 /**
  * Resolve session ID from cookie or Authorization Bearer header.
@@ -29,17 +30,17 @@ export function sessionRoutes(tenantInfo: TenantInfo) {
             return c.json({ error: 'Not authenticated' }, 401);
         }
 
-        const userId = await c.env.KV.get(`session:${tenantInfo.tenant}:${sessionId}`);
-        if (!userId) {
+        const session = await resolveSession(c.env.KV, tenantInfo.tenant, sessionId);
+        if (!session) {
             return c.json({ error: 'Session expired' }, 401);
         }
 
-        const user = await getUser(c.env.DB, tenantInfo.tenant, userId);
+        const user = await getUser(c.env.DB, tenantInfo.tenant, session.userId);
         if (!user) {
             return c.json({ error: 'User not found' }, 404);
         }
 
-        return c.json({ user_id: (user as any).id });
+        return c.json({ user_id: (user as any).id, amr: session.amr });
     };
 
     const logout = async (c: any) => {

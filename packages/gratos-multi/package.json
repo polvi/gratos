@@ -12,6 +12,8 @@
     },
     "devDependencies": {
         "@cloudflare/workers-types": "^4.20260109.0",
+        "@noble/curves": "^2.2.0",
+        "@noble/hashes": "^2.2.0",
         "typescript": "^5.9.3",
         "wrangler": "^4.107.0"
     }

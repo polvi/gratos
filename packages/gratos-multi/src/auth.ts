@@ -17,8 +17,10 @@ import { isoUint8Array } from '@simplewebauthn/server/helpers';
 import type { Env, Variables } from './index';
 import type { TenantInfo } from './tenant';
 import { getUser, createUser, saveCredential, getCredentialById } from './db';
+import { mintSession, resolveSession, SESSION_TTL } from './sessions';
+import { getSessionId } from './session';
+import { ceremonyRateLimited } from './keys';
 
-const SESSION_TTL = 604800; // 7 days
 const CHALLENGE_TTL = 300; // 5 minutes
 
 // The challenge becomes part of a KV key, so require base64url charset.
@@ -76,9 +78,18 @@ function challengeFromResponse(response: any): string | null {
 }
 
 async function createRegistrationOptions(c: any, tenantInfo: TenantInfo) {
-    // The minted userId travels only through the KV value; the client never
-    // needs to see or echo it.
-    const userId = crypto.randomUUID();
+    // With a valid session, registration ADDS a credential to the session's
+    // user (multi-passkey / post-recovery re-enrollment). Otherwise a fresh
+    // userId is minted; it travels only through the KV value — the client
+    // never needs to see or echo it.
+    let userId = crypto.randomUUID();
+    const sessionId = getSessionId(c);
+    if (sessionId) {
+        const session = await resolveSession(c.env.KV, tenantInfo.tenant, sessionId);
+        if (session && (await getUser(c.env.DB, tenantInfo.tenant, session.userId))) {
+            userId = session.userId;
+        }
+    }
 
     const opts: GenerateRegistrationOptionsOpts = {
         rpName: tenantInfo.rpName,
@@ -138,13 +149,7 @@ async function verifyRegistration(c: any, tenantInfo: TenantInfo, response: any)
 
         await saveCredential(c.env.DB, tenantInfo.tenant, userId, verification, response.id);
 
-        // Create session
-        const sessionId = crypto.randomUUID();
-        await c.env.KV.put(
-            `session:${tenantInfo.tenant}:${sessionId}`,
-            userId,
-            { expirationTtl: SESSION_TTL }
-        );
+        const sessionId = await mintSession(c.env.KV, tenantInfo.tenant, userId, 'webauthn');
 
         setCookie(c, 'session_id', sessionId, {
             httpOnly: true,
@@ -223,16 +228,11 @@ async function verifyAuthentication(c: any, tenantInfo: TenantInfo, response: an
 
     if (verification.verified) {
         const user = await getUser(c.env.DB, tenantInfo.tenant, credential.user_id);
-
-        // Create session
-        const sessionId = crypto.randomUUID();
-        if (user) {
-            await c.env.KV.put(
-                `session:${tenantInfo.tenant}:${sessionId}`,
-                (user as any).id,
-                { expirationTtl: SESSION_TTL }
-            );
+        if (!user) {
+            return c.json({ error: 'User not found' }, 400);
         }
+
+        const sessionId = await mintSession(c.env.KV, tenantInfo.tenant, (user as any).id, 'webauthn');
 
         setCookie(c, 'session_id', sessionId, {
             httpOnly: true,
@@ -263,6 +263,10 @@ export function authRoutes(tenantInfo: TenantInfo) {
     // POST body.
 
     app.get('/v1/register/options', async (c) => {
+        // Same per-IP meter as the key ceremonies: attestation "none" means a
+        // software authenticator can script this pipeline, so challenge
+        // minting must be as bounded here as it is there.
+        if (await ceremonyRateLimited(c)) return c.json({ error: 'Rate limit exceeded, try again later' }, 429);
         return c.json(await createRegistrationOptions(c, tenantInfo));
     });
 
@@ -271,6 +275,7 @@ export function authRoutes(tenantInfo: TenantInfo) {
     });
 
     app.get('/v1/login/options', async (c) => {
+        if (await ceremonyRateLimited(c)) return c.json({ error: 'Rate limit exceeded, try again later' }, 429);
         return c.json(await createAuthenticationOptions(c, tenantInfo));
     });
 

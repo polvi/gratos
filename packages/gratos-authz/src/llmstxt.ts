@@ -92,7 +92,7 @@ export function buildTenantLlmsTxt(
     lines.push('## Integration (HTTP API on this host)');
     lines.push('');
     lines.push(
-        'Every call needs the end user\'s session: send the first-party `session_id` cookie, or forward its value as `Authorization: Bearer <session_id>` from your backend (read it from the incoming Cookie header, same as the `/v1/whoami` pattern).'
+        'Every call needs the end user\'s session: send the first-party `session_id` cookie, or forward its value as `Authorization: Bearer <session_id>` from your backend (read it from the incoming Cookie header, same as the `/v1/whoami` pattern). Sessions exist for passkey users and account-key users alike (`/v1/key/*` on this host — see https://authgravity.org/llms.txt); `status` and `/v1/whoami` report the session\'s `amr` (`webauthn` | `device` | `key`) so you can require passkey-strength sessions for sensitive permissions.'
     );
     lines.push('');
     lines.push('Check a permission (the call your app makes on every gated action). With a session, omit the subject or pass `"self"` — one round trip both authenticates and authorizes, and returns the user id:');

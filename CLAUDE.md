@@ -47,9 +47,12 @@ Note: there is no `packages/demo` or `packages/e2e`; an older single-tenant `wor
 
 v1 — spec-shaped WebAuthn JSON (options returned unmodified; verify takes the bare credential response as the whole body):
 
-- `GET /v1/register/options`, `POST /v1/register/verify` — WebAuthn registration
+- `GET /v1/register/options`, `POST /v1/register/verify` — WebAuthn registration (with a valid session, ADDS a credential to that user instead of creating one)
 - `GET /v1/login/options`, `POST /v1/login/verify` — WebAuthn authentication
-- `GET /v1/whoami`, `POST /v1/logout` — Session management (cookie or Bearer)
+- `GET|POST /v1/key/(register|login)/(options|verify)` — Account-key/device-key credentials (`src/keys.ts`): client-derived P-256 keys (128-bit `agak1_…` secret or 12 BIP39 words, HKDF salted by tenant — spec + vectors in `tests/keyspec-ref.ts`/`keyspec.test.ts`); server stores public keys only in `public_keys` with `kind` = webauthn|devicekey|softkey. Bring-your-own external BIP39 phrases work with no server change: client decodes → register (claim) → on 409, login (recover) — create-or-recover is purely client-side
+- `GET /v1/credentials`, `DELETE /v1/credentials/:id` — Credential management (session; rank rule: a session can't remove a credential stronger than its own `amr`; last credential undeletable)
+- `GET /v1/key/wordlist.json` — BIP39 English wordlist (encoding only)
+- `GET /v1/whoami`, `POST /v1/logout` — Session management (cookie or Bearer). Sessions are JSON `{u, amr}` in KV (`src/sessions.ts`; legacy bare-userId values parse as amr=webauthn); `whoami` and authz `status` report `amr` (webauthn|device|key)
 
 Unversioned:
 

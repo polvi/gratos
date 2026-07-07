@@ -592,6 +592,38 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
 
     <pre><code set:html={checkAuthExample} /></pre>
 
+    <h2>Account Keys (No-Passkey Fallback and Recovery)</h2>
+
+    <p>
+      For users without passkey support — and as the recovery path for users with them — AuthGravity
+      supports <strong>account keys</strong>: a client-generated 128-bit secret shown as
+      <code>agak1_…</code> (or 12 words), from which the browser derives a P-256 key pair per tenant.
+      The server stores only the public key, exactly like a passkey: no passwords, no PII, nothing
+      useful in a breach. Daily sign-ins use a silent, non-extractable <em>device key</em> so the
+      account key itself is only touched at setup and disaster recovery.
+    </p>
+
+    <ul>
+      <li><code>GET|POST /v1/key/(register|login)/(options|verify)</code> — challenge/response ceremonies mirroring WebAuthn; registering with an active session <em>adds</em> the credential to that account (recovery-key enrollment, device provisioning)</li>
+      <li><code>GET /v1/credentials</code>, <code>DELETE /v1/credentials/:id</code> — a session can never remove a credential stronger than how it authenticated (passkey &gt; device key &gt; account key), nor the last one</li>
+      <li>Sessions carry <code>amr</code> (<code>webauthn</code> | <code>device</code> | <code>key</code>) in <code>/v1/whoami</code> and authz <code>status</code>, so apps can require passkey-strength sessions for sensitive actions</li>
+    </ul>
+
+    <p>
+      <strong>Bring your own phrase.</strong> Because the 12-word form is standard BIP39, a user can
+      claim or recover an account from a seed minted anywhere: the client decodes the phrase, derives
+      the key, and calls register (to claim a new account) or login (to recover an existing one) — a
+      <code>409</code> on register just means "already exists, log in instead." No server involvement
+      beyond the normal ceremony; the server cannot tell a brought-in seed from a generated one.
+    </p>
+
+    <p>
+      The full client spec (derivation, wire formats, conformance vectors) is in
+      <a href="/llms.txt">llms.txt</a>, and every auth endpoint's <code>/demo</code> page contains a
+      complete reference client — try it, including "No passkey? Use an account key" and "Claim or
+      recover account."
+    </p>
+
     <h2>Server-Side Session Validation</h2>
 
     <p>

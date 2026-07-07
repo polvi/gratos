@@ -90,6 +90,7 @@ async function handleStatus(c: Ctx) {
     return c.json({
         user_id: c.get('userId') ?? null,
         auth: c.get('service') ? 'service' : 'session',
+        ...(c.get('amr') ? { amr: c.get('amr') } : {}),
         mode: c.get('sandboxMode') === 'anonymous' ? 'open-sandbox' : 'managed',
         can_manage: canManage(c),
         schema_version: schema?.version ?? null,

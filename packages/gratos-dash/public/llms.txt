@@ -86,6 +86,28 @@ All paths relative to `PUBLIC_AUTH_ENDPOINT`; always fetch with `credentials: 'i
 
 There is no correlation id to carry: the server keys the pending ceremony by the challenge, which comes back inside the signed `clientDataJSON`.
 
+## Account keys (no-passkey fallback + recovery)
+
+For users without passkey support — and as the recovery path for users with them — AuthGravity supports **account keys**: a client-generated 128-bit secret rendered as `agak1_…` (base32 + checksum) or 12 BIP39 words, from which the client derives a P-256 key pair per tenant. The server stores only the public key, exactly like a passkey. No passwords, no PII, nothing recoverable from a server breach. Daily logins should use a silent **device key** (non-extractable WebCrypto key in IndexedDB, registered as an additional credential) so the account key is only ever typed at setup and disaster recovery.
+
+Endpoints (mirror the WebAuthn pair; same session semantics incl. sandbox Bearer):
+
+- `GET /v1/key/register/options` / `GET /v1/key/login/options` → `{challenge, context, tenant}` (single-use, 5 min)
+- `POST /v1/key/register/verify` `{challenge, public_key, signature, kind: "softkey"|"devicekey", label?}` → `{verified, user:{id}, credential_id}`; with a valid session the credential is ADDED to that user (recovery-key enrollment, device provisioning), otherwise a new user is created
+- `POST /v1/key/login/verify` `{challenge, public_key, signature}` → `{verified, user:{id}}`
+- **Bring-your-own phrase (claim/recover):** externally-minted seeds work with no special endpoint — decode any standard 12-word BIP39 phrase (or `agak1_…`) to entropy, derive, and call register/verify to *claim* (creates the account); a `409 already registered` means it already exists, so call login/verify to *recover*. Same words either way. This is client-side create-or-recover; the server can't distinguish a brought-in seed from a generated one
+- `GET /v1/credentials`, `DELETE /v1/credentials/:id` — list/remove credentials (session). A session can never remove a credential stronger than how it authenticated (passkey > device key > account key), nor the last credential
+- `GET /v1/key/wordlist.json` — BIP39 English wordlist for rendering the 12-word form
+
+Client spec (a complete reference client lives in the `/demo` page source on any auth endpoint):
+
+- Derivation: `priv = (HKDF-SHA256(entropy, salt=utf8(tenant), info="authgravity/softkey/v1", 40 bytes) mod (n-1)) + 1` on P-256; `tenant` comes from the options response. Per-tenant salting means the same key yields unlinkable identities on different tenants.
+- Wire format: `public_key` = base64url 65-byte uncompressed point; `signature` = base64url 64-byte r||s of ECDSA-SHA256 over the utf8 payload `` `${context}\n${challenge}\n${tenant}` ``.
+- Compact rendering: `"agak1_"` + base32(entropy, 26 chars, alphabet `a-z2-7`) + 4 chars of base32(first 20 bits of SHA-256(entropy)). The 12-word rendering is standard BIP39 for 128-bit entropy, so any externally-minted BIP39 phrase decodes here (note: we derive from the raw entropy, not BIP39's PBKDF2 seed — a phrase produces a Gratos account, not your crypto-wallet addresses).
+- Conformance vectors (entropy `000102030405060708090a0b0c0d0e0f`): compact `agak1_aaaqeayeaudaocajbifqydiob4xzc4`; words `abandon amount liar amount expire adjust cage candy arch gather drum buyer`; public key for tenant `hippo.love` = `0453623a…754d0b` (full vectors in the repo's `tests/keyspec.test.ts`).
+
+Sessions carry `amr` (`webauthn` | `device` | `key`) in `/v1/whoami` and authz `status` responses, so apps can require passkey-strength sessions for sensitive actions. UX guidance: show "No passkey? Use an account key" as the fallback on the auth UI, prompt passkey users to create a recovery key after signup, and enable the silent device key after any first login.
+
 ## Server-side session validation
 
 Forward the incoming cookie header to `/v1/whoami`. Astro middleware example:
