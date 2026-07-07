@@ -114,9 +114,10 @@ Optional Zanzibar/SpiceDB-style permissions for your app's resources, served on 
 
 Who can do what:
 
-- Every `/v1/authz/*` call needs a valid session (cookie or `Authorization: Bearer <session_id>`). Any session may run checks and read the schema/relationships.
+- Every `/v1/authz/*` call needs a valid session (cookie or `Authorization: Bearer <session_id>`) or a service token. Any session may run checks and read the schema/relationships.
 - **Anonymous sandboxes are open**: any registered user in the sandbox pool can edit the schema and write relationships directly. This is the dev flow — no setup step.
 - **Domains and dashboard-created sandboxes are owner-managed**: whoever claimed the domain (or minted the sandbox from the dashboard) manages its authorization — from the dashboard's Authorization panel on https://authgravity.org/domains, or via the management API below. In-tenant sessions get 403 on writes.
+- **App backends write with service tokens**: the owner mints a token (`agk_…`) in the dashboard's Authorization panel; the app keeps it as a server secret and sends it as `Authorization: Bearer agk_…` to write relationships at runtime (new resource → owner tuple, invite accepted → member tuple). Tokens are scoped to their tenant, can check/read/write relationships, and cannot change the schema. Owner endpoints: `POST|GET|DELETE /v1/authz/tenants/<tenant>/tokens[/:id]`.
 
 Quick start (dev, against `localhost:8787` via `authgravity listen` — no setup, just register a user first):
 
@@ -147,11 +148,12 @@ curl -X POST $ENDPOINT/v1/authz/relationships -H "Authorization: Bearer $SESSION
 }'
 # → { "written": 1, "deleted": 0 }
 
-# 3. Check:
+# 3. Check. With a session, omit the subject (or pass "self") — the session
+#    user is the subject, and their uuid comes back with the answer:
 curl -X POST $ENDPOINT/v1/authz/check -H "Authorization: Bearer $SESSION_ID" \
   -H 'Content-Type: application/json' -d \
-  '{ "object": "document:readme", "permission": "view", "subject": "user:<uuid>" }'
-# → { "allowed": true }
+  '{ "object": "document:readme", "permission": "view" }'
+# → { "allowed": true, "user_id": "<uuid>" }
 ```
 
 Schema expressions: `{rel}` (another relation/permission on the same type), `{union: [...]}`, `{intersection: [...]}`, `{exclusion: {base, subtract}}`, and `{arrow: {via, permission}}` for parent traversal (e.g. `view = viewer + parent->view` is `{"union": [{"rel": "viewer"}, {"arrow": {"via": "parent", "permission": "view"}}]}`). Relations may allow subject sets like `group:eng#member` (declare `{"type": "group", "relation": "member"}` in `subjects`).
@@ -164,7 +166,7 @@ Endpoints (all relative to `PUBLIC_AUTH_ENDPOINT`):
 - `GET /v1/authz/schema` → `{schema, version, updated_at}`; 404 before first PUT
 - `POST /v1/authz/relationships` (manage) `{updates: [{op: "touch"|"create"|"delete", object, relation, subject}]}` (≤100, atomic) → `{written, deleted}`
 - `GET /v1/authz/relationships?object_type=…` (or `subject_type=…`; further filters `object_id`, `relation`, `subject_id`, plus `limit`/`cursor`) → `{relationships, cursor}`
-- `POST /v1/authz/check` `{object, permission, subject}` → `{allowed}`
+- `POST /v1/authz/check` `{object, permission, subject?}` → `{allowed, user_id?}`. Subject omitted or `"self"` = the session user (explicit `user:<uuid>` required with service tokens). Batch: `{items: [{object, permission, subject?}, …]}` (≤50, concurrent, order preserved) → `{results: [{allowed}, …], user_id?}`
 
 Owner management API (production): the same operations, executed as the tenant's owner from anywhere, on the root auth endpoint with your **authgravity.org dashboard session**:
 
@@ -173,6 +175,8 @@ https://authgravity.authgravity.org/v1/authz/tenants/<tenant>/(status|schema|rel
 ```
 
 `<tenant>` is your domain (`myapp.com`) or a sandbox key URL-encoded (`sandbox.authgravity.org%2F<id>`). Ownership is recorded automatically when you claim a domain or mint a sandbox from the dashboard — there is nothing to set up.
+
+Owners of domain tenants can also have a schema drafted automatically: `POST /v1/authz/tenants/<domain>/generate-schema` crawls the site, infers what kind of product it is, and returns `{schema, description, pages, model}` — a draft plus a human-readable explanation. Nothing is saved; review the draft and apply it with the normal schema PUT. The dashboard's Authorization panel exposes this as "Generate with AI".
 
 Server-side check from your app (same forward-the-cookie pattern as `/v1/whoami` — or forward the cookie value as a Bearer token):
 
@@ -186,6 +190,8 @@ const { allowed } = await res.json();
 ```
 
 A console is served at `$ENDPOINT/authz` — `http://localhost:8787/authz` in dev (full editor for open sandboxes), `https://authgravity.<yourdomain>/authz` in production (relationship browser + check tester; editing happens in the dashboard).
+
+Every tenant also publishes its own agent guide at `$ENDPOINT/llms.txt` — the tenant's live schema (types, relations, permissions, rendered human-readably) plus the exact integration API for that host. When integrating a specific app, fetch that per-tenant file instead of this one: it contains the real object types to check against. The dashboard's Authorization panel provides a copy-paste agent prompt that references it.
 
 ## Your database
 

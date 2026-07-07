@@ -139,7 +139,7 @@ type AdvanceResult =
     | { status: 'dns_mismatch'; domain: string; dns_lookup: string; dns_expected: string; dns_actual: string }
     | { status: 'provisioning'; domain: string }
     | { status: 'claimed'; id?: string; domain: string; claimed_at?: number; ssl_status?: string }
-    | { status: 'error'; error: string; code?: number };
+    | { status: 'error'; error: string; code?: 403 | 409 | 500 | 502 };
 
 async function advanceClaim(claim: any, env: Env, opts?: { skipDns?: boolean }): Promise<AdvanceResult> {
     const expectedTarget = CNAME_TARGET;
@@ -182,6 +182,7 @@ async function advanceClaim(claim: any, env: Env, opts?: { skipDns?: boolean }):
 
     if (!claim.cf_hostname_id) {
         let cfHostnameId: string;
+        let createdFresh = false;
 
         const existing = await cf.findByHostname(hostname);
         if (existing) {
@@ -200,17 +201,44 @@ async function advanceClaim(claim: any, env: Env, opts?: { skipDns?: boolean }):
                 return { status: 'error', error: 'CF API error', code: 502 };
             }
             cfHostnameId = result.result.id;
+            createdFresh = true;
         }
 
-        await env.DB.prepare(
-            'UPDATE pending_claims SET cf_hostname_id = ? WHERE id = ?'
+        // Bind atomically: the dash polls activate every 5s with no in-flight
+        // guard (and the cron can race it), so two calls can both reach here
+        // and both create a hostname. Only the first bind wins; a loser that
+        // created a fresh hostname deletes it instead of orphaning it.
+        const bind = await env.DB.prepare(
+            'UPDATE pending_claims SET cf_hostname_id = ? WHERE id = ? AND cf_hostname_id IS NULL'
         ).bind(cfHostnameId, claim.id).run();
-        claim.cf_hostname_id = cfHostnameId;
+        if ((bind.meta?.changes ?? 0) === 0) {
+            const winner = await env.DB.prepare(
+                'SELECT cf_hostname_id FROM pending_claims WHERE id = ?'
+            ).bind(claim.id).first() as { cf_hostname_id: string | null } | null;
+            const winnerId = winner?.cf_hostname_id;
+            if (createdFresh && winnerId && winnerId !== cfHostnameId) {
+                try {
+                    await cf.delete(cfHostnameId);
+                } catch (err) {
+                    console.error(`Failed to delete losing duplicate hostname ${cfHostnameId}:`, err);
+                }
+            }
+            claim.cf_hostname_id = winnerId ?? cfHostnameId;
+        } else {
+            claim.cf_hostname_id = cfHostnameId;
+        }
     }
 
     // --- Check CF hostname status ---
     const cfResult = await cf.get(claim.cf_hostname_id);
     if (!cfResult.success) {
+        // The bound hostname no longer exists (e.g. deleted in the CF dash).
+        // Unbind so the next attempt re-discovers it by hostname or recreates
+        // it, instead of reporting "provisioning" forever.
+        await env.DB.prepare(
+            'UPDATE pending_claims SET cf_hostname_id = NULL WHERE id = ? AND cf_hostname_id = ?'
+        ).bind(claim.id, claim.cf_hostname_id).run();
+        claim.cf_hostname_id = null;
         return { status: 'provisioning', domain: claim.domain };
     }
     // Hostname must be active to proceed, but don't wait for SSL

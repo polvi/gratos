@@ -221,7 +221,7 @@ export async function grantOwnerTuples(
     return { written };
 }
 
-/** Full teardown for a deleted tenant: its authz data + its control-plane tuples. */
+/** Full teardown for a deleted tenant: its authz data, control-plane tuples, and service tokens. */
 export async function deleteTenantData(db: D1Database, rootTenant: string, tenantKey: string): Promise<void> {
     await db.batch([
         db.prepare('DELETE FROM relationships WHERE tenant = ?').bind(tenantKey),
@@ -229,6 +229,7 @@ export async function deleteTenantData(db: D1Database, rootTenant: string, tenan
             .prepare('DELETE FROM relationships WHERE tenant = ? AND object_type = ? AND object_id = ?')
             .bind(rootTenant, TENANT_OBJECT_TYPE, tenantKey),
         db.prepare('DELETE FROM schemas WHERE tenant = ?').bind(tenantKey),
+        db.prepare('DELETE FROM service_tokens WHERE tenant = ?').bind(tenantKey),
     ]);
 }
 

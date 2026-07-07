@@ -62,9 +62,12 @@ Authz (served on every tenant host, forwarded to gratos-authz; session required;
 - `GET /v1/authz/status` — `{user_id, mode: "open-sandbox"|"managed", can_manage, schema_version}`
 - `GET|PUT /v1/authz/schema` — Tenant schema document (PUT is manage-gated, validated)
 - `POST|GET /v1/authz/relationships` — Batch tuple writes (manage-gated, atomic) / filtered reads
-- `POST /v1/authz/check` — `{object, permission, subject}` → `{allowed}`
+- `POST /v1/authz/check` — `{object, permission, subject?}` → `{allowed, user_id?}` (subject omitted/`"self"` = session user; explicit required with service tokens). Batch: `{items: [...]}` (≤50, concurrent) → `{results, user_id?}`
 - `GET|PUT|POST /v1/authz/tenants/:tenant/(status|schema|relationships|check)` — Owner management (root-host dash session; `:tenant` URL-encoded)
+- `POST /v1/authz/tenants/:tenant/generate-schema` — AI schema draft: crawls the tenant's site (Browser Rendering `/crawl` API with homepage-fetch fallback; needs `CF_ACCOUNT_ID` var + `CF_API_TOKEN` secret on gratos-authz), drafts a schema with Workers AI (`@cf/moonshotai/kimi-k2.7-code`, validated + one retry), and returns `{schema, description, pages, model}` without saving
 - `GET /authz` — Self-contained console (like `/demo`; full editor only for open sandboxes)
+- `GET /llms.txt` — Per-tenant agent guide rendered from the live schema (unauthenticated; served by gratos-authz, forwarded like `/authz`). The dash Authorization panel offers a copy-paste agent prompt referencing it
+- **Service tokens**: owner-minted per-tenant credentials (`agk_…`, SHA-256 hashes in `service_tokens`) that let the tenant's app backend write/read/check relationships at runtime via `Authorization: Bearer agk_…` on the tenant host (schema changes stay owner-only). Managed via `POST|GET|DELETE /v1/authz/tenants/:tenant/tokens[/:id]` and the dash panel; removed by `cleanupTenant`
 
 Domain claiming lives in the provisioner: `POST /claims`, `GET /claims/:id`, `POST /claims/:id/activate`, `GET /domains`, etc.
 

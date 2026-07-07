@@ -10,7 +10,14 @@
 	"preview_urls": false,
 	"vars": {
 		// Tenant key of the control-plane authz space (gratos_tenant tuples).
-		"ROOT_TENANT": "localhost"
+		"ROOT_TENANT": "localhost",
+		// Browser Rendering crawl API account for AI schema generation.
+		// Pair with a CF_API_TOKEN secret (Browser Rendering permission);
+		// without the secret, generation falls back to fetching the homepage.
+		"CF_ACCOUNT_ID": "de7a9036d3ef17964cf2ca17735f74ab"
+	},
+	"ai": {
+		"binding": "AI"
 	},
 	"d1_databases": [
 		{
@@ -24,7 +31,11 @@
 			"workers_dev": false,
 			"preview_urls": false,
 			"vars": {
-				"ROOT_TENANT": "authgravity.org"
+				"ROOT_TENANT": "authgravity.org",
+				"CF_ACCOUNT_ID": "de7a9036d3ef17964cf2ca17735f74ab"
+			},
+			"ai": {
+				"binding": "AI"
 			},
 			"d1_databases": [
 				{

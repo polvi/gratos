@@ -275,6 +275,25 @@ const AUTHZ_STARTER = JSON.stringify(
  * flows to authgravity.authgravity.org, and the control plane authorizes us
  * because onboarding recorded this dash user as the tenant's owner.
  */
+function agentPrompt(tenant: string): { url: string; prompt: string } {
+    const isSandbox = tenant.includes('/');
+    const url = isSandbox ? `https://${tenant}/llms.txt` : `https://authgravity.${tenant}/llms.txt`;
+    const prompt =
+        `Add authorization to my app using AuthGravity.\n\n` +
+        `First fetch ${url} and read it fully — it documents this tenant's live authorization schema ` +
+        `(object types, relations, permissions) and the exact HTTP API on that host.` +
+        (isSandbox ? ` If I'm running \`authgravity listen\`, use http://localhost:8787/llms.txt instead.` : '') +
+        `\n\nThen wire my app up to it: gate every protected route and action with POST /v1/authz/check ` +
+        `using the signed-in user's session (forward the session_id cookie, or send its value as a Bearer token). ` +
+        `Omit the subject so the session user is checked — the response returns both "allowed" and the user's ` +
+        `"user_id" in one round trip. Use the batch form ({items: [...]}) for list pages. ` +
+        `Where the app must write relationships at runtime (recording a new resource's owner, adding an invited ` +
+        `user to a group), use the service token from the AUTHZ_SERVICE_TOKEN environment variable as the Bearer ` +
+        `instead of a user session, as that document describes. ` +
+        `Follow the integration and design guidance in that document exactly.`;
+    return { url, prompt };
+}
+
 function AuthzPanel({ apiBaseUrl, tenant }: { apiBaseUrl: string; tenant: string }) {
     const base = `${apiBaseUrl}/v1/authz/tenants/${encodeURIComponent(tenant)}`;
     const [status, setStatus] = useState<{ schema_version: number | null } | null>(null);
@@ -284,6 +303,11 @@ function AuthzPanel({ apiBaseUrl, tenant }: { apiBaseUrl: string; tenant: string
     const [filterType, setFilterType] = useState('');
     const [form, setForm] = useState({ object: '', relation: '', subject: '' });
     const [msg, setMsg] = useState<{ error?: string; ok?: string } | null>(null);
+    const [generating, setGenerating] = useState(false);
+    const [aiDescription, setAiDescription] = useState('');
+    const [tokens, setTokens] = useState<Array<{ id: string; name: string; created_at: number; last_used_at: number | null }>>([]);
+    const [tokenName, setTokenName] = useState('');
+    const [mintedToken, setMintedToken] = useState<{ name: string; token: string } | null>(null);
 
     useEffect(() => {
         (async () => {
@@ -300,11 +324,39 @@ function AuthzPanel({ apiBaseUrl, tenant }: { apiBaseUrl: string; tenant: string
                         ? JSON.stringify((await schemaRes.json()).schema, null, 2)
                         : AUTHZ_STARTER
                 );
+                const tokenRes = await fetch(`${base}/tokens`, { credentials: 'include' });
+                if (tokenRes.ok) setTokens((await tokenRes.json()).tokens || []);
             } catch {
                 setDenied(true);
             }
         })();
     }, [base]);
+
+    const mintServiceToken = async () => {
+        setMsg(null);
+        const res = await fetch(`${base}/tokens`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ name: tokenName.trim() || 'default' }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            setMsg({ error: data.error || 'Failed to mint token' });
+            return;
+        }
+        setMintedToken({ name: data.name, token: data.token });
+        setTokenName('');
+        setTokens((prev) => [...prev, { id: data.id, name: data.name, created_at: data.created_at, last_used_at: null }]);
+    };
+
+    const revokeServiceToken = async (id: string) => {
+        if (!confirm('Revoke this service token? Apps using it will immediately lose write access.')) return;
+        setMsg(null);
+        const res = await fetch(`${base}/tokens/${id}`, { method: 'DELETE', credentials: 'include' });
+        if (res.ok) setTokens((prev) => prev.filter((t) => t.id !== id));
+        else setMsg({ error: (await res.json()).error || 'Failed to revoke token' });
+    };
 
     const saveSchema = async () => {
         setMsg(null);
@@ -327,6 +379,30 @@ function AuthzPanel({ apiBaseUrl, tenant }: { apiBaseUrl: string; tenant: string
             setStatus((s) => (s ? { ...s, schema_version: data.version } : s));
         } else {
             setMsg({ error: (data.error || 'Save failed') + (data.details ? `\n${data.details.join('\n')}` : '') });
+        }
+    };
+
+    const generateSchema = async () => {
+        setMsg(null);
+        setAiDescription('');
+        setGenerating(true);
+        try {
+            const res = await fetch(`${base}/generate-schema`, {
+                method: 'POST',
+                credentials: 'include',
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                setMsg({ error: (data.error || 'Generation failed') + (data.details ? `\n${data.details.join('\n')}` : '') });
+                return;
+            }
+            setSchemaText(JSON.stringify(data.schema, null, 2));
+            setAiDescription(data.description || '');
+            setMsg({ ok: 'Draft generated — review below, then Save Schema to apply.' });
+        } catch {
+            setMsg({ error: 'Network error during generation' });
+        } finally {
+            setGenerating(false);
         }
     };
 
@@ -405,6 +481,24 @@ function AuthzPanel({ apiBaseUrl, tenant }: { apiBaseUrl: string; tenant: string
                 <span style={codeStyle}>/v1/authz</span> on the tenant's auth endpoint
             </div>
 
+            {aiDescription && (
+                <div
+                    style={{
+                        background: '#eff6ff',
+                        border: '1px solid #bfdbfe',
+                        borderRadius: '0.375rem',
+                        padding: '0.75rem',
+                        marginBottom: '0.5rem',
+                        fontSize: '0.8rem',
+                        color: '#1e40af',
+                        lineHeight: 1.5,
+                        whiteSpace: 'pre-wrap',
+                    }}
+                >
+                    {aiDescription}
+                </div>
+            )}
+
             <textarea
                 value={schemaText}
                 onInput={(e: any) => setSchemaText(e.target.value)}
@@ -421,11 +515,128 @@ function AuthzPanel({ apiBaseUrl, tenant }: { apiBaseUrl: string; tenant: string
                     boxSizing: 'border-box' as const,
                 }}
             />
-            <button onClick={saveSchema} style={smallButton}>
-                Save Schema
-            </button>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <button onClick={saveSchema} style={smallButton}>
+                    Save Schema
+                </button>
+                {!tenant.includes('/') && (
+                    <button
+                        onClick={generateSchema}
+                        disabled={generating}
+                        style={{
+                            ...smallButton,
+                            background: '#f4f4f5',
+                            color: '#18181b',
+                            border: '1px solid #d4d4d8',
+                            cursor: generating ? 'not-allowed' : 'pointer',
+                            opacity: generating ? 0.6 : 1,
+                        }}
+                    >
+                        {generating ? 'Crawling site & generating…' : '✨ Generate with AI'}
+                    </button>
+                )}
+            </div>
 
             <div style={{ marginTop: '1rem' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#18181b', marginBottom: '0.25rem' }}>
+                    Integrate with an AI agent
+                </div>
+                <p style={{ fontSize: '0.75rem', color: '#71717a', marginBottom: '0.375rem', lineHeight: 1.5 }}>
+                    This tenant's live schema and API are published at{' '}
+                    <a href={agentPrompt(tenant).url} target="_blank" rel="noopener" style={{ color: '#2563eb' }}>
+                        {agentPrompt(tenant).url}
+                    </a>
+                    . Paste this prompt into your coding agent:
+                </p>
+                <div
+                    style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '0.25rem',
+                        background: '#f9fafb',
+                        border: '1px solid #e4e4e7',
+                        borderRadius: '0.375rem',
+                        padding: '0.5rem',
+                        marginBottom: '1rem',
+                    }}
+                >
+                    <div style={{ fontFamily: 'monospace', fontSize: '0.7rem', color: '#52525b', whiteSpace: 'pre-wrap', flex: 1 }}>
+                        {agentPrompt(tenant).prompt}
+                    </div>
+                    <CopyButton text={agentPrompt(tenant).prompt} />
+                </div>
+
+                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#18181b', marginBottom: '0.25rem' }}>
+                    Service tokens
+                </div>
+                <p style={{ fontSize: '0.75rem', color: '#71717a', marginBottom: '0.375rem', lineHeight: 1.5 }}>
+                    Your app's backend uses a service token (<span style={codeStyle}>Authorization: Bearer agk_…</span>)
+                    to write relationships at runtime — e.g. adding an invited user to a group, or recording a new
+                    resource's owner. Tokens can check and write relationships for this tenant only; schema changes
+                    stay here in the dashboard.
+                </p>
+                {mintedToken && (
+                    <div
+                        style={{
+                            background: '#fffbeb',
+                            border: '1px solid #fde68a',
+                            borderRadius: '0.375rem',
+                            padding: '0.5rem',
+                            marginBottom: '0.5rem',
+                            fontSize: '0.75rem',
+                            color: '#92400e',
+                        }}
+                    >
+                        Token <strong>{mintedToken.name}</strong> — copy it now, it won't be shown again:
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem' }}>
+                            <span style={{ ...codeStyle, flex: 1 }}>{mintedToken.token}</span>
+                            <CopyButton text={mintedToken.token} />
+                        </div>
+                    </div>
+                )}
+                {tokens.length > 0 && (
+                    <div style={{ marginBottom: '0.5rem' }}>
+                        {tokens.map((t) => (
+                            <div
+                                key={t.id}
+                                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.25rem 0', fontSize: '0.75rem' }}
+                            >
+                                <span style={{ fontWeight: 600 }}>{t.name}</span>
+                                <span style={{ color: '#a1a1aa' }}>
+                                    created {new Date(t.created_at).toLocaleDateString()}
+                                    {t.last_used_at ? ` · last used ${new Date(t.last_used_at).toLocaleDateString()}` : ' · never used'}
+                                </span>
+                                <button
+                                    onClick={() => revokeServiceToken(t.id)}
+                                    style={{
+                                        marginLeft: 'auto',
+                                        padding: '0.125rem 0.5rem',
+                                        background: 'none',
+                                        border: '1px solid #fca5a5',
+                                        borderRadius: '0.375rem',
+                                        color: '#dc2626',
+                                        fontSize: '0.7rem',
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    Revoke
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+                    <input
+                        placeholder="token name (e.g. production-backend)"
+                        value={tokenName}
+                        onInput={(e: any) => setTokenName(e.target.value)}
+                        style={inputStyle}
+                    />
+                    <button onClick={mintServiceToken} style={smallButton}>
+                        Mint Token
+                    </button>
+                </div>
+
                 <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
                     <input
                         placeholder="object type (e.g. document)"

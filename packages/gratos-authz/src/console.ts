@@ -224,7 +224,7 @@ export function consolePage(): string {
         h('div', { class: 'row' },
           h('input', { placeholder: 'document:readme', value: form.object, onInput: (e) => setForm({ ...form, object: e.target.value }), style: 'margin: 0' }),
           h('input', { placeholder: 'view', value: form.permission, onInput: (e) => setForm({ ...form, permission: e.target.value }), style: 'margin: 0' }),
-          h('input', { placeholder: 'user:abc', value: form.subject, onInput: (e) => setForm({ ...form, subject: e.target.value }), style: 'margin: 0' }),
+          h('input', { placeholder: 'user:abc or self', value: form.subject, onInput: (e) => setForm({ ...form, subject: e.target.value }), style: 'margin: 0' }),
           h('button', { class: 'primary', onClick: run }, 'Check'),
         ),
         result && h('p', { class: result === 'ALLOWED' ? 'ok' : 'error' }, result),

@@ -275,22 +275,31 @@ const authzWriteExample = `curl -X POST $ENDPOINT/v1/authz/relationships -H "Aut
 }'
 # → { "written": 1, "deleted": 0 }`;
 
-const authzCheckExample = `curl -X POST $ENDPOINT/v1/authz/check -H "Authorization: Bearer $SESSION_ID" \\
+const authzCheckExample = `# With a session, omit the subject (or pass "self") — the session user is the
+# subject, and their uuid comes back with the answer:
+curl -X POST $ENDPOINT/v1/authz/check -H "Authorization: Bearer $SESSION_ID" \\
   -H 'Content-Type: application/json' -d \\
-  '{ "object": "document:readme", "permission": "view", "subject": "user:&lt;uuid&gt;" }'
-# → { "allowed": true }`;
+  '{ "object": "document:readme", "permission": "view" }'
+# → { "allowed": true, "user_id": "&lt;uuid&gt;" }
 
-const authzServerCheckExample = `// Same forward-the-cookie pattern as /v1/whoami
+# Batch, for list pages (max 50; results keep item order):
+curl -X POST $ENDPOINT/v1/authz/check -H "Authorization: Bearer $SESSION_ID" \\
+  -H 'Content-Type: application/json' -d \\
+  '{ "items": [
+      { "object": "document:a", "permission": "view" },
+      { "object": "document:b", "permission": "view" }
+  ] }'
+# → { "results": [{ "allowed": true }, { "allowed": false }], "user_id": "&lt;uuid&gt;" }`;
+
+const authzServerCheckExample = `// One round trip authenticates AND authorizes: forward the cookie, omit the
+// subject, and read the user's uuid from the same response.
 const res = await fetch(import.meta.env.PUBLIC_AUTH_ENDPOINT + '/v1/authz/check', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json', ...(cookie ? { cookie } : {}) },
-  body: JSON.stringify({
-    object: \`document:\${id}\`,
-    permission: 'view',
-    subject: \`user:\${userId}\`,
-  }),
+  body: JSON.stringify({ object: \`document:\${id}\`, permission: 'view' }),
 });
-const { allowed } = await res.json();`;
+if (res.status === 401) return redirectToLogin();
+const { allowed, user_id } = await res.json();`;
 
 const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
   const cookieHeader = req.headers.cookie;
@@ -627,6 +636,13 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
         Authorization panel on <a href="/domains">your domains page</a> or via the management API
         below. Ownership is recorded automatically during onboarding. In-tenant sessions get 403 on writes.
       </li>
+      <li>
+        <strong>Your app's backend writes with a service token</strong> — mint one in the Authorization
+        panel, keep it as a server secret, and send it as
+        <code>Authorization: Bearer agk_…</code> to write relationships as domain events happen: a new
+        resource's owner tuple, an invited user joining a group. Tokens are scoped to their tenant, can
+        check/read/write relationships, and cannot change the schema. Revoke them from the same panel.
+      </li>
     </ul>
 
     <h3>1. Define your schema</h3>
@@ -663,7 +679,7 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
       <li><code>GET /v1/authz/schema</code> → <code>{'{schema, version, updated_at}'}</code>; 404 before first PUT</li>
       <li><code>POST /v1/authz/relationships</code> (manage) — batch of <code>touch</code>/<code>create</code>/<code>delete</code> updates (≤100, atomic) → <code>{'{written, deleted}'}</code></li>
       <li><code>GET /v1/authz/relationships?object_type=…</code> (or <code>subject_type=…</code>) → <code>{'{relationships, cursor}'}</code></li>
-      <li><code>POST /v1/authz/check</code> → <code>{'{allowed}'}</code></li>
+      <li><code>POST /v1/authz/check</code> → <code>{'{allowed, user_id?}'}</code>; subject omitted/<code>"self"</code> = the session user (explicit with service tokens); batch via <code>{'{items: [...]}'}</code> (≤50) → <code>{'{results, user_id?}'}</code></li>
     </ul>
 
     <h3>Owner management API</h3>
@@ -680,6 +696,18 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
       sandbox — no API calls needed.
     </p>
 
+    <h3>AI-generated schemas</h3>
+
+    <p>
+      Domain owners can have a starting schema drafted automatically:
+      <code>POST /v1/authz/tenants/&lt;domain&gt;/generate-schema</code> crawls your site, infers what
+      kind of product it is, and returns <code>{'{schema, description, pages, model}'}</code> — a
+      draft schema plus a plain-language explanation of who can do what. Nothing is saved until you
+      review the draft and apply it. In the dashboard's Authorization panel this is the
+      <strong>Generate with AI</strong> button: the draft fills the editor, the explanation appears
+      above it, and Save Schema applies it.
+    </p>
+
     <h3>Management console</h3>
 
     <p>
@@ -687,6 +715,17 @@ const expressExample = `app.use('/protected', async (req, res, next) =&gt; {
       <code>http://localhost:8787/authz</code> in dev (full editor for open sandboxes),
       <code>https://authgravity.myapp.com/authz</code> in production (relationship browser and check
       tester for signed-in users; editing happens in the dashboard).
+    </p>
+
+    <h3>Per-tenant llms.txt</h3>
+
+    <p>
+      Every tenant publishes an agent-ready integration guide at <code>/llms.txt</code> on its auth
+      endpoint (e.g. <code>https://authgravity.myapp.com/llms.txt</code>,
+      or <code>http://localhost:8787/llms.txt</code> through <code>authgravity listen</code>). It
+      renders the tenant's <em>live</em> schema — every type, relation, and permission, explained —
+      together with the check/read API for that host. The dashboard's Authorization panel includes a
+      copy-paste prompt that points a coding agent at this file to wire up your app.
     </p>
 
     <h2>Architecting Your App with AuthGravity</h2>

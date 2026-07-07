@@ -17,6 +17,9 @@ export type Variables = {
     sandboxMode?: 'owned' | 'anonymous';
     /** Set by the on-behalf owner gate: full manage rights on `tenant`. */
     superuser?: boolean;
+    /** Set by service-token auth: the app backend acting for its tenant
+     *  (relationship writes + reads + checks; schema stays owner-only). */
+    service?: boolean;
 };
 
 /** Require the trusted tenant header on every request (console page included). */
@@ -34,9 +37,9 @@ export async function trustedContext(c: Context, next: Next) {
     await next();
 }
 
-/** API routes additionally require an authenticated user. */
+/** API routes require an authenticated user or a verified service token. */
 export async function requireUser(c: Context, next: Next) {
-    if (!c.get('userId')) {
+    if (!c.get('userId') && !c.get('service')) {
         return c.json({ error: 'Not authenticated' }, 401);
     }
     await next();

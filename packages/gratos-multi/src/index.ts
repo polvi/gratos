@@ -413,7 +413,7 @@ app.all('/*', async (c, next) => {
     // route of its own). Forward with the resolved tenant + user as trusted
     // headers; inbound X-Gratos-* headers are stripped so they can't be forged.
     const path = new URL(req.url).pathname;
-    if (path === '/authz' || path === '/v1/authz' || path.startsWith('/v1/authz/')) {
+    if (path === '/authz' || path === '/llms.txt' || path === '/v1/authz' || path.startsWith('/v1/authz/')) {
         const headers = new Headers(req.headers);
         for (const key of [...headers.keys()]) {
             if (key.toLowerCase().startsWith('x-gratos-')) headers.delete(key);

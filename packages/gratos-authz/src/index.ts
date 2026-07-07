@@ -1,11 +1,12 @@
 import { Hono } from 'hono';
 import { WorkerEntrypoint } from 'cloudflare:workers';
 
-import { authzRoutes, runCheck, Env } from './routes';
+import { authzRoutes, runCheck, serviceTokenAuth, Env } from './routes';
 import { requireUser, trustedContext, Variables } from './middleware';
 import { loadSchema } from './schema';
 import { grantOwnerTuples, deleteTenantData, OwnerGrant } from './tuples';
 import { consolePage } from './console';
+import { buildTenantLlmsTxt } from './llmstxt';
 
 export type { Env };
 
@@ -66,6 +67,18 @@ app.use('/*', trustedContext);
 // API call it makes is session-gated.
 app.get('/authz', (c) => c.html(consolePage()));
 
+// Per-tenant agent guide rendered from the live schema. Unauthenticated: the
+// schema is structure (like API docs); relationship data stays session-gated.
+app.get('/llms.txt', async (c) => {
+    const tenant = c.get('tenant');
+    const stored = await loadSchema(c.env.DB, tenant);
+    const mode = c.get('sandboxMode') === 'anonymous' ? 'open-sandbox' : 'managed';
+    return c.text(buildTenantLlmsTxt(tenant, stored, mode), 200, {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'no-cache',
+    });
+});
+
 // Unauthenticated endpoint index, so curling the advertised API base answers
 // instead of 404ing. No tenant data — just the route map.
 app.get('/v1/authz', (c) =>
@@ -73,6 +86,7 @@ app.get('/v1/authz', (c) =>
         service: 'gratos-authz',
         docs: 'https://authgravity.org/docs',
         console: '/authz',
+        llms_txt: '/llms.txt',
         endpoints: [
             'GET /v1/authz/status',
             'POST /v1/authz/check',
@@ -81,10 +95,13 @@ app.get('/v1/authz', (c) =>
             'GET /v1/authz/schema',
             'PUT /v1/authz/schema',
             'GET|PUT|POST /v1/authz/tenants/:tenant/(status|schema|relationships|check) — owner management, root session',
+            'POST /v1/authz/tenants/:tenant/generate-schema — AI-drafted schema from crawling the site (owner)',
+            'POST|GET|DELETE /v1/authz/tenants/:tenant/tokens[/:id] — service tokens for app-backend writes (owner)',
         ],
     })
 );
 
+app.use('/v1/authz/*', serviceTokenAuth as any);
 app.use('/v1/authz/*', requireUser);
 app.route('/', authzRoutes);
 
