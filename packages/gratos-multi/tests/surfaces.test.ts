@@ -45,4 +45,14 @@ describe('renderSurface', () => {
         expect(renderSurface('/register', null)).toContain('Create account with a passkey');
         expect(renderSurface('/recover', null)).toContain('claimOrRecover');
     });
+
+    test('the account-key setup follows the gentle write-it-down model', () => {
+        const reg = renderSurface('/register', null);
+        // three-step, pen-and-paper-first flow with a numbered grid, print, and confirm
+        for (const m of ['Step 1 of 3', 'Step 2 of 3', 'Step 3 of 3', 'I have pen and paper', 'word-grid', 'Print them instead', 'what is word number', 'print-sheet']) {
+            expect(reg).toContain(m);
+        }
+        const rec = renderSurface('/recover', null);
+        expect(rec).toContain('Type your 12 words from the paper');
+    });
 });
