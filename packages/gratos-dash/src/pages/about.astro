@@ -40,6 +40,12 @@ import Layout from "../layouts/Layout.astro";
       color: #1d4ed8;
       text-decoration: underline;
     }
+    .about code {
+      background: #f4f4f5;
+      padding: 0.15rem 0.4rem;
+      border-radius: 0.25rem;
+      font-size: 0.9em;
+    }
   </style>
 
   <div class="about">
@@ -84,14 +90,14 @@ import Layout from "../layouts/Layout.astro";
 
     <h2>Usage</h2>
     <p>
-      AuthGravity is designed for modern web development. We ship a lightweight
-      Preact component (with more coming soon) that can be easily integrated
-      into any web application, whether you're using React, Preact, or even
-      plain HTML. This component handles the entire passkey ceremony and session
-      management on your behalf. Specific instructions for how to install and
-      integrate the component into your project are available once you <a
-        href="/login">sign up</a
-      >.
+      AuthGravity is headless and framework-agnostic. Integration is a small auth
+      module — a handful of functions built on the standard <code>@simplewebauthn/browser</code>
+      library and <code>fetch</code> — that works the same whether you use React,
+      Preact, Svelte, or plain HTML. You don't hand-write it: point your coding
+      agent (we use <strong>Claude Code</strong> as our reference) at the integration
+      guide published at your endpoint's <code>/llms.txt</code>, and it scaffolds the
+      module and the two-button auth UI for you. See the <a href="/docs">docs</a> to
+      get started.
     </p>
 
     <h2>FAQ</h2>
@@ -132,12 +138,14 @@ import Layout from "../layouts/Layout.astro";
       passkeys to be first factor by default.
     </p>
 
-    <h3>Do you ship as a component?</h3>
+    <h3>How do I integrate it?</h3>
     <p>
-      Yes, we believe authentication should be as easy as dropping a component
-      into your page. We currenty ship a Preact component that is highly
-      compatible with most modern web environments, providing a "headless"
-      experience where you maintain full control over your site's look and feel.
+      AuthGravity is headless, so you keep full control over your site's look and
+      feel. Rather than a framework-specific component, integration is a tiny auth
+      module — standard WebAuthn calls plus <code>fetch</code> — that drops into any
+      stack: React, Preact, Svelte, or plain HTML. The fastest path is to hand the
+      integration guide at your endpoint's <code>/llms.txt</code> to a coding agent
+      and let it scaffold everything; the <a href="/docs">docs</a> walk through it.
     </p>
     <h3>How do you make money?</h3>
     <p>
