@@ -344,7 +344,9 @@ app.all('/*', async (c, next) => {
             return c.redirect(dest.pathname + dest.search, 302);
         }
         const returnTo = validateReturnTo(url.searchParams.get('return_to'), tenantInfo.tenant, url.hostname);
-        return c.html(renderSurface(path, returnTo));
+        // Never cache auth surfaces: they're per-request (return_to) and must
+        // always reflect the deployed version.
+        return c.html(renderSurface(path, returnTo), 200, { 'Cache-Control': 'no-store' });
     }
 
     // Authz routes are served by the gratos-authz worker (which has no public
