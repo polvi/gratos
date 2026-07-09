@@ -21,6 +21,9 @@ export type { EnableDeviceKeyResult } from './device-key';
 export { suggestedMethod, supportsPasskeys } from './capabilities';
 export type { AuthMethod } from './capabilities';
 
+export { createAccountKeySetup } from './setup';
+export type { AccountKeySetup, SetupState, SetupContext, SetupOptions } from './setup';
+
 export { runCeremony } from './ceremony';
 export type { CeremonyResult, Signer } from './ceremony';
 
