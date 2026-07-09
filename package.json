@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "deploy": "bun run scripts/deploy.ts",
+    "release": "bun run scripts/release.ts",
     "build-dash": "bun --cwd packages/gratos-dash build",
     "dev-dash": "bun --cwd packages/gratos-dash dev",
     "dev-provisioner": "bun --cwd packages/provisioner dev",
