@@ -172,7 +172,7 @@ const LOGIN = `
   } catch (e) { setStatus(''); renderLogin('passkey'); }
 `;
 
-// --- /register (passkey primary, gentle 12-word recovery setup) ---
+// --- /register (create with a passkey OR 12 words; gentle write-it-down flow) ---
 const REGISTER = `
   const enableDeviceThenGo = async () => {
     setStatus('Setting up this device\\u2026');
@@ -182,17 +182,21 @@ const REGISTER = `
 
   let key = null;
   let confirmIndex = 0;
+  let mode = 'create';       // 'create' = the 12 words ARE the account; 'recovery' = added after a passkey
+  let leadMethod = 'passkey';
+  const startWords = (m) => { mode = m; introRecovery(); };
 
   const introRecovery = () => {
+    const isCreate = mode === 'create';
     root.innerHTML =
       '<p class="step">Step 1 of 3</p>'
-      + '<h2>Your recovery key is 12 words</h2>'
+      + '<h2>' + (isCreate ? 'Your account is 12 secret words' : 'Your recovery key is 12 words') + '</h2>'
       + '<p>On the next screen we will show you 12 words. Write them down on paper and keep that paper somewhere safe \\u2014 like with your important documents.</p>'
       + '<p>The words sign you in, so do not share them. If the paper is lost, no one can look the words up for you.</p>'
       + '<button id="show" class="primary">I have pen and paper \\u2014 show me the words</button>'
-      + '<button id="back" class="alt">Skip for now</button>';
+      + '<button id="back" class="alt">' + (isCreate ? 'Go back' : 'Skip for now') + '</button>';
     document.getElementById('show').onclick = showWords;
-    document.getElementById('back').onclick = enableDeviceThenGo;
+    document.getElementById('back').onclick = isCreate ? (() => renderStart(leadMethod)) : enableDeviceThenGo;
   };
 
   const showWords = () => {
@@ -216,7 +220,7 @@ const REGISTER = `
       + '<h2>One quick check</h2>'
       + '<p>Look at your paper: what is word number ' + (confirmIndex + 1) + '?</p>'
       + '<input id="cw" autocomplete="off" autocapitalize="none" spellcheck="false" />'
-      + '<button id="save" class="primary">Save my recovery key</button>'
+      + '<button id="save" class="primary">' + (mode === 'create' ? 'Create my account' : 'Save my recovery key') + '</button>'
       + '<button id="again" class="alt">Let me see the words again</button>';
     const input = document.getElementById('cw');
     input.onkeydown = (e) => { if (e.key === 'Enter') saveRecovery(); };
@@ -232,7 +236,7 @@ const REGISTER = `
       return;
     }
     setStatus('Making your key\\u2026');
-    const res = await registerAccountKey(API, key, 'recovery key');
+    const res = await registerAccountKey(API, key, mode === 'create' ? 'account key' : 'recovery key');
     if (!res.verified) { setStatus(res.error || 'Something went wrong \\u2014 try once more.', 'error'); return; }
     enableDeviceThenGo();
   };
@@ -243,7 +247,7 @@ const REGISTER = `
       + '<p>Make a recovery key in case you lose this device or want to sign in somewhere else? It takes about a minute.</p>'
       + '<button id="mk" class="primary">Set up my recovery key</button>'
       + '<button id="skip">Skip for now</button>';
-    document.getElementById('mk').onclick = introRecovery;
+    document.getElementById('mk').onclick = () => startWords('recovery');
     document.getElementById('skip').onclick = enableDeviceThenGo;
   };
 
@@ -251,8 +255,6 @@ const REGISTER = `
     try {
       setStatus('Creating your passkey\\u2026');
       const opts = await (await fetch(API + '/v1/register/options', { credentials: 'include' })).json();
-      const label = (document.getElementById('label').value || '').trim();
-      if (label) { opts.user.name = label; opts.user.displayName = label; }
       const cred = await startRegistration({ optionsJSON: opts });
       const res = await fetch(API + '/v1/register/verify', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cred) });
       const data = await res.json().catch(() => ({}));
@@ -261,20 +263,22 @@ const REGISTER = `
     } catch (e) { setStatus('The passkey prompt was cancelled or failed \\u2014 give it another try.', 'error'); }
   };
 
-  const renderStart = () => {
-    root.innerHTML =
-      '<input id="label" placeholder="Name this passkey (optional)" />'
-      + '<button id="create" class="primary">Create account with a passkey</button>'
-      + '<button id="have">I already have 12 words</button>';
-    document.getElementById('create').onclick = createPasskey;
-    document.getElementById('have').onclick = () => { location.href = PREFIX + '/recover' + rt; };
+  const renderStart = (method) => {
+    leadMethod = method;
+    const pk = '<button id="pk"' + (method === 'account-key' ? '' : ' class="primary"') + '>Create account with a passkey</button>';
+    const words = '<button id="words"' + (method === 'account-key' ? ' class="primary"' : '') + '>Create account with 12 words</button>';
+    root.innerHTML = (method === 'account-key' ? (words + pk) : (pk + words))
+      + '<button id="have" class="alt">Already have an account? Sign in</button>';
+    document.getElementById('pk').onclick = createPasskey;
+    document.getElementById('words').onclick = () => startWords('create');
+    document.getElementById('have').onclick = () => { location.href = PREFIX + '/login' + rt; };
   };
 
-  // Old machines with no passkey support: send them straight to the 12-words flow.
-  let method = 'passkey';
-  try { method = await suggestedMethod(); } catch (e) {}
-  if (method === 'account-key') { location.href = PREFIX + '/recover' + rt; }
-  else { renderStart(); }
+  // Lead with what this device can do: no platform authenticator → 12-words first,
+  // but both "create with a passkey" and "create with 12 words" are always offered.
+  let m0 = 'passkey';
+  try { m0 = await suggestedMethod(); } catch (e) {}
+  renderStart(m0);
 `;
 
 // --- /recover (sign in / set up with 12 words) ---

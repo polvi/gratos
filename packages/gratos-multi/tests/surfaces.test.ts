@@ -52,6 +52,9 @@ describe('renderSurface', () => {
         for (const m of ['Step 1 of 3', 'Step 2 of 3', 'Step 3 of 3', 'I have pen and paper', 'word-grid', 'Print them instead', 'what is word number', 'print-sheet']) {
             expect(reg).toContain(m);
         }
+        // account creation is offered with a passkey AND with 12 words (no-passkey path)
+        expect(reg).toContain('Create account with a passkey');
+        expect(reg).toContain('Create account with 12 words');
         const rec = renderSurface('/recover', null);
         expect(rec).toContain('Type your 12 words from the paper');
     });
