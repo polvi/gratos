@@ -1,18 +1,6 @@
 import { h } from 'preact';
 import { useState } from 'preact/hooks';
-
-function getPromptText(domain: string) {
-    return `Add passkey authentication to this app using AuthGravity. My auth endpoint is https://authgravity.${domain}.
-
-Read the full AuthGravity documentation at https://authgravity.org/llms.txt before implementing.
-
-Key points:
-- Auth endpoint: https://authgravity.${domain}
-- Use @simplewebauthn/browser for WebAuthn ceremonies
-- Include credentials: 'include' on all fetch calls to the auth endpoint
-- Session validation: forward cookies to /v1/whoami endpoint
-- Users are identified by UUID — store profile data in your own database keyed by that UUID`;
-}
+import { agentPromptFor } from './agentPrompt';
 
 function CopyIcon({ copied }: { copied: boolean }) {
     if (copied) {
@@ -30,9 +18,11 @@ function CopyIcon({ copied }: { copied: boolean }) {
     );
 }
 
-export function InstallationPrompt({ domain }: { domain: string }) {
+// `tenant` is a domain ("myapp.com") or a sandbox key ("<host>/<id>");
+// agentPromptFor derives the right endpoint for either.
+export function InstallationPrompt({ tenant }: { tenant: string }) {
     const [copied, setCopied] = useState(false);
-    const prompt = getPromptText(domain);
+    const { prompt } = agentPromptFor(tenant);
 
     const handleCopy = () => {
         navigator.clipboard.writeText(prompt).then(() => {

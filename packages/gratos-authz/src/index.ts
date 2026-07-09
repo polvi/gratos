@@ -6,7 +6,7 @@ import { requireUser, trustedContext, Variables } from './middleware';
 import { loadSchema } from './schema';
 import { grantOwnerTuples, deleteTenantData, OwnerGrant } from './tuples';
 import { consolePage } from './console';
-import { buildTenantLlmsTxt } from './llmstxt';
+import { buildLlmsTxt, LlmsKind } from './llmstxt';
 
 export type { Env };
 
@@ -73,7 +73,15 @@ app.get('/llms.txt', async (c) => {
     const tenant = c.get('tenant');
     const stored = await loadSchema(c.env.DB, tenant);
     const mode = c.get('sandboxMode') === 'anonymous' ? 'open-sandbox' : 'managed';
-    return c.text(buildTenantLlmsTxt(tenant, stored, mode), 200, {
+
+    // Kind + endpoint drive the doc's framing and its pre-filled auth endpoint.
+    // Sandbox tenants are keyed "<host>/<id>"; the control-plane space is root.
+    const kind: LlmsKind =
+        tenant === c.env.ROOT_TENANT ? 'root' : tenant.includes('/') ? 'sandbox' : 'domain';
+    const endpoint =
+        kind === 'root' ? null : kind === 'sandbox' ? `https://${tenant}` : `https://authgravity.${tenant}`;
+
+    return c.text(buildLlmsTxt({ tenant, kind, endpoint, mode, stored }), 200, {
         'Content-Type': 'text/plain; charset=utf-8',
         'Cache-Control': 'no-cache',
     });

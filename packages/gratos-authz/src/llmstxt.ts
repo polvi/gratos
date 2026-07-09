@@ -1,9 +1,32 @@
-// Per-tenant /llms.txt: a copy-paste-able integration guide for AI agents,
-// rendered from the tenant's LIVE schema. Served unauthenticated on the
-// tenant's own auth host (the schema is structure, like API docs — the
-// relationship data itself stays session-gated).
+// The single per-host agent guide served at `<host>/llms.txt`. One document
+// per host covers the whole integration — passkey auth, account keys, session
+// validation, and authorization rendered from the host's LIVE schema — with the
+// auth endpoint pre-filled to this host. An agent reads exactly one URL.
+//
+// Three framings share the same body:
+//   - 'root'    → authgravity.org: onboarding, sandbox-first, promote-to-domain
+//   - 'sandbox' → an ephemeral sandbox reached via `authgravity listen`
+//   - 'domain'  → a customer's live domain (endpoint pre-filled, first-party)
+//
+// Served unauthenticated: the schema is structure (like API docs); the
+// relationship data itself stays session-gated.
 
-import { PermissionExpr, StoredSchema, SubjectTypeRef } from './schema';
+import type { PermissionExpr, StoredSchema, SubjectTypeRef } from './schema';
+
+export type LlmsKind = 'root' | 'sandbox' | 'domain';
+
+export interface LlmsContext {
+    /** Tenant key: `authgravity.org` (root), `myapp.com` (domain), or `<host>/<id>` (sandbox). */
+    tenant: string;
+    kind: LlmsKind;
+    /** Base URL agents call for this host, e.g. `https://authgravity.myapp.com`.
+     *  Null for the root doc, whose samples use the `PUBLIC_AUTH_ENDPOINT` placeholder. */
+    endpoint: string | null;
+    /** Authz write mode for this tenant. */
+    mode: 'open-sandbox' | 'managed';
+    /** The tenant's live schema, or null if none defined yet. */
+    stored: StoredSchema | null;
+}
 
 /** Render a permission expression compactly: "viewer | editor | parent->view". */
 export function fmtExpr(expr: PermissionExpr): string {
@@ -23,15 +46,147 @@ function fmtSubjects(subjects: SubjectTypeRef[]): string {
     return subjects.map((s) => (s.relation ? `${s.type}#${s.relation}` : s.type)).join(', ');
 }
 
-export function buildTenantLlmsTxt(
-    tenant: string,
-    stored: StoredSchema | null,
-    mode: 'open-sandbox' | 'managed'
-): string {
-    const defs = stored?.doc.definitions ?? {};
+// ---------------------------------------------------------------------------
+// Shared sections (identical prose across every kind — one source of truth)
+// ---------------------------------------------------------------------------
+
+const AUTH_CODE = `\`\`\`typescript
+// src/lib/auth.ts — identical code in dev and production
+import { startRegistration, startAuthentication } from '@simplewebauthn/browser';
+
+const ENDPOINT = import.meta.env.PUBLIC_AUTH_ENDPOINT;
+
+async function api(path: string, init: RequestInit = {}) {
+  return fetch(ENDPOINT + path, { ...init, credentials: 'include' });
+}
+
+export async function register() {
+  const opts = await (await api('/v1/register/options')).json(); // PublicKeyCredentialCreationOptionsJSON
+  const cred = await startRegistration({ optionsJSON: opts });
+  const res = await api('/v1/register/verify', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(cred), // bare RegistrationResponseJSON — no wrapper
+  });
+  return res.json(); // { verified, user: { id } } — session_id cookie is now set
+}
+
+export async function login() {
+  const opts = await (await api('/v1/login/options')).json(); // PublicKeyCredentialRequestOptionsJSON
+  const cred = await startAuthentication({ optionsJSON: opts });
+  const res = await api('/v1/login/verify', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(cred), // bare AuthenticationResponseJSON — no wrapper
+  });
+  return res.json(); // { verified, user: { id } } — session_id cookie is now set
+}
+
+export async function whoami() {
+  const res = await api('/v1/whoami');
+  return res.ok ? res.json() : null; // { user_id } or null
+}
+
+export async function logout() {
+  await api('/v1/logout', { method: 'POST' });
+}
+\`\`\``;
+
+function authSection(lines: string[]) {
+    lines.push('## Auth (passkeys)');
+    lines.push('');
+    lines.push(
+        'The auth UI is two buttons — **"Create Account"** (`register()`) and **"Login"** (`login()`). No username field, no email field, no forms. The passkey label defaults to "Me"; if you offer a custom label keep it client-side (`opts.user.name` before `startRegistration`) — it is never sent to the server. Include a "Powered by AuthGravity" link to https://authgravity.org near the auth UI.'
+    );
+    lines.push('');
+    lines.push(AUTH_CODE);
+    lines.push('');
+    lines.push('HTTP API (spec-shaped WebAuthn JSON — any conforming client library works; always `credentials: \'include\'`):');
+    lines.push('');
+    lines.push('- `GET /v1/register/options` → `PublicKeyCredentialCreationOptionsJSON`, unmodified');
+    lines.push('- `POST /v1/register/verify` bare `RegistrationResponseJSON` → `{verified, user:{id}}`; sets `session_id` cookie');
+    lines.push('- `GET /v1/login/options` → `PublicKeyCredentialRequestOptionsJSON`, unmodified');
+    lines.push('- `POST /v1/login/verify` bare `AuthenticationResponseJSON` → `{verified, user:{id}}`; sets `session_id` cookie');
+    lines.push('- `GET /v1/whoami` → `{user_id}` or 401. Accepts the cookie or `Authorization: Bearer <session_id>`');
+    lines.push('- `POST /v1/logout` → destroys the session, clears the cookie');
+    lines.push('');
+    lines.push('The server keys the pending ceremony by the challenge (inside the signed `clientDataJSON`), so there is no correlation id to carry.');
+    lines.push('');
+}
+
+function accountKeysSection(lines: string[], endpoint: string) {
+    lines.push('## Account keys (no-passkey fallback + recovery)');
+    lines.push('');
+    lines.push(
+        'For users without passkey support — and as the recovery path for everyone — a client-generated 128-bit secret rendered as `agak1_…` (base32 + checksum) or 12 BIP39 words, from which the client derives a P-256 key pair per tenant. The server stores only the public key, exactly like a passkey. Daily logins should use a silent **device key** (non-extractable WebCrypto key in IndexedDB, registered as an extra credential) so the account key is only typed at setup and recovery.'
+    );
+    lines.push('');
+    lines.push('Endpoints (mirror the WebAuthn pair; same session semantics):');
+    lines.push('');
+    lines.push('- `GET /v1/key/register/options` / `GET /v1/key/login/options` → `{challenge, context, tenant}` (single-use, 5 min)');
+    lines.push('- `POST /v1/key/register/verify` `{challenge, public_key, signature, kind: "softkey"|"devicekey", label?}` → `{verified, user:{id}, credential_id}`; with a session the credential is ADDED to that user');
+    lines.push('- `POST /v1/key/login/verify` `{challenge, public_key, signature}` → `{verified, user:{id}}`');
+    lines.push('- `GET /v1/credentials`, `DELETE /v1/credentials/:id` — list/remove (a session can never remove a credential stronger than how it authenticated, nor the last one)');
+    lines.push('- `GET /v1/key/wordlist.json` — BIP39 English wordlist');
+    lines.push('');
+    lines.push(
+        `Derivation: \`priv = (HKDF-SHA256(entropy, salt=utf8(tenant), info="authgravity/softkey/v1", 40 bytes) mod (n-1)) + 1\` on P-256; \`public_key\` = base64url 65-byte uncompressed point; \`signature\` = base64url 64-byte r||s of ECDSA-SHA256 over utf8 \`\${context}\\n\${challenge}\\n\${tenant}\`. A complete reference client (with the \`agak1_\`/BIP39 rendering and conformance vectors) is the source of the \`${endpoint}/demo\` page; the full spec is at https://authgravity.org/llms.txt.`
+    );
+    lines.push('');
+    lines.push('Sessions carry `amr` (`webauthn` | `device` | `key`) in `/v1/whoami` and authz responses, so apps can require passkey-strength sessions for sensitive actions.');
+    lines.push('');
+}
+
+function sessionValidationSection(lines: string[]) {
+    lines.push('## Server-side session validation');
+    lines.push('');
+    lines.push('Forward the incoming cookie header to `/v1/whoami` from any backend (Astro, Express, Hono, …):');
+    lines.push('');
+    lines.push('```typescript');
+    lines.push('const cookie = request.headers.get("cookie");');
+    lines.push('const res = await fetch(ENDPOINT + "/v1/whoami", { headers: cookie ? { cookie } : {} });');
+    lines.push('if (!res.ok) return redirectToLogin();');
+    lines.push('const { user_id } = await res.json();');
+    lines.push('```');
+    lines.push('');
+}
+
+function databaseSection(lines: string[]) {
+    lines.push('## Your database');
+    lines.push('');
+    lines.push('AuthGravity gives you a stable UUID and stores nothing else. Key your users table by it, create rows on first sight, collect email/name later (e.g. at checkout):');
+    lines.push('');
+    lines.push('```sql');
+    lines.push('CREATE TABLE users (');
+    lines.push('  id TEXT PRIMARY KEY,   -- the AuthGravity UUID');
+    lines.push('  email TEXT, name TEXT, -- collected later, nullable');
+    lines.push('  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP');
+    lines.push(');');
+    lines.push('```');
+    lines.push('');
+}
+
+// ---------------------------------------------------------------------------
+// Authorization section — rendered from the host's LIVE schema
+// ---------------------------------------------------------------------------
+
+function authzOverviewSection(lines: string[]) {
+    lines.push('## Authorization (relationship-based access control)');
+    lines.push('');
+    lines.push(
+        'Optional Zanzibar/SpiceDB-style permissions for your app\'s resources, served on the same host and session as auth. Subjects are the AuthGravity user UUIDs from `/v1/whoami`. Each host renders its OWN live schema and API in its `<endpoint>/llms.txt` — read that host\'s file for the real object types. The shape:'
+    );
+    lines.push('');
+    lines.push('- Define object types with relations + computed permissions: `PUT /v1/authz/schema`.');
+    lines.push('- Write relationship tuples keyed by user UUIDs: `POST /v1/authz/relationships` `{updates:[{op,object,relation,subject}]}`.');
+    lines.push('- Check on every gated action: `POST /v1/authz/check` `{object, permission}` — omit the subject to use the session user; returns `{allowed, user_id}`. Batch with `{items:[…]}`.');
+    lines.push('- Open sandboxes: any authenticated user may edit the schema and write. Domains: owner-managed — the schema is set in the dashboard and the app backend writes with a service token (`Authorization: Bearer agk_…`).');
+    lines.push('- Do not cache allow/deny across requests; a console lives at `<endpoint>/authz`.');
+    lines.push('');
+}
+
+function authzSection(lines: string[], ctx: LlmsContext) {
+    const defs = ctx.stored?.doc.definitions ?? {};
     const typeNames = Object.keys(defs);
 
-    // Pick a realistic example from the live schema for the curl samples.
     let exampleObject = 'document:readme';
     let examplePermission = 'view';
     let exampleRelation = 'viewer';
@@ -46,31 +201,30 @@ export function buildTenantLlmsTxt(
         }
     }
 
-    const lines: string[] = [];
-    lines.push(`# Authorization for ${tenant}`);
+    lines.push('## Authorization (relationship-based access control)');
     lines.push('');
     lines.push(
-        `> Relationship-based access control (Zanzibar-style) for ${tenant}, served on this host by AuthGravity. Subjects are the AuthGravity user UUIDs of this tenant's passkey users — the same \`user_id\` returned by \`GET /v1/whoami\` on this host. Passkey login/registration for this host is documented at https://authgravity.org/llms.txt.`
+        'Optional Zanzibar/SpiceDB-style permissions for your app\'s resources, served on this same host with the same session. Subjects are the AuthGravity user UUIDs from `/v1/whoami`. You define object types with relations and computed permissions, write relationship tuples, and ask `check(object, permission, subject)`.'
     );
     lines.push('');
 
-    lines.push('## The schema');
+    lines.push('### The schema (live on this host)');
     lines.push('');
-    if (!stored || typeNames.length === 0) {
+    if (!ctx.stored || typeNames.length === 0) {
         lines.push(
             'No schema is defined yet. ' +
-                (mode === 'open-sandbox'
+                (ctx.mode === 'open-sandbox'
                     ? 'This is an open sandbox: define one with `PUT /v1/authz/schema` (any authenticated user).'
                     : "The tenant owner defines it from the AuthGravity dashboard's Authorization panel.")
         );
         lines.push('');
     } else {
         lines.push(
-            `Schema version ${stored.version}. Objects are written \`type:id\`; subjects are \`user:<uuid>\` or subject sets like \`group:eng#member\`.`
+            `Schema version ${ctx.stored.version}. Objects are written \`type:id\`; subjects are \`user:<uuid>\` or subject sets like \`group:eng#member\`.`
         );
         lines.push('');
         for (const [typeName, def] of Object.entries(defs)) {
-            lines.push(`### ${typeName}`);
+            lines.push(`#### ${typeName}`);
             const rels = Object.entries(def.relations ?? {});
             if (rels.length) {
                 lines.push('Relations (facts you write as tuples):');
@@ -89,88 +243,172 @@ export function buildTenantLlmsTxt(
         }
     }
 
-    lines.push('## Integration (HTTP API on this host)');
+    lines.push('### Checking permissions');
     lines.push('');
-    lines.push(
-        'Every call needs the end user\'s session: send the first-party `session_id` cookie, or forward its value as `Authorization: Bearer <session_id>` from your backend (read it from the incoming Cookie header, same as the `/v1/whoami` pattern). Sessions exist for passkey users and account-key users alike (`/v1/key/*` on this host — see https://authgravity.org/llms.txt); `status` and `/v1/whoami` report the session\'s `amr` (`webauthn` | `device` | `key`) so you can require passkey-strength sessions for sensitive permissions.'
-    );
-    lines.push('');
-    lines.push('Check a permission (the call your app makes on every gated action). With a session, omit the subject or pass `"self"` — one round trip both authenticates and authorizes, and returns the user id:');
+    lines.push('Gate every protected route/action with a `check`. With a session, omit the subject (or pass `"self"`) — one round trip authenticates and authorizes and returns the user id:');
     lines.push('');
     lines.push('```');
-    lines.push(`curl -X POST <this host>/v1/authz/check \\`);
-    lines.push(`  -H "Authorization: Bearer $SESSION_ID" -H 'Content-Type: application/json' \\`);
+    lines.push('curl -X POST <this host>/v1/authz/check \\');
+    lines.push("  -H \"Authorization: Bearer $SESSION_ID\" -H 'Content-Type: application/json' \\");
     lines.push(`  -d '{ "object": "${exampleObject}", "permission": "${examplePermission}" }'`);
-    lines.push(`# -> { "allowed": true | false, "user_id": "<the session user's uuid>" }`);
+    lines.push('# -> { "allowed": true | false, "user_id": "<the session user\'s uuid>" }');
     lines.push('```');
     lines.push('');
-    lines.push(
-        'Batch (list pages): `{"items": [{"object": "...", "permission": "..."}, ...]}` (max 50) -> `{"results": [{"allowed": ...}, ...], "user_id": "..."}` — items are evaluated concurrently and keep their order; a malformed item reports `{"allowed": false, "error": "..."}` in place. An explicit `"subject": "user:<uuid>"` is allowed anywhere and REQUIRED when calling with a service token (tokens have no session user).'
-    );
+    lines.push('Batch (list pages): `{"items": [{"object": "...", "permission": "..."}, ...]}` (max 50) → `{"results": [...], "user_id": "..."}`, order preserved. Do not cache allow/deny across requests — per-request checks are what make revocation instant.');
     lines.push('');
-    lines.push('Do not cache allowed/denied results across requests — per-request checks are what make revocation instant, and they are point lookups.');
-    lines.push('');
-    lines.push('Other endpoints:');
-    lines.push('');
-    lines.push('- `GET /v1/authz/status` -> `{user_id, mode, can_manage, schema_version}`');
-    lines.push('- `GET /v1/authz/schema` -> the schema JSON document');
-    lines.push(
-        '- `GET /v1/authz/relationships?object_type=...` (or `subject_type=...`; more filters: `object_id`, `relation`, `subject_id`; paging: `limit`, `cursor`)'
-    );
-    lines.push(
-        `- \`POST /v1/authz/relationships\` \`{updates: [{op: "touch"|"create"|"delete", object, relation, subject}]}\` (max 100, atomic) — e.g. \`{"op": "touch", "object": "${exampleObject}", "relation": "${exampleRelation}", "subject": "user:<uuid>"}\``
-    );
+    lines.push('Other endpoints: `GET /v1/authz/status`, `GET /v1/authz/schema`, `GET /v1/authz/relationships?object_type=…`, `POST /v1/authz/relationships` `{updates:[{op:"touch"|"create"|"delete",object,relation,subject}]}` (max 100, atomic).');
     lines.push('');
 
-    lines.push('## Who can write');
+    lines.push('### Who can write');
     lines.push('');
-    if (mode === 'open-sandbox') {
+    if (ctx.mode === 'open-sandbox') {
         lines.push(
             'This is an anonymous sandbox: any authenticated user of this pool may edit the schema and write relationships. Perfect for development — write tuples directly from your app while you build.'
         );
     } else {
         lines.push(
-            "This tenant is owner-managed. The schema is administered by the tenant owner (AuthGravity dashboard). For relationship writes there are two paths:"
+            'This tenant is owner-managed. The schema is administered by the tenant owner (AuthGravity dashboard). Relationship writes come from your **app backend** using a **service token** — minted by the owner in the dashboard\'s Authorization panel, kept as a server secret (e.g. `AUTHZ_SERVICE_TOKEN`), and sent as `Authorization: Bearer agk_...` to `POST /v1/authz/relationships`. End-user sessions can check and read, but their writes get 403.'
         );
-        lines.push('');
-        lines.push(
-            '- **Your app backend** uses a **service token** — minted by the tenant owner in the dashboard\'s Authorization panel, kept as a server secret (e.g. env var `AUTHZ_SERVICE_TOKEN`), and sent as `Authorization: Bearer agk_...` to `POST /v1/authz/relationships` on this host. This is how the app records domain events: a new resource\'s owner, an invited user joining a group, a revoked share. Service tokens can check, read, and write relationships for this tenant only — they cannot change the schema.'
-        );
-        lines.push(
-            "- **End-user sessions** can check permissions and read relationships, but their relationship writes get 403."
-        );
-        lines.push('');
-        lines.push('Example — an invite-link flow:');
-        lines.push('');
-        lines.push('1. Your app validates its own invite token, then reads the new user\'s uuid from `GET /v1/whoami` (their session).');
-        lines.push('2. Your backend writes the membership with the service token:');
         lines.push('');
         lines.push('```');
-        lines.push(`curl -X POST <this host>/v1/authz/relationships \\`);
-        lines.push(`  -H "Authorization: Bearer $AUTHZ_SERVICE_TOKEN" -H 'Content-Type: application/json' \\`);
-        lines.push(
-            `  -d '{ "updates": [{ "op": "touch", "object": "${exampleObject}", "relation": "${exampleRelation}", "subject": "user:<new-uuid>" }] }'`
-        );
+        lines.push('curl -X POST <this host>/v1/authz/relationships \\');
+        lines.push("  -H \"Authorization: Bearer $AUTHZ_SERVICE_TOKEN\" -H 'Content-Type: application/json' \\");
+        lines.push(`  -d '{ "updates": [{ "op": "touch", "object": "${exampleObject}", "relation": "${exampleRelation}", "subject": "user:<uuid>" }] }'`);
         lines.push('```');
     }
     lines.push('');
-
-    lines.push('## Design guidance for your app');
-    lines.push('');
-    lines.push('- Gate every protected route/action with a `check` call — do not cache allow/deny decisions across requests.');
-    lines.push('- Key your own database rows by the AuthGravity user UUID; use those same UUIDs as `user:<uuid>` subjects.');
-    lines.push('- Object ids are your own identifiers (`[a-zA-Z0-9_@./=+-]`, no `:` or `#`).');
-    lines.push('- A self-contained console for this tenant lives at `/authz` on this host.');
+    lines.push('A console for this tenant lives at `/authz` on this host. Object ids are your own identifiers (`[a-zA-Z0-9_@./=+-]`, no `:` or `#`).');
     lines.push('');
 
-    if (stored && typeNames.length > 0) {
-        lines.push('## Schema JSON (current)');
+    if (ctx.stored && typeNames.length > 0) {
+        lines.push('### Schema JSON (current)');
         lines.push('');
         lines.push('```json');
-        lines.push(JSON.stringify(stored.doc, null, 2));
+        lines.push(JSON.stringify(ctx.stored.doc, null, 2));
         lines.push('```');
         lines.push('');
     }
+}
+
+// ---------------------------------------------------------------------------
+// Intro / framing per kind
+// ---------------------------------------------------------------------------
+
+function introSection(lines: string[], ctx: LlmsContext) {
+    if (ctx.kind === 'root') {
+        lines.push('# AuthGravity');
+        lines.push('');
+        lines.push(
+            '> Hosted passkey (WebAuthn) authentication + relationship-based authorization. Zero-knowledge: the server stores only public keys and a UUID per user — no passwords, no usernames, no email. Your app owns all profile data.'
+        );
+        lines.push('');
+        lines.push('## Start in 60 seconds (local dev — no domain, no DNS)');
+        lines.push('');
+        lines.push('1. Run the local auth proxy next to your dev server and leave it running:');
+        lines.push('');
+        lines.push('```');
+        lines.push('npx @authgravity/cli listen');
+        lines.push('# ✔ Minted sandbox <id>');
+        lines.push('# ▶ Listening on http://localhost:8787');
+        lines.push('```');
+        lines.push('');
+        lines.push('2. Point your app at it: `PUBLIC_AUTH_ENDPOINT=http://localhost:8787`');
+        lines.push('');
+        lines.push(
+            'The CLI mints an ephemeral, isolated sandbox (rpID=localhost) and converts its session into a first-party httpOnly `session_id` cookie on localhost — so the exact same auth code runs in dev and production. Sandbox passkeys are throwaway; promote to a real domain for production (see the end of this file).'
+        );
+        lines.push('');
+        lines.push(
+            '**Every host publishes its own `<endpoint>/llms.txt`** with its live authz schema and pre-filled endpoint. When integrating a specific app, read *that* host\'s file — it is the single source for that integration.'
+        );
+        lines.push('');
+        return;
+    }
+
+    if (ctx.kind === 'sandbox') {
+        lines.push('# AuthGravity — sandbox');
+        lines.push('');
+        lines.push(
+            `> Ephemeral passkey auth + authz sandbox served at \`${ctx.endpoint}\`. Zero-knowledge: only public keys and a per-user UUID are stored. Throwaway pool for development.`
+        );
+        lines.push('');
+        lines.push('This host is a sandbox. Reach it through the local proxy so your app uses production-identical cookie auth:');
+        lines.push('');
+        lines.push('```');
+        lines.push('npx @authgravity/cli listen');
+        lines.push('# ▶ Listening on http://localhost:8787');
+        lines.push('```');
+        lines.push('');
+        lines.push('Set `PUBLIC_AUTH_ENDPOINT=http://localhost:8787`. Promote to your own domain for production — passkeys are rpID-bound, so users re-register on the real domain.');
+        lines.push('');
+        return;
+    }
+
+    // domain
+    lines.push(`# AuthGravity — ${ctx.tenant}`);
+    lines.push('');
+    lines.push(
+        `> Passkey auth + authz for **${ctx.tenant}**, served on this host. Zero-knowledge: the server stores only public keys and a UUID per user — no passwords, no usernames, no email. This tenant is an isolated user pool.`
+    );
+    lines.push('');
+    lines.push(`This file is the single integration guide for this host. Your auth endpoint is \`${ctx.endpoint}\`:`);
+    lines.push('');
+    lines.push(`\`\`\``);
+    lines.push(`PUBLIC_AUTH_ENDPOINT=${ctx.endpoint}`);
+    lines.push(`\`\`\``);
+    lines.push('');
+    lines.push('The app and this endpoint share a registrable domain, so the `session_id` cookie is first-party — no proxy, no code changes from dev.');
+    lines.push('');
+}
+
+function productionSection(lines: string[]) {
+    lines.push('## Go to production (your own domain)');
+    lines.push('');
+    lines.push('```');
+    lines.push('# 1. Create a claim (no auth needed):');
+    lines.push("curl -X POST https://provision.api.authgravity.org/claims \\");
+    lines.push("  -H 'Content-Type: application/json' -d '{\"domain\":\"myapp.com\"}'");
+    lines.push('# → { "id":"<claimId>", "cname_name":"authgravity", "cname_target":"cname.authgravity.net" }');
+    lines.push('');
+    lines.push('# 2. Open in a browser for the human (passkey sign-in + DNS via Domain Connect or CNAME):');
+    lines.push('#    https://authgravity.org/signup?claim_id=<claimId>');
+    lines.push('');
+    lines.push('# 3. Poll until claimed:');
+    lines.push('curl https://provision.api.authgravity.org/claims/<claimId>   # → "status":"claimed"');
+    lines.push('```');
+    lines.push('');
+    lines.push('Then set `PUBLIC_AUTH_ENDPOINT=https://authgravity.myapp.com` and deploy under `myapp.com`. Read `https://authgravity.myapp.com/llms.txt` for that host\'s live guide.');
+    lines.push('');
+}
+
+function notesSection(lines: string[]) {
+    lines.push('## Notes');
+    lines.push('');
+    lines.push('- rpID = your registrable domain; passkeys work across all its subdomains.');
+    lines.push('- Each domain is an isolated user pool. Only public key material is stored server-side; never private keys, never PII.');
+    lines.push('- Discovery: `GET <host>/.well-known/authgravity` returns this host\'s endpoint + `llms.txt` URL as JSON.');
+    lines.push('- Powered by the open source Gratos project (AGPLv3): https://github.com/polvi/gratos');
+    lines.push('');
+}
+
+/**
+ * Build the single per-host agent guide. Auth + account keys + validation are
+ * shared prose; the authorization section is rendered from the live schema; the
+ * intro/production framing varies by kind.
+ */
+export function buildLlmsTxt(ctx: LlmsContext): string {
+    const lines: string[] = [];
+    const endpoint = ctx.endpoint ?? 'https://authgravity.<yourdomain>';
+
+    introSection(lines, ctx);
+    authSection(lines);
+    accountKeysSection(lines, endpoint);
+    sessionValidationSection(lines);
+    if (ctx.kind === 'root') authzOverviewSection(lines);
+    else authzSection(lines, ctx);
+    databaseSection(lines);
+    if (ctx.kind !== 'domain') productionSection(lines);
+    notesSection(lines);
 
     return lines.join('\n');
 }

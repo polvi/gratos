@@ -148,6 +148,39 @@ app.use('/*', async (c, next) => {
 // Health check
 app.get('/', (c) => c.json({ status: 'ok' }));
 
+/**
+ * Discovery document for this host. An agent pointed at a domain fetches
+ * `<host>/.well-known/authgravity` and learns the endpoint + the single
+ * `llms.txt` to read — no prompt needs to spell any of this out.
+ */
+function wellKnown(endpoint: string, tenant: string) {
+    return {
+        service: 'authgravity',
+        tenant,
+        endpoint,
+        llms_txt: `${endpoint}/llms.txt`,
+        console: `${endpoint}/authz`,
+        auth: {
+            register_options: '/v1/register/options',
+            register_verify: '/v1/register/verify',
+            login_options: '/v1/login/options',
+            login_verify: '/v1/login/verify',
+            whoami: '/v1/whoami',
+            logout: '/v1/logout',
+        },
+        authz: '/v1/authz',
+    };
+}
+
+// Domain/root auth hosts (no path prefix). Sandbox hosts carry the id in the
+// path and are handled inside the tenant router below.
+app.get('/.well-known/authgravity', (c) => {
+    const url = new URL(c.req.url);
+    return c.json(wellKnown(url.origin, resolveTenant(url).tenant), 200, {
+        'Cache-Control': 'no-cache',
+    });
+});
+
 // Demo page — self-contained auth demo served from the authgravity subdomain
 app.get('/demo', (c) => {
     const url = new URL(c.req.url);
@@ -646,10 +679,20 @@ app.all('/*', async (c, next) => {
         req = new Request(u.toString(), c.req.raw);
     }
 
+    // Sandbox discovery: the id-prefixed host resolves here after stripping.
+    // The advertised endpoint keeps the "/<id>" so agents fetch the right host.
+    const path = new URL(req.url).pathname;
+    if (path === '/.well-known/authgravity') {
+        const endpoint =
+            tenantInfo.sandbox && tenantInfo.sandboxId
+                ? `${url.origin}/${tenantInfo.sandboxId}`
+                : url.origin;
+        return c.json(wellKnown(endpoint, tenantInfo.tenant), 200, { 'Cache-Control': 'no-cache' });
+    }
+
     // Authz routes are served by the gratos-authz worker (which has no public
     // route of its own). Forward with the resolved tenant + user as trusted
     // headers; inbound X-Gratos-* headers are stripped so they can't be forged.
-    const path = new URL(req.url).pathname;
     if (path === '/authz' || path === '/llms.txt' || path === '/v1/authz' || path.startsWith('/v1/authz/')) {
         const headers = new Headers(req.headers);
         for (const key of [...headers.keys()]) {

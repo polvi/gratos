@@ -2,6 +2,7 @@ import { h } from 'preact';
 import { useState, useEffect, useCallback } from 'preact/hooks';
 import { AuthProvider, useAuth } from './auth';
 import { InstallationPrompt } from './InstallationPrompt';
+import { agentPromptFor } from './agentPrompt';
 
 const CNAME_NAME = 'authgravity';
 const CNAME_TARGET = 'cname.authgravity.net';
@@ -275,24 +276,9 @@ const AUTHZ_STARTER = JSON.stringify(
  * flows to authgravity.authgravity.org, and the control plane authorizes us
  * because onboarding recorded this dash user as the tenant's owner.
  */
-function agentPrompt(tenant: string): { url: string; prompt: string } {
-    const isSandbox = tenant.includes('/');
-    const url = isSandbox ? `https://${tenant}/llms.txt` : `https://authgravity.${tenant}/llms.txt`;
-    const prompt =
-        `Add authorization to my app using AuthGravity.\n\n` +
-        `First fetch ${url} and read it fully — it documents this tenant's live authorization schema ` +
-        `(object types, relations, permissions) and the exact HTTP API on that host.` +
-        (isSandbox ? ` If I'm running \`authgravity listen\`, use http://localhost:8787/llms.txt instead.` : '') +
-        `\n\nThen wire my app up to it: gate every protected route and action with POST /v1/authz/check ` +
-        `using the signed-in user's session (forward the session_id cookie, or send its value as a Bearer token). ` +
-        `Omit the subject so the session user is checked — the response returns both "allowed" and the user's ` +
-        `"user_id" in one round trip. Use the batch form ({items: [...]}) for list pages. ` +
-        `Where the app must write relationships at runtime (recording a new resource's owner, adding an invited ` +
-        `user to a group), use the service token from the AUTHZ_SERVICE_TOKEN environment variable as the Bearer ` +
-        `instead of a user session, as that document describes. ` +
-        `Follow the integration and design guidance in that document exactly.`;
-    return { url, prompt };
-}
+// Unified integration prompt (auth + authz) — shared with the post-claim
+// InstallationPrompt so the two surfaces never drift.
+const agentPrompt = agentPromptFor;
 
 function AuthzPanel({ apiBaseUrl, tenant }: { apiBaseUrl: string; tenant: string }) {
     const base = `${apiBaseUrl}/v1/authz/tenants/${encodeURIComponent(tenant)}`;
@@ -538,33 +524,14 @@ function AuthzPanel({ apiBaseUrl, tenant }: { apiBaseUrl: string; tenant: string
             </div>
 
             <div style={{ marginTop: '1rem' }}>
-                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#18181b', marginBottom: '0.25rem' }}>
-                    Integrate with an AI agent
-                </div>
-                <p style={{ fontSize: '0.75rem', color: '#71717a', marginBottom: '0.375rem', lineHeight: 1.5 }}>
-                    This tenant's live schema and API are published at{' '}
+                <p style={{ fontSize: '0.75rem', color: '#71717a', marginBottom: '1rem', lineHeight: 1.5 }}>
+                    This tenant's live schema and integration API (auth + authorization) are published for
+                    coding agents at{' '}
                     <a href={agentPrompt(tenant).url} target="_blank" rel="noopener" style={{ color: '#2563eb' }}>
                         {agentPrompt(tenant).url}
                     </a>
-                    . Paste this prompt into your coding agent:
+                    . The copy-paste agent prompt is shown with this {tenant.includes('/') ? 'sandbox' : 'domain'} above.
                 </p>
-                <div
-                    style={{
-                        display: 'flex',
-                        alignItems: 'flex-start',
-                        gap: '0.25rem',
-                        background: '#f9fafb',
-                        border: '1px solid #e4e4e7',
-                        borderRadius: '0.375rem',
-                        padding: '0.5rem',
-                        marginBottom: '1rem',
-                    }}
-                >
-                    <div style={{ fontFamily: 'monospace', fontSize: '0.7rem', color: '#52525b', whiteSpace: 'pre-wrap', flex: 1 }}>
-                        {agentPrompt(tenant).prompt}
-                    </div>
-                    <CopyButton text={agentPrompt(tenant).prompt} />
-                </div>
 
                 <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#18181b', marginBottom: '0.25rem' }}>
                     Service tokens
@@ -808,7 +775,7 @@ function ActiveDetails({ domain, provisionerBaseUrl, apiBaseUrl }: { domain: Dom
                 </div>
             )}
 
-            <InstallationPrompt domain={domain.domain} />
+            <InstallationPrompt tenant={domain.domain} />
 
             <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <a
@@ -907,7 +874,7 @@ function ActivatingDetails({ domain, provisionerBaseUrl, onClaimed }: {
                 </span>
             </div>
 
-            <InstallationPrompt domain={domain.domain} />
+            <InstallationPrompt tenant={domain.domain} />
         </div>
     );
 }
@@ -1081,6 +1048,7 @@ function SandboxSection({ apiBaseUrl }: { apiBaseUrl: string }) {
                                     {deleting === s.id ? 'Deleting...' : 'Delete'}
                                 </button>
                             </div>
+                            <InstallationPrompt tenant={s.tenant} />
                             <AuthzSection apiBaseUrl={apiBaseUrl} tenant={s.tenant} />
                         </div>
                     ))}
