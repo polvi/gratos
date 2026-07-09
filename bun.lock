@@ -12,7 +12,7 @@
     },
     "packages/browser": {
       "name": "@authgravity/browser",
-      "version": "0.0.1",
+      "version": "0.0.7",
       "dependencies": {
         "@noble/curves": "^2.2.0",
         "@noble/hashes": "^2.2.0",
@@ -23,7 +23,7 @@
     },
     "packages/cli": {
       "name": "@authgravity/cli",
-      "version": "0.0.3",
+      "version": "0.0.7",
       "bin": {
         "authgravity": "bin/authgravity.js",
       },
@@ -34,6 +34,16 @@
       "devDependencies": {
         "bun-types": "^1.3.5",
         "typescript": "^5.9.3",
+      },
+    },
+    "packages/example": {
+      "name": "@authgravity/example-notes",
+      "version": "0.0.0",
+      "dependencies": {
+        "@astrojs/cloudflare": "13.1.2",
+        "@authgravity/server": "workspace:*",
+        "astro": "6.0.5",
+        "wrangler": "^4.107.0",
       },
     },
     "packages/gratos-authz": {
@@ -90,7 +100,7 @@
     },
     "packages/server": {
       "name": "@authgravity/server",
-      "version": "0.0.1",
+      "version": "0.0.7",
       "devDependencies": {
         "typescript": "^5.9.3",
       },
@@ -118,6 +128,8 @@
     "@authgravity/browser": ["@authgravity/browser@workspace:packages/browser"],
 
     "@authgravity/cli": ["@authgravity/cli@workspace:packages/cli"],
+
+    "@authgravity/example-notes": ["@authgravity/example-notes@workspace:packages/example"],
 
     "@authgravity/server": ["@authgravity/server@workspace:packages/server"],
 

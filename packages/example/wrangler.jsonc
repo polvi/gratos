@@ -1,0 +1,21 @@
+{
+    "name": "authgravity-example-notes",
+    "main": "@astrojs/cloudflare/entrypoints/server",
+    "compatibility_date": "2026-03-16",
+    "compatibility_flags": ["nodejs_compat"],
+    "assets": {
+        "directory": "./dist",
+    },
+    "vars": {
+        // Point at your auth host. In local dev, run `authgravity listen` and use
+        // its proxy: http://localhost:8787. In prod, https://authgravity.<yourdomain>.
+        "PUBLIC_AUTH_ENDPOINT": "http://localhost:8787",
+    },
+    "kv_namespaces": [
+        // A place to store note bodies. `wrangler kv namespace create NOTES`.
+        { "binding": "NOTES", "id": "REPLACE_WITH_YOUR_KV_ID" },
+    ],
+    // AUTHZ_SERVICE_TOKEN is a secret (prod, owner-managed tenants):
+    //   wrangler secret put AUTHZ_SERVICE_TOKEN
+    // In an open sandbox it's optional — writes fall back to the user's session.
+}

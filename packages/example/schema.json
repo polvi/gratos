@@ -1,0 +1,14 @@
+{
+    "definitions": {
+        "note": {
+            "relations": {
+                "owner": { "subjects": [{ "type": "user" }] },
+                "viewer": { "subjects": [{ "type": "user" }] }
+            },
+            "permissions": {
+                "view": { "union": [{ "rel": "viewer" }, { "rel": "owner" }] },
+                "edit": { "rel": "owner" }
+            }
+        }
+    }
+}

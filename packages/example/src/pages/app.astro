@@ -1,0 +1,74 @@
+---
+import { authzClient, whoami } from '../lib/authz';
+import { getNote, listIds, type Note } from '../lib/notes';
+
+// middleware.ts guarantees a session here and sets locals.userId.
+const env = Astro.locals.runtime.env;
+const userId = Astro.locals.userId!;
+const endpoint = env.PUBLIC_AUTH_ENDPOINT;
+const origin = Astro.url.origin;
+
+// List every note this user may view — one batch authz check, then load bodies.
+const authz = authzClient(env);
+const ids = await listIds(env.NOTES);
+const results = ids.length
+    ? await authz.checkMany(Astro.request, ids.map((id) => ({ type: 'note', id, permission: 'view' })))
+    : [];
+const visible: Note[] = [];
+for (let i = 0; i < ids.length; i++) {
+    if (results[i]?.allowed) {
+        const note = await getNote(env.NOTES, ids[i]);
+        if (note) visible.push(note);
+    }
+}
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Your notes</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 34rem; margin: 3rem auto; padding: 0 1.25rem; color: #18181b; }
+      h1 { font-size: 1.5rem; } h2 { font-size: 1rem; margin-top: 2rem; }
+      .note { border: 1px solid #e4e4e7; border-radius: 0.5rem; padding: 1rem; margin-bottom: 0.75rem; }
+      .note h3 { margin: 0 0 0.25rem; font-size: 1rem; }
+      .note p { margin: 0; color: #52525b; white-space: pre-wrap; }
+      .owner { font-size: 0.75rem; color: #a1a1aa; margin-top: 0.5rem; }
+      form { margin: 0.5rem 0; }
+      input, textarea { width: 100%; padding: 0.5rem; border: 1px solid #d4d4d8; border-radius: 0.4rem; margin-bottom: 0.4rem; font: inherit; }
+      button { padding: 0.5rem 0.9rem; background: #18181b; color: #fff; border: none; border-radius: 0.4rem; font-weight: 600; cursor: pointer; }
+      .row { display: flex; gap: 0.4rem; }
+      .row input { margin: 0; } .muted { color: #71717a; font-size: 0.8rem; }
+      a { color: #71717a; font-size: 0.85rem; }
+    </style>
+  </head>
+  <body>
+    <h1>Your notes</h1>
+    <p class="muted">Signed in as <code>{userId}</code> · <a href={`${endpoint}/logout?return_to=${encodeURIComponent(origin + '/')}`}>Sign out</a></p>
+
+    <h2>New note</h2>
+    <form method="POST" action="/api/notes">
+      <input name="title" placeholder="Title" required />
+      <textarea name="body" placeholder="Write something…" rows="2"></textarea>
+      <button type="submit">Create</button>
+    </form>
+
+    <h2>Notes you can see ({visible.length})</h2>
+    {visible.length === 0 && <p class="muted">None yet — create one above.</p>}
+    {visible.map((note) => (
+      <div class="note">
+        <h3>{note.title}</h3>
+        <p>{note.body}</p>
+        <div class="owner">owner: <code>{note.ownerId}</code></div>
+        {note.ownerId === userId && (
+          <form method="POST" action="/api/share" class="row">
+            <input type="hidden" name="noteId" value={note.id} />
+            <input name="userId" placeholder="Share with user UUID" required />
+            <button type="submit">Share</button>
+          </form>
+        )}
+      </div>
+    ))}
+  </body>
+</html>

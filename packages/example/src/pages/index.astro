@@ -1,0 +1,45 @@
+---
+import { whoami } from '../lib/authz';
+
+const env = Astro.locals.runtime.env;
+const userId = await whoami(Astro.request, env);
+const endpoint = env.PUBLIC_AUTH_ENDPOINT;
+const origin = Astro.url.origin;
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Shared Notes — an AuthGravity example</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 34rem; margin: 4rem auto; padding: 0 1.25rem; color: #18181b; }
+      h1 { font-size: 1.75rem; }
+      p { color: #52525b; line-height: 1.6; }
+      a.btn { display: inline-block; margin-top: 1rem; padding: 0.6rem 1.1rem; background: #18181b; color: #fff; border-radius: 0.5rem; text-decoration: none; font-weight: 600; }
+      a.muted { color: #71717a; }
+    </style>
+  </head>
+  <body>
+    <h1>Shared Notes</h1>
+    <p>
+      A tiny multi-user app that shows the AuthGravity <strong>zero-build</strong> path: it has no
+      login UI of its own. Sign-in happens on AuthGravity's hosted surfaces, and every note is gated
+      by a relationship check.
+    </p>
+    {userId ? (
+      <p>
+        Signed in as <code>{userId}</code>.
+        <br />
+        <a class="btn" href="/app">Open your notes</a>
+        <br /><br />
+        <a class="muted" href={`${endpoint}/logout?return_to=${encodeURIComponent(origin + '/')}`}>Sign out</a>
+      </p>
+    ) : (
+      <p>
+        <a class="btn" href="/app">Sign in to your notes</a>
+        <br /><span class="muted">(you'll be sent to AuthGravity's hosted login, then back here)</span>
+      </p>
+    )}
+  </body>
+</html>
