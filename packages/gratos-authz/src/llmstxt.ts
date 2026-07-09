@@ -256,6 +256,8 @@ function authzSection(lines: string[], ctx: LlmsContext) {
     lines.push('');
     lines.push('Batch (list pages): `{"items": [{"object": "...", "permission": "..."}, ...]}` (max 50) → `{"results": [...], "user_id": "..."}`, order preserved. Do not cache allow/deny across requests — per-request checks are what make revocation instant.');
     lines.push('');
+    lines.push('Require step-up strength for sensitive actions with `min_amr` (`webauthn` | `device` | `key`), top-level or per item: `{"object": "...", "permission": "...", "min_amr": "webauthn"}`. A session weaker than required returns `{"allowed": false, "reason": "insufficient_amr"}` (so you can prompt re-auth rather than treat it as a plain deny). `min_amr` is session-only — a service-token check that sends it gets 400. Every check response also carries an `X-Schema-Version` header.');
+    lines.push('');
     lines.push('Other endpoints: `GET /v1/authz/status`, `GET /v1/authz/schema`, `GET /v1/authz/relationships?object_type=…`, `POST /v1/authz/relationships` `{updates:[{op:"touch"|"create"|"delete",object,relation,subject}]}` (max 100, atomic).');
     lines.push('');
 

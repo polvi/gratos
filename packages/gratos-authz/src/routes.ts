@@ -7,6 +7,7 @@
 
 import { Context, Hono } from 'hono';
 import { ApiError, parseObjectRef, parseSubjectRef } from './model';
+import { meetsMinAmr, parseMinAmr } from './amr';
 import { SchemaDocument, TENANT_OBJECT_TYPE, loadSchema, saveSchema, validateSchema } from './schema';
 import { checkPermission, newBudget } from './check';
 import { D1TupleStore, MAX_UPDATES, RelUpdate, applyUpdates, readRelationships } from './tuples';
@@ -107,6 +108,19 @@ async function handleCheck(c: Ctx) {
     }
     const schema = await loadSchema(c.env.DB, tenant);
     const userId = c.get('userId');
+    const amr = c.get('amr');
+    const isService = c.get('service') === true;
+
+    // `min_amr` constrains how strongly the caller's SESSION authenticated. A
+    // service token carries no session amr, so it can't prove step-up strength;
+    // rejecting loudly avoids a downgrade footgun (switching a session call to a
+    // service-token call to bypass step-up). Validate top-level value up front.
+    const topMinAmr = parseMinAmr(body.min_amr, '');
+    const anyItemMinAmr =
+        Array.isArray(body.items) && body.items.some((it: any) => it && it.min_amr != null);
+    if (isService && (topMinAmr || anyItemMinAmr)) {
+        throw new ApiError(400, 'min_amr is only valid for session-authenticated checks');
+    }
 
     // subject omitted or "self" = the session user — one round trip both
     // authenticates and authorizes, and the caller gets the uuid back.
@@ -121,9 +135,19 @@ async function handleCheck(c: Ctx) {
         return subject;
     };
 
-    const checkOne = async (item: any, label: string): Promise<boolean> => {
+    type CheckResult = { allowed: boolean; reason?: 'insufficient_amr' };
+
+    const checkOne = async (item: any, label: string): Promise<CheckResult> => {
         if (!item || typeof item.permission !== 'string') {
             throw new ApiError(400, `${label}permission must be a string`);
+        }
+        // Session too weak for this item → deny with a reason (not a 4xx), so a
+        // batch keeps a uniform shape and the app can trigger step-up instead of
+        // reading it as a hard authorization failure. Per-item min_amr overrides
+        // the request default.
+        const minAmr = parseMinAmr(item.min_amr, label) ?? topMinAmr;
+        if (minAmr && !meetsMinAmr(amr, minAmr)) {
+            return { allowed: false, reason: 'insufficient_amr' };
         }
         // Control-plane objects are not observable over HTTP (they would let
         // any root-pool user probe the customer -> owner map).
@@ -131,7 +155,7 @@ async function handleCheck(c: Ctx) {
         if (obj.type === TENANT_OBJECT_TYPE) {
             throw new ApiError(400, `${TENANT_OBJECT_TYPE} is not checkable via the API`);
         }
-        return runCheck(
+        const allowed = await runCheck(
             c.env.DB,
             tenant,
             schema?.doc ?? null,
@@ -139,9 +163,14 @@ async function handleCheck(c: Ctx) {
             item.permission,
             resolveSubject(item.subject, label)
         );
+        return { allowed };
     };
 
-    // Batch: {items: [{object, permission, subject?}]} — evaluated
+    // Lets a server SDK detect schema drift and prompt a regenerate without an
+    // extra round trip.
+    c.header('X-Schema-Version', String(schema?.version ?? 0));
+
+    // Batch: {items: [{object, permission, subject?, min_amr?}]} — evaluated
     // concurrently, each with its own query budget; one bad item reports its
     // error in place instead of failing the batch.
     if (Array.isArray(body.items)) {
@@ -152,7 +181,7 @@ async function handleCheck(c: Ctx) {
         const results = await Promise.all(
             body.items.map(async (item: any, i: number) => {
                 try {
-                    return { allowed: await checkOne(item, `items[${i}].`) };
+                    return await checkOne(item, `items[${i}].`);
                 } catch (e) {
                     if (e instanceof ApiError) return { allowed: false, error: e.message };
                     throw e;
@@ -162,8 +191,12 @@ async function handleCheck(c: Ctx) {
         return c.json({ results, ...(userId ? { user_id: userId } : {}) });
     }
 
-    const allowed = await checkOne(body, '');
-    return c.json({ allowed, ...(userId ? { user_id: userId } : {}) });
+    const result = await checkOne(body, '');
+    return c.json({
+        allowed: result.allowed,
+        ...(result.reason ? { reason: result.reason } : {}),
+        ...(userId ? { user_id: userId } : {}),
+    });
 }
 
 async function handleWriteRels(c: Ctx) {
@@ -236,6 +269,7 @@ async function handleGetSchema(c: Ctx) {
     const tenant = c.get('tenant');
     const stored = await loadSchema(c.env.DB, tenant);
     if (!stored) return c.json({ error: 'no schema' }, 404);
+    c.header('X-Schema-Version', String(stored.version));
     return c.json({ schema: stored.doc, version: stored.version, updated_at: stored.updatedAt });
 }
 
