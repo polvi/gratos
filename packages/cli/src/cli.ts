@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 import { listen } from './listen';
+import { runSchemaTypes, SCHEMA_USAGE } from './schema';
+import { runTuplesImport, TUPLES_USAGE } from './tuples';
 
 const DEFAULT_PORT = 8787;
 const DEFAULT_MINT_HOST = 'https://authgravity.authgravity.org';
@@ -7,11 +9,15 @@ const DEFAULT_MINT_HOST = 'https://authgravity.authgravity.org';
 const USAGE = `AuthGravity CLI
 
 Usage:
-  authgravity listen [options]   Run a local auth proxy for development.
-                                 Mints an instant sandbox and bridges its
-                                 session to a first-party localhost cookie,
-                                 so your app uses the same cookie-based auth
-                                 code in dev as in production.
+  authgravity listen [options]        Run a local auth proxy for development.
+                                      Mints an instant sandbox and bridges its
+                                      session to a first-party localhost cookie,
+                                      so your app uses the same cookie-based auth
+                                      code in dev as in production.
+  authgravity schema types [options]  Generate TypeScript types from a tenant's
+                                      live authorization schema.
+  authgravity tuples import <file>    Bulk-import relationship updates (chunked,
+                                      with --dry-run).
 
 Options (listen):
   -p, --port <port>        Port to listen on (default: ${DEFAULT_PORT})
@@ -21,6 +27,7 @@ Options (listen):
                            (default: ${DEFAULT_MINT_HOST})
   -h, --help               Show this help
 
+Run "authgravity <command> --help" for command-specific options.
 Docs: https://authgravity.org/llms.txt
 `;
 
@@ -39,6 +46,32 @@ function parseFlags(args: string[]): Record<string, string> {
         }
     }
     return flags;
+}
+
+/** `schema <sub>` — currently only `types`. */
+async function runSchema(args: string[]) {
+    const sub = args[0];
+    if (sub === 'types') return runSchemaTypes(args.slice(1));
+    if (sub === undefined || sub === '-h' || sub === '--help') {
+        console.log(SCHEMA_USAGE);
+        return;
+    }
+    console.error(`Unknown 'schema' subcommand: ${sub}\n`);
+    console.error(SCHEMA_USAGE);
+    process.exit(1);
+}
+
+/** `tuples <sub>` — currently only `import`. */
+async function runTuples(args: string[]) {
+    const sub = args[0];
+    if (sub === 'import') return runTuplesImport(args.slice(1));
+    if (sub === undefined || sub === '-h' || sub === '--help') {
+        console.log(TUPLES_USAGE);
+        return;
+    }
+    console.error(`Unknown 'tuples' subcommand: ${sub}\n`);
+    console.error(TUPLES_USAGE);
+    process.exit(1);
 }
 
 async function runListen(args: string[]) {
@@ -75,6 +108,12 @@ const [, , command, ...rest] = process.argv;
 switch (command) {
     case 'listen':
         await runListen(rest);
+        break;
+    case 'schema':
+        await runSchema(rest);
+        break;
+    case 'tuples':
+        await runTuples(rest);
         break;
     case undefined:
     case '-h':

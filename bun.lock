@@ -14,9 +14,10 @@
       "name": "@authgravity/cli",
       "version": "0.0.3",
       "bin": {
-        "authgravity": "./src/cli.ts",
+        "authgravity": "bin/authgravity.js",
       },
       "dependencies": {
+        "@authgravity/server": "workspace:*",
         "hono": "^4.11.3",
       },
       "devDependencies": {
