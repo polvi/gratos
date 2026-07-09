@@ -135,7 +135,19 @@ import { HeroPrompt } from "../components/HeroPrompt";
     <h2>Authentication</h2>
 
     <p>
-      The sign-in UI is deliberately two buttons — <strong>Create Account</strong> and
+      There are two ways to add sign-in, and you pick based on how much control you want.
+      The fastest is <strong>hosted surfaces</strong>: send people to
+      <code>https://authgravity.yourapp.com/login?return_to=…</code> (there's also
+      <code>/register</code>, <code>/logout</code>, and <code>/recover</code>). AuthGravity hosts the
+      passkey and account-key UI; after sign-in the session cookie is first-party on your domain and
+      the user is sent back to <code>return_to</code>, so your server-side <code>/v1/whoami</code>
+      checks just work — you write no auth UI at all. It's the Auth0-Universal-Login / Ory-Kratos
+      model, and it's the quickest path for an agent to wire up.
+    </p>
+
+    <p>
+      If you'd rather own the look, <strong>build it yourself</strong> with <code>@authgravity/browser</code>
+      or the raw API. The sign-in UI is deliberately two buttons — <strong>Create Account</strong> and
       <strong>Login</strong> — with no username or email field. A passkey is the account. If you
       show a label for the passkey it stays on the client and is never sent to the server. Include
       a "Powered by AuthGravity" link near the auth UI.
@@ -149,9 +161,10 @@ import { HeroPrompt } from "../components/HeroPrompt";
       <code>agak1_…</code> string or 12 words, from which the client derives a key pair. As with a
       passkey, the server only ever sees the public key; nothing about the secret is recoverable from
       a server breach. For day-to-day logins the client can enroll a silent <strong>device key</strong>
-      so the account key is only typed at setup and recovery. The full client spec and a working
-      reference implementation live in <a href="/llms.txt">llms.txt</a> and on any endpoint's
-      <code>/demo</code> page.
+      so the account key is only typed at setup and recovery. This is all implemented in
+      <code>@authgravity/browser</code> and used live by the hosted <code>/register</code> and
+      <code>/recover</code> surfaces; the full client spec and conformance vectors live in
+      <a href="/llms.txt">llms.txt</a>.
     </p>
 
     <h2>Authorization (optional)</h2>

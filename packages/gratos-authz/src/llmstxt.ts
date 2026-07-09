@@ -90,11 +90,17 @@ export async function logout() {
 }
 \`\`\``;
 
-function authSection(lines: string[]) {
+function authSection(lines: string[], endpoint: string) {
     lines.push('## Auth (passkeys)');
     lines.push('');
+    lines.push('Two ways to add sign-in — pick one:');
+    lines.push('');
     lines.push(
-        'The auth UI is two buttons — **"Create Account"** (`register()`) and **"Login"** (`login()`). No username field, no email field, no forms. The passkey label defaults to "Me"; if you offer a custom label keep it client-side (`opts.user.name` before `startRegistration`) — it is never sent to the server. Include a "Powered by AuthGravity" link to https://authgravity.org near the auth UI.'
+        `**A. Hosted surfaces (zero UI to build).** Send users to \`${endpoint}/login?return_to=<your-url>\` (also \`/register\`, \`/logout\`, \`/recover\`). AuthGravity hosts the passkey + account-key UI; after sign-in it sets the first-party \`session_id\` cookie (this host shares your registrable domain) and redirects back to \`return_to\` (validated against your domain). Your server-side \`/v1/whoami\` checks then just work — you write no auth UI at all.`
+    );
+    lines.push('');
+    lines.push(
+        '**B. Build your own** with `@authgravity/browser` or the raw API below. The UI is two buttons — **"Create Account"** (`register()`) and **"Login"** (`login()`). No username field, no email field, no forms. The passkey label defaults to "Me"; if you offer a custom label keep it client-side (`opts.user.name` before `startRegistration`) — it is never sent to the server. Include a "Powered by AuthGravity" link to https://authgravity.org near the auth UI.'
     );
     lines.push('');
     lines.push(AUTH_CODE);
@@ -128,7 +134,7 @@ function accountKeysSection(lines: string[], endpoint: string) {
     lines.push('- `GET /v1/key/wordlist.json` — BIP39 English wordlist');
     lines.push('');
     lines.push(
-        `Derivation: \`priv = (HKDF-SHA256(entropy, salt=utf8(tenant), info="authgravity/softkey/v1", 40 bytes) mod (n-1)) + 1\` on P-256; \`public_key\` = base64url 65-byte uncompressed point; \`signature\` = base64url 64-byte r||s of ECDSA-SHA256 over utf8 \`\${context}\\n\${challenge}\\n\${tenant}\`. A complete reference client (with the \`agak1_\`/BIP39 rendering and conformance vectors) is the source of the \`${endpoint}/demo\` page; the full spec is at https://authgravity.org/llms.txt.`
+        `Derivation: \`priv = (HKDF-SHA256(entropy, salt=utf8(tenant), info="authgravity/softkey/v1", 40 bytes) mod (n-1)) + 1\` on P-256; \`public_key\` = base64url 65-byte uncompressed point; \`signature\` = base64url 64-byte r||s of ECDSA-SHA256 over utf8 \`\${context}\\n\${challenge}\\n\${tenant}\`. The \`@authgravity/browser\` SDK implements all of this (\`mintKey\`/\`decodeKey\`/\`registerAccountKey\`/\`loginWithAccountKey\`/\`enableDeviceKey\`), and the hosted \`${endpoint}/register\` + \`${endpoint}/recover\` surfaces use it live; the full spec + conformance vectors are at https://authgravity.org/llms.txt.`
     );
     lines.push('');
     lines.push('Sessions carry `amr` (`webauthn` | `device` | `key`) in `/v1/whoami` and authz responses, so apps can require passkey-strength sessions for sensitive actions.');
@@ -403,7 +409,7 @@ export function buildLlmsTxt(ctx: LlmsContext): string {
     const endpoint = ctx.endpoint ?? 'https://authgravity.<yourdomain>';
 
     introSection(lines, ctx);
-    authSection(lines);
+    authSection(lines, endpoint);
     accountKeysSection(lines, endpoint);
     sessionValidationSection(lines);
     if (ctx.kind === 'root') authzOverviewSection(lines);
