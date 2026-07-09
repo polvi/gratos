@@ -812,17 +812,31 @@ async function handleScheduled(env: Env) {
         return;
     }
 
-    for (const h of cfHostnames) {
-        if (!knownCfIds.has(h.id)) {
-            console.log(`Reconcile: deleting orphaned CF hostname ${h.id} (${h.hostname})`);
-            try {
-                await cf.delete(h.id);
-            } catch (err) {
-                console.error(`Reconcile: failed to delete CF hostname ${h.id}:`, err);
-            }
-        }
+    const orphans = cfHostnames.filter((h) => !knownCfIds.has(h.id));
+
+    // Safety valve: a large orphan set almost always means the DB read was
+    // incomplete (transient error, an empty/half-migrated table) rather than
+    // many hostnames genuinely leaking — and deleting them would tear down live
+    // customer domains. Refuse and log loudly; the next tick reconciles once the
+    // DB is healthy. Tunable as real volume grows.
+    const MAX_RECONCILE_DELETES = 5;
+    if (orphans.length > MAX_RECONCILE_DELETES) {
+        console.error(
+            `Reconcile: refusing to delete ${orphans.length} orphaned CF hostnames ` +
+                `(> ${MAX_RECONCILE_DELETES}); likely a DB desync, not real orphans ` +
+                `(known ids: ${knownCfIds.size}). Skipping deletion this tick.`
+        );
+        return;
     }
 
+    for (const h of orphans) {
+        console.log(`Reconcile: deleting orphaned CF hostname ${h.id} (${h.hostname})`);
+        try {
+            await cf.delete(h.id);
+        } catch (err) {
+            console.error(`Reconcile: failed to delete CF hostname ${h.id}:`, err);
+        }
+    }
 }
 
 export default {

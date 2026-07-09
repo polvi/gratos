@@ -8,6 +8,7 @@ import { sessionRoutes, getSessionId } from './session';
 import { keyRoutes } from './keys';
 import { getUser } from './db';
 import { parseSessionValue, resolveSession } from './sessions';
+import { sha256Hex } from './hash';
 
 import type { AuthzRPC } from '../../gratos-authz/src/index';
 
@@ -563,8 +564,10 @@ async function resolveRequestUser(c: any): Promise<string | null> {
 // pool is created lazily on first register.
 app.post('/sandbox', async (c) => {
     // Light per-IP rate limit to bound abuse of the public mint endpoint.
+    // Key on a hash of the IP so no raw IP is ever written to KV (privacy rule:
+    // use the public IP in the moment, never store it).
     const ip = c.req.header('CF-Connecting-IP') || 'unknown';
-    const rlKey = `sandbox_rl:${ip}`;
+    const rlKey = `sandbox_rl:${await sha256Hex(ip)}`;
     const count = parseInt((await c.env.KV.get(rlKey)) || '0', 10);
     if (count >= 30) {
         return c.json({ error: 'Rate limit exceeded, try again later' }, 429);
