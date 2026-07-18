@@ -1,152 +1,175 @@
 # Gratos
 
-Zero-knowledge, serverless, headless passkey authentication. Gratos stores only public key material: no pas
-swords, no usernames on the server. User identity lives in the consuming app; Gratos handles WebAuthn credential storage and session management.
+Zero-knowledge, serverless, headless passkey authentication **and relationship-based authorization**. Gratos stores only public key material and permission tuples: no passwords, no usernames, no email on the server. User identity lives in the consuming app; Gratos handles WebAuthn/account-key credential storage, session management, and Zanzibar-style permission checks.
 
-Currently powering authgravity.org
+Currently powering [authgravity.org](https://authgravity.org).
 
-Inspired by [Ory Kratos](https://www.ory.sh/kratos/), built on [WebAuthn](https://webauthn.guide/), hat tip to Let's Encrypt, but not affiliated.
+Inspired by [Ory Kratos](https://www.ory.sh/kratos/) and [SpiceDB](https://authzed.com/spicedb), built on [WebAuthn](https://webauthn.guide/), hat tip to Let's Encrypt, but not affiliated. Licensed AGPLv3.
 
 ## How It Works
 
-Sign up at [authgravity.org](https://authgravity.org), claim your domain, and add the CNAME record provided. The tenant is auto-derived from the request hostname. Users, credentials, and sessions are all isolated per tenant.
+Every tenant is a domain. Claim yours at [authgravity.org](https://authgravity.org) — via Domain Connect (approve one screen at your DNS provider) or a manual CNAME — and `authgravity.<yourdomain>` becomes your auth endpoint:
 
 ```
-authgravity.myapp.com  ──CNAME──►  <token>.cname.authgravity.net
-                                    (tenant = authgravity.myapp.com)
+authgravity.myapp.com  ──CNAME──►  cname.authgravity.net
+                                    (tenant = myapp.com)
 ```
 
-Every domain gets its own user pool. A user who registers on `authgravity.foo.com` has no relationship to a user on `authgravity.bar.com`.
+Users, credentials, sessions, and authz data are isolated per tenant. A user who registers on `authgravity.foo.com` has no relationship to a user on `authgravity.bar.com`. Because the endpoint lives on your registrable domain, the `session_id` cookie is first-party — no iframes, no popups, no cross-domain redirects.
+
+For development there are **instant sandboxes**: `POST /sandbox` mints an isolated throwaway pool at `https://sandbox.authgravity.org/<id>` with no domain and no DNS, and `npx @authgravity/cli listen` proxies it on `localhost:8787` with production-identical cookie auth.
 
 ## Architecture
 
 ```
 Browser
-  ├─ your app (@simplewebauthn/browser or any WebAuthn client)
+  ├─ your app (@authgravity/browser, @simplewebauthn/browser, or hosted surfaces)
   │
-  └─ authgravity.myapp.com (CNAME → Gratos Worker)
-       ├─ Hono server on Cloudflare Workers
-       ├─ @simplewebauthn/server
-       ├─ D1 (users, credentials — scoped by tenant)
-       └─ KV (sessions, challenges)
+  └─ authgravity.myapp.com (CNAME → gratos-multi Worker)
+       ├─ Hono + @simplewebauthn/server on Cloudflare Workers
+       ├─ D1 (users, public keys — scoped by tenant)
+       ├─ KV (sessions, challenges)
+       └─ AUTHZ service binding → gratos-authz Worker (internal-only)
+            └─ D1 (schemas, relationship tuples, service tokens)
 ```
 
-## Auth Flow
+The provisioner Worker handles domain claims (DNS verification, Domain Connect, Cloudflare Custom Hostnames) and a reconcile cron. Deploy order matters for service bindings: authz → multi → provisioner → dash (`bun run deploy` does the whole chain).
 
-Because the auth server lives on your domain (via CNAME), everything is same-origin. No iframes, no popups, no cross-domain redirects. The API speaks pure spec-shaped WebAuthn JSON, so any conforming client library works.
+## Authentication
 
-1. User clicks **Register** or **Sign In** in your app
-2. Your app fetches standard WebAuthn options from `authgravity.myapp.com/v1/...`
-3. Browser prompts for passkey (biometric, security key, etc.)
-4. Your app posts the credential response back, as-is — no wrapper, no correlation id
-5. Worker verifies the credential, creates a session, sets an `httpOnly` cookie
+Three ways in, all ending with the same first-party `httpOnly` session cookie:
 
-RP ID is the registrable domain (e.g., `authgravity.myapp.com` → RP ID `myapp.com`), so passkeys work across subdomains.
+1. **Hosted surfaces (zero UI to build)** — send users to `https://authgravity.myapp.com/login?return_to=<url>` (also `/register`, `/recover`, `/logout`). Passkey-first UI with account creation on the login page; after the ceremony the cookie is set and the user is redirected back.
+2. **Passkeys (build your own)** — spec-shaped WebAuthn JSON: options endpoints return standard `PublicKeyCredential*OptionsJSON` unmodified, verify endpoints take the bare credential response as the whole body. Any conforming client works.
+3. **Account keys (no-passkey fallback + recovery)** — a client-generated 128-bit secret rendered as `agak1_…` or 12 BIP39 words, HKDF-derived into a per-tenant P-256 keypair. The server stores only the public key, exactly like a passkey. Silent **device keys** (non-extractable WebCrypto keys) handle daily logins so the words are only typed at setup and recovery. Bring-your-own BIP39 phrases work with no server support: decode → register (claim) → on 409, login (recover).
 
-## Session Model
+The WebAuthn RP ID is the registrable domain (`authgravity.myapp.com` → RP ID `myapp.com`), so passkeys work across all its subdomains. Sessions record how they authenticated (`amr`: `webauthn` | `device` | `key`), so apps can require passkey-strength sessions for sensitive actions.
 
-- First-party `httpOnly`, `secure` cookie on the registrable domain
-- Sessions stored in Cloudflare KV with configurable TTL (default 7 days)
-- Challenges expire after 5 minutes
+## Authorization
+
+Optional Zanzibar/SpiceDB-style permissions, served on the same host and session as auth:
+
+- **Schema**: JSON object definitions with relations and computed permissions (union / intersection / exclusion / arrows like `parent->view`), validated on `PUT /v1/authz/schema`. An AI draft can be generated by crawling the tenant's site.
+- **Tuples**: `POST /v1/authz/relationships` writes facts like `document:readme#viewer@user:<uuid>`.
+- **Checks**: `POST /v1/authz/check {object, permission}` — omit the subject to use the session user; one round trip authenticates and authorizes. Batch up to 50. `min_amr` enforces step-up strength.
+- **Service tokens**: owner-minted `agk_…` bearer credentials let the app backend write tuples at runtime; schema changes stay owner-only.
+- **Console**: a self-contained editor at `/authz` on every tenant host.
+
+Domains are owner-managed from the dashboard (via on-behalf routes gated by a root-space control plane); anonymous sandboxes are fully open for development.
 
 ## Privacy Model
 
-- The server generates a UUID for each user and **never stores usernames**
-- Usernames are only used client-side as the WebAuthn authenticator display name
-- The `users` table contains only `id` — no email, no name, no PII
-- Credentials table stores the public key, never private key material
+- The server generates a UUID per user and **never stores usernames** — the `users` table contains only `id`; no email, no name, no PII
+- Usernames exist only client-side as the authenticator display name
+- Only public key material is stored, never private keys
+- Your app keys its own users table by the UUID and collects profile data when it needs it
 
 ## Monorepo Structure
 
 ```
 packages/
-  gratos-multi/     Cloudflare Worker — WebAuthn, sessions, multi-tenant
-  gratos-dash/      AuthGravity dashboard and docs site (Astro)
-  provisioner/      Domain provisioning service
-  cli/              @authgravity/cli — local dev proxy (authgravity listen)
+  gratos-multi/     Auth API Worker — WebAuthn, account keys, sessions, sandboxes,
+                    hosted surfaces, multi-tenant by Host
+  gratos-authz/     Authorization Worker — schemas, tuples, checks, service tokens,
+                    control plane (internal-only, reached via service binding)
+  provisioner/      Domain claims — DNS verify, Domain Connect, custom hostnames, cron
+  gratos-dash/      authgravity.org — dashboard, docs, signup/domains UI (Astro)
+  browser/          @authgravity/browser — account/device keys + client helpers (npm)
+  server/           @authgravity/server — server-side authz client + tooling (npm)
+  cli/              @authgravity/cli — `authgravity listen` local dev proxy (npm)
+  example/          Reference multi-user notes app built on the hosted surfaces
 ```
 
 ## Getting Started
 
-### 1. Claim your domain
+### Local dev in 60 seconds (no domain, no DNS)
 
-Sign up at [authgravity.org](https://authgravity.org) and enter your domain. Add the CNAME record provided:
-
-```
-authgravity  CNAME  <token>.cname.authgravity.net
+```bash
+npx @authgravity/cli listen    # mints a sandbox, proxies it on http://localhost:8787
 ```
 
-The target is a unique per-claim token (e.g., `ab3kx7.cname.authgravity.net`) that proves DNS ownership. AuthGravity polls and activates automatically.
+Point your app at `PUBLIC_AUTH_ENDPOINT=http://localhost:8787` and use the exact same code you'll ship to production.
 
-### 2. Wire up auth
+### Production
+
+Claim your domain at [authgravity.org/signup](https://authgravity.org/signup) (Domain Connect or a manual `authgravity CNAME cname.authgravity.net` record), then set `PUBLIC_AUTH_ENDPOINT=https://authgravity.myapp.com`.
+
+### Wire up auth
+
+Zero-UI: link to `https://authgravity.myapp.com/login?return_to=https://myapp.com/`. Or build your own:
 
 ```ts
 import { startRegistration, startAuthentication } from '@simplewebauthn/browser';
 
 const API = 'https://authgravity.myapp.com';
+const api = (path: string, init: RequestInit = {}) =>
+  fetch(API + path, { ...init, credentials: 'include' });
 
 export async function register() {
-  const opts = await (await fetch(API + '/v1/register/options', { credentials: 'include' })).json();
+  const opts = await (await api('/v1/register/options')).json();
   const cred = await startRegistration({ optionsJSON: opts });
-  return (await fetch(API + '/v1/register/verify', {
+  return (await api('/v1/register/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(cred),
+    body: JSON.stringify(cred), // bare response — no wrapper, no correlation id
   })).json(); // { verified, user: { id } } — session_id cookie is now set
 }
 
 export async function login() {
-  const opts = await (await fetch(API + '/v1/login/options', { credentials: 'include' })).json();
+  const opts = await (await api('/v1/login/options')).json();
   const cred = await startAuthentication({ optionsJSON: opts });
-  return (await fetch(API + '/v1/login/verify', {
+  return (await api('/v1/login/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
     body: JSON.stringify(cred),
   })).json();
 }
 ```
 
-### 3. Check auth state
+### Check auth state (client or server)
 
 ```ts
 const res = await fetch(API + '/v1/whoami', { credentials: 'include' });
-const session = res.ok ? await res.json() : null; // { user_id } or null
+const session = res.ok ? await res.json() : null; // { user_id, amr } or null
 ```
+
+Server-side, forward the incoming `cookie` header to `/v1/whoami`.
 
 ## Development
 
 ```bash
 bun install
 bun --cwd packages/gratos-multi dev      # Auth API on :8789
+bun --cwd packages/gratos-authz dev      # Authz on :8790 (run alongside gratos-multi)
 bun --cwd packages/provisioner dev       # Provisioner on :8788
 bun --cwd packages/gratos-dash dev       # Dash on :4322
+bun run deploy                           # Deploy all workers in binding order
 ```
 
 ## API Endpoints
 
-Options endpoints return standard WebAuthn options JSON unmodified; verify endpoints accept the bare credential response as the whole POST body.
+Served on every tenant host (`authgravity.<domain>` or `sandbox.authgravity.org/<id>`):
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/v1/register/options` | Standard `PublicKeyCredentialCreationOptionsJSON` |
-| POST | `/v1/register/verify` | Verify bare `RegistrationResponseJSON` + create session |
-| GET | `/v1/login/options` | Standard `PublicKeyCredentialRequestOptionsJSON` |
-| POST | `/v1/login/verify` | Verify bare `AuthenticationResponseJSON` + create session |
-| GET | `/v1/whoami` | Get current user from session (cookie or Bearer) |
-| POST | `/v1/logout` | Destroy session |
-| POST | `/sandbox` | Mint an instant sandbox auth endpoint |
+| GET | `/v1/register/options`, `/v1/login/options` | Standard WebAuthn options JSON, unmodified |
+| POST | `/v1/register/verify`, `/v1/login/verify` | Verify bare credential response, create session |
+| GET/POST | `/v1/key/(register\|login)/(options\|verify)` | Account-key / device-key credentials |
+| GET | `/v1/credentials` · DELETE `/v1/credentials/:id` | Credential management (rank-guarded) |
+| GET | `/v1/whoami` · POST `/v1/logout` | Session (cookie or `Authorization: Bearer`) |
+| GET/PUT/POST | `/v1/authz/(status\|schema\|relationships\|check)` | Authorization API |
+| GET | `/login`, `/register`, `/recover`, `/logout` | Hosted auth surfaces |
+| GET | `/authz` | Authz console |
+| GET | `/llms.txt` · `/.well-known/authgravity` | Per-host agent guide + discovery JSON |
+| POST | `/sandbox` · GET/DELETE `/sandboxes[/:id]` | Mint / manage instant sandboxes |
 
-## Full API Documentation
+## Documentation
 
-See the [AuthGravity docs](https://authgravity.org/docs) for complete integration guides covering the HTTP API (registration, login, session management) and local development with `npx @authgravity/cli listen`.
-
-A machine-readable version is available at [authgravity.org/llms.txt](https://authgravity.org/llms.txt).
+Human docs live at [authgravity.org/docs](https://authgravity.org/docs). The machine-readable guide is per-host: **every** tenant endpoint serves its own `/llms.txt` with the live authz schema and pre-filled endpoint — point a coding agent at it and it has the whole integration. [authgravity.org/llms.txt](https://authgravity.org/llms.txt) is the onboarding framing of the same generator.
 
 ## Key Dependencies
 
-- [@simplewebauthn/browser](https://simplewebauthn.dev/) — client-side WebAuthn
-- [@simplewebauthn/server](https://simplewebauthn.dev/) — server-side WebAuthn verification
+- [@simplewebauthn/browser](https://simplewebauthn.dev/) / [@simplewebauthn/server](https://simplewebauthn.dev/) — WebAuthn
 - [Hono](https://hono.dev/) — Worker HTTP framework
-- [Bun](https://bun.sh/) — package manager and runtime
+- [Bun](https://bun.sh/) — package manager, runtime, tests
+- Cloudflare Workers, D1, KV, Custom Hostnames, Workers AI
