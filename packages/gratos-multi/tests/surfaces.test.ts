@@ -42,6 +42,10 @@ describe('renderSurface', () => {
         expect(login).toContain('esm.sh/@authgravity/browser');
         expect(login).toContain('trySilentLogin');
         expect(login).toContain('"returnTo":"https://myapp.com/back"');
+        // first-run users get create-account right on the login page; the
+        // 12-words path is demoted behind "Recover your account"
+        expect(login).toContain('Create an account');
+        expect(login).toContain('Recover your account');
         expect(renderSurface('/register', null)).toContain('Create account with a passkey');
         expect(renderSurface('/recover', null)).toContain('claimOrRecover');
     });
@@ -52,9 +56,9 @@ describe('renderSurface', () => {
         for (const m of ['Step 1 of 3', 'Step 2 of 3', 'Step 3 of 3', 'I have pen and paper', 'word-grid', 'Print them instead', 'what is word number', 'print-sheet']) {
             expect(reg).toContain(m);
         }
-        // account creation is offered with a passkey AND with 12 words (no-passkey path)
+        // passkey-first creation; the 12-words path stays as a quiet fallback
         expect(reg).toContain('Create account with a passkey');
-        expect(reg).toContain('Create account with 12 words');
+        expect(reg).toContain('No passkey on this device? Use 12 words');
         const rec = renderSurface('/recover', null);
         expect(rec).toContain('Type your 12 words from the paper');
     });

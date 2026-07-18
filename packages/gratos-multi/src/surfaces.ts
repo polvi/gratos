@@ -130,7 +130,7 @@ function page(title: string, sub: string, script: string, returnTo: string | nul
 <script id="ag-cfg" type="application/json">${cfg}</script>
 <script type="module">
 import { startRegistration, startAuthentication } from '${WA_URL}';
-import { mintKey, decodeKey, registerAccountKey, loginWithAccountKey, claimOrRecover, enableDeviceKey, trySilentLogin, suggestedMethod } from '${AG_URL}';
+import { mintKey, decodeKey, registerAccountKey, claimOrRecover, enableDeviceKey, trySilentLogin } from '${AG_URL}';
 ${COMMON}
 ${script}
 </script></body></html>`;
@@ -149,27 +149,22 @@ const LOGIN = `
       setStatus(data.error || 'That did not verify \\u2014 give it another try.', 'error');
     } catch (e) { setStatus('The passkey prompt was cancelled or failed \\u2014 give it another try.', 'error'); }
   };
-  // Lead with whatever this device can actually do: a machine with no biometric
-  // gets the 12-words path first (old computers should not hit a passkey wall).
-  const renderLogin = (method) => {
-    const wordsHref = PREFIX + '/recover' + rt;
-    if (method === 'account-key') {
-      root.innerHTML = '<button id="words" class="primary">Sign in with your 12 words</button>'
-        + '<button id="pk">Use a passkey instead</button>';
-    } else {
-      root.innerHTML = '<button id="pk" class="primary">Sign in with a passkey</button>'
-        + '<button id="words">Use your 12 words instead</button>';
-    }
-    const pk = document.getElementById('pk'); if (pk) pk.onclick = passkeyLogin;
-    const words = document.getElementById('words'); if (words) words.onclick = () => { location.href = wordsHref; };
+  // First-run users land here too: creating an account is offered right on the
+  // page, and the 12-words path lives quietly behind "Recover your account".
+  const renderLogin = () => {
+    root.innerHTML = '<button id="pk" class="primary">Sign in with a passkey</button>'
+      + '<button id="create">New here? Create an account</button>'
+      + '<button id="rec" class="alt">Recover your account</button>';
+    document.getElementById('pk').onclick = passkeyLogin;
+    document.getElementById('create').onclick = () => { location.href = PREFIX + '/register' + rt; };
+    document.getElementById('rec').onclick = () => { location.href = PREFIX + '/recover' + rt; };
   };
   // A remembered device signs in silently first.
   setStatus('Checking this device\\u2026');
   try {
     const silent = await trySilentLogin(API);
-    if (silent && silent.verified) { go(); }
-    else { setStatus(''); let m = 'passkey'; try { m = await suggestedMethod(); } catch (e) {} renderLogin(m); }
-  } catch (e) { setStatus(''); renderLogin('passkey'); }
+    if (silent && silent.verified) { go(); } else { setStatus(''); renderLogin(); }
+  } catch (e) { setStatus(''); renderLogin(); }
 `;
 
 // --- /register (create with a passkey OR 12 words; gentle write-it-down flow) ---
@@ -183,7 +178,6 @@ const REGISTER = `
   let key = null;
   let confirmIndex = 0;
   let mode = 'create';       // 'create' = the 12 words ARE the account; 'recovery' = added after a passkey
-  let leadMethod = 'passkey';
   const startWords = (m) => { mode = m; introRecovery(); };
 
   const introRecovery = () => {
@@ -196,7 +190,7 @@ const REGISTER = `
       + '<button id="show" class="primary">I have pen and paper \\u2014 show me the words</button>'
       + '<button id="back" class="alt">' + (isCreate ? 'Go back' : 'Skip for now') + '</button>';
     document.getElementById('show').onclick = showWords;
-    document.getElementById('back').onclick = isCreate ? (() => renderStart(leadMethod)) : enableDeviceThenGo;
+    document.getElementById('back').onclick = isCreate ? renderStart : enableDeviceThenGo;
   };
 
   const showWords = () => {
@@ -263,22 +257,17 @@ const REGISTER = `
     } catch (e) { setStatus('The passkey prompt was cancelled or failed \\u2014 give it another try.', 'error'); }
   };
 
-  const renderStart = (method) => {
-    leadMethod = method;
-    const pk = '<button id="pk"' + (method === 'account-key' ? '' : ' class="primary"') + '>Create account with a passkey</button>';
-    const words = '<button id="words"' + (method === 'account-key' ? ' class="primary"' : '') + '>Create account with 12 words</button>';
-    root.innerHTML = (method === 'account-key' ? (words + pk) : (pk + words))
-      + '<button id="have" class="alt">Already have an account? Sign in</button>';
+  // Passkey-first. The 12-words path stays available as a quiet fallback for
+  // devices with no authenticator, but it is no longer a headline option.
+  const renderStart = () => {
+    root.innerHTML = '<button id="pk" class="primary">Create account with a passkey</button>'
+      + '<button id="have" class="alt">Already have an account? Sign in</button>'
+      + '<button id="words" class="alt">No passkey on this device? Use 12 words</button>';
     document.getElementById('pk').onclick = createPasskey;
     document.getElementById('words').onclick = () => startWords('create');
     document.getElementById('have').onclick = () => { location.href = PREFIX + '/login' + rt; };
   };
-
-  // Lead with what this device can do: no platform authenticator → 12-words first,
-  // but both "create with a passkey" and "create with 12 words" are always offered.
-  let m0 = 'passkey';
-  try { m0 = await suggestedMethod(); } catch (e) {}
-  renderStart(m0);
+  renderStart();
 `;
 
 // --- /recover (sign in / set up with 12 words) ---
@@ -318,11 +307,11 @@ const LOGOUT = `
 export function renderSurface(path: string, returnTo: string | null): string {
     switch (path) {
         case '/login':
-            return page('Sign in', 'Use your passkey, or your 12 words.', LOGIN, returnTo);
+            return page('Sign in', 'Welcome back.', LOGIN, returnTo);
         case '/register':
             return page('Create your account', 'One passkey, no password.', REGISTER, returnTo);
         case '/recover':
-            return page('Your 12 secret words', 'For a new device or a lost passkey.', RECOVER, returnTo);
+            return page('Recover your account', 'Sign in with your 12 secret words.', RECOVER, returnTo);
         case '/logout':
             return page('Sign out', '', LOGOUT, returnTo);
         default:
