@@ -71,6 +71,24 @@ describe('buildLlmsTxt', () => {
         expect(txt).not.toContain('Schema JSON (current)');
     });
 
+    test('schema document format is documented and its example passes the validator', () => {
+        // Rendered with and without a live schema — the format section is always there.
+        for (const txt of [buildLlmsTxt(ctx({ stored: null })), buildLlmsTxt(ctx({ stored }))]) {
+            expect(txt).toContain('### Schema document format');
+            const block = txt.match(/### Schema document format[\s\S]*?```json\n([\s\S]*?)\n```/);
+            expect(block).not.toBeNull();
+            const result = validateSchema(JSON.parse(block![1]));
+            expect(result.ok).toBe(true);
+            // every construct an agent might author appears in the example
+            for (const construct of ['"union"', '"exclusion"', '"arrow"', '"relation": "member"']) {
+                expect(block![1]).toContain(construct);
+            }
+        }
+        // the root overview doc doesn't carry the tenant format section
+        const root = buildLlmsTxt(ctx({ tenant: 'authgravity.org', kind: 'root', endpoint: null, stored: null }));
+        expect(root).not.toContain('### Schema document format');
+    });
+
     test('root: onboarding framing, no live schema dump', () => {
         const txt = buildLlmsTxt(ctx({ tenant: 'authgravity.org', kind: 'root', endpoint: null, stored: null }));
         expect(txt).toContain('# AuthGravity');

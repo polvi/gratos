@@ -189,6 +189,69 @@ function authzOverviewSection(lines: string[]) {
     lines.push('');
 }
 
+// The exact JSON accepted by PUT /v1/authz/schema, mirroring validateSchema
+// (schema.ts). Keep the two in lockstep: this is what agents author from.
+function schemaFormatSection(lines: string[]) {
+    lines.push('### Schema document format');
+    lines.push('');
+    lines.push(
+        'The schema is a single JSON object — the whole `PUT /v1/authz/schema` body. Invalid documents return 400 with per-field `details`. Example with every construct:'
+    );
+    lines.push('');
+    // Hand-formatted for compactness (tests parse + validate this block).
+    lines.push('```json');
+    lines.push(`{ "definitions": {
+  "group": {
+    "relations": { "member": { "subjects": [{ "type": "user" }] } }
+  },
+  "folder": {
+    "relations": {
+      "owner":  { "subjects": [{ "type": "user" }] },
+      "viewer": { "subjects": [{ "type": "user" }, { "type": "group", "relation": "member" }] }
+    },
+    "permissions": {
+      "view": { "union": [{ "rel": "owner" }, { "rel": "viewer" }] }
+    }
+  },
+  "document": {
+    "relations": {
+      "parent": { "subjects": [{ "type": "folder" }] },
+      "editor": { "subjects": [{ "type": "user" }] },
+      "banned": { "subjects": [{ "type": "user" }] }
+    },
+    "permissions": {
+      "edit": { "rel": "editor" },
+      "view": { "exclusion": {
+        "base": { "union": [{ "rel": "edit" }, { "arrow": { "via": "parent", "permission": "view" } }] },
+        "subtract": { "rel": "banned" }
+      } }
+    }
+  }
+} }`);
+    lines.push('```');
+    lines.push('');
+    lines.push(
+        '- Top level has exactly one key, `definitions`: a map of object type → `{relations?, permissions?}`. The `user` type is built in — never define it. Type names starting with `gratos_` are reserved.'
+    );
+    lines.push(
+        '- **Relations** are the facts you write as tuples. Each is `{"subjects": [...]}` (non-empty). A subject type ref is `{"type": "user"}` (direct) or `{"type": "group", "relation": "member"}` (a subject set: everyone who is a `member` of that group, transitively). Subject types must be `user` or a type defined in this document; subject-set refs may name relations only, not permissions.'
+    );
+    lines.push('- **Permissions** are computed at check time. An expression object has exactly ONE of:');
+    lines.push('  - `{"rel": "<name>"}` — another relation or permission on the same type');
+    lines.push(
+        '  - `{"arrow": {"via": "<relation>", "permission": "<name>"}}` — follow `via` tuples to the referenced object(s) and check `<name>` (relation or permission) there, e.g. `parent->view`. The `via` relation must have direct-only subjects (no subject sets).'
+    );
+    lines.push('  - `{"union": [expr, ...]}` or `{"intersection": [expr, ...]}` — non-empty arrays');
+    lines.push('  - `{"exclusion": {"base": expr, "subtract": expr}}` — base minus subtract (deny list)');
+    lines.push(
+        '- Names (types, relations, permissions) match `^[a-z][a-z0-9_]{0,63}$`. Relations and permissions on a type share one namespace, and permission-to-permission reference cycles within a type are rejected.'
+    );
+    lines.push(
+        '- Limits: ≤100 type definitions, ≤100 relations+permissions per type, ≤50 nodes per permission expression, ≤64 KB document. Each save bumps the schema `version` (echoed as `X-Schema-Version` on checks).'
+    );
+    lines.push('');
+}
+
 function authzSection(lines: string[], ctx: LlmsContext) {
     const defs = ctx.stored?.doc.definitions ?? {};
     const typeNames = Object.keys(defs);
@@ -220,8 +283,8 @@ function authzSection(lines: string[], ctx: LlmsContext) {
         lines.push(
             'No schema is defined yet. ' +
                 (ctx.mode === 'open-sandbox'
-                    ? 'This is an open sandbox: define one with `PUT /v1/authz/schema` (any authenticated user).'
-                    : "The tenant owner defines it from the AuthGravity dashboard's Authorization panel.")
+                    ? 'This is an open sandbox: define one with `PUT /v1/authz/schema` (any authenticated user) using the document format below.'
+                    : "The tenant owner defines it from the AuthGravity dashboard's Authorization panel (the document format below is what gets stored).")
         );
         lines.push('');
     } else {
@@ -248,6 +311,8 @@ function authzSection(lines: string[], ctx: LlmsContext) {
             lines.push('');
         }
     }
+
+    schemaFormatSection(lines);
 
     lines.push('### Checking permissions');
     lines.push('');
