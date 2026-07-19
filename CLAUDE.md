@@ -88,3 +88,4 @@ In a seperate agent, keep the specs/ file up to date using TLA+. This involves m
 ~/Downloads/tla2tools.jar
 
 Be sure that specs are finite and if the checker runs for more than 30s, kill it and figure out why states blew up. Do this in the background and do not block the users UI when you're doing this. 
+
