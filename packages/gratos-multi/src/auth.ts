@@ -15,7 +15,7 @@ import type {
 import { isoUint8Array } from '@simplewebauthn/server/helpers';
 
 import type { Env, Variables } from './index';
-import type { TenantInfo } from './tenant';
+import { hostMatchesRpId, type TenantInfo } from './tenant';
 import { getUser, createUser, saveCredential, getCredentialById } from './db';
 import { mintSession, resolveSession, SESSION_TTL } from './sessions';
 import { getSessionId } from './session';
@@ -38,9 +38,9 @@ function getExpectedOrigin(c: any, tenantInfo: TenantInfo): string {
         try {
             const host = new URL(requestOrigin).hostname;
             // Sandbox tenants run the ceremony on the developer's local app
-            // (rpId=localhost), so only accept localhost/127.0.0.1 origins.
+            // (rpId=localhost) or, with a custom rp_id, on that hostname.
             if (tenantInfo.sandbox) {
-                if (host === 'localhost' || host === '127.0.0.1') {
+                if (host === 'localhost' || host === '127.0.0.1' || hostMatchesRpId(host, tenantInfo.rpId)) {
                     return requestOrigin;
                 }
             } else if (

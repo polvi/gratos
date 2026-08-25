@@ -14,14 +14,23 @@ export type ListenOptions = {
     host: string;
     /** Host used to mint a sandbox when no endpoint is given. */
     mintHost: string;
+    /** Custom WebAuthn RP ID for the minted sandbox (default localhost). */
+    rpId?: string;
 };
 
-export async function mintSandbox(mintHost: string): Promise<{ id: string; endpoint: string }> {
-    const res = await fetch(`${mintHost}/sandbox`, { method: 'POST' });
+export type MintedSandbox = { id: string; endpoint: string; rp_id?: string };
+
+export async function mintSandbox(mintHost: string, rpId?: string): Promise<MintedSandbox> {
+    const res = await fetch(`${mintHost}/sandbox`, {
+        method: 'POST',
+        ...(rpId
+            ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rp_id: rpId }) }
+            : {}),
+    });
     if (!res.ok) {
         throw new Error(`Failed to mint sandbox (${res.status}): ${await res.text()}`);
     }
-    return (await res.json()) as { id: string; endpoint: string };
+    return (await res.json()) as MintedSandbox;
 }
 
 export function isLoopbackHost(host: string): boolean {
@@ -148,11 +157,13 @@ export function createApp(endpoint: string, appOpts: AppOptions = {}) {
 export async function listen(opts: ListenOptions) {
     let endpoint = opts.endpoint;
     let mintedId: string | undefined;
+    let rpId: string | undefined;
 
     if (!endpoint) {
-        const minted = await mintSandbox(opts.mintHost);
+        const minted = await mintSandbox(opts.mintHost, opts.rpId);
         endpoint = minted.endpoint;
         mintedId = minted.id;
+        rpId = minted.rp_id;
     }
 
     const loopback = isLoopbackHost(opts.host);
@@ -171,5 +182,5 @@ export async function listen(opts: ListenOptions) {
         }
     }
 
-    return { server, endpoint, mintedId, proxyUrl, reachable };
+    return { server, endpoint, mintedId, rpId, proxyUrl, reachable };
 }

@@ -28,6 +28,10 @@ Options (listen):
                            (e.g. https://sandbox.authgravity.org/<id>)
       --mint-host <url>    Host used to mint the sandbox
                            (default: ${DEFAULT_MINT_HOST})
+      --rp-id <host>       WebAuthn RP ID for the minted sandbox (default:
+                           localhost). Set this to the hostname your app is
+                           served on when it is not localhost, e.g. a tailnet
+                           HTTPS host in front of the proxy. Passkeys bind to it.
   -h, --help               Show this help
 
 Run "authgravity <command> --help" for command-specific options.
@@ -43,6 +47,7 @@ function parseFlags(args: string[]): Record<string, string> {
         else if (arg === '-H' || arg === '--host') flags.host = args[++i];
         else if (arg === '--endpoint') flags.endpoint = args[++i];
         else if (arg === '--mint-host') flags.mintHost = args[++i];
+        else if (arg === '--rp-id') flags.rpId = args[++i];
         else {
             console.error(`Unknown option: ${arg}\n`);
             console.error(USAGE);
@@ -91,15 +96,21 @@ async function runListen(args: string[]) {
         process.exit(1);
     }
 
-    const { endpoint, mintedId, proxyUrl, reachable } = await listen({
+    if (flags.rpId && flags.endpoint) {
+        console.error('--rp-id applies when minting; an existing --endpoint already has its RP ID fixed.');
+        process.exit(1);
+    }
+
+    const { endpoint, mintedId, rpId, proxyUrl, reachable } = await listen({
         endpoint: flags.endpoint,
         port,
         host: flags.host || DEFAULT_HOST,
         mintHost: flags.mintHost || DEFAULT_MINT_HOST,
+        rpId: flags.rpId,
     });
 
     console.log('AuthGravity CLI\n');
-    if (mintedId) console.log(`✔ Minted sandbox ${mintedId}`);
+    if (mintedId) console.log(`✔ Minted sandbox ${mintedId}${rpId ? ` (RP ID ${rpId})` : ''}`);
     console.log(`  Sandbox endpoint: ${endpoint}`);
     console.log(`▶ Listening on ${proxyUrl}`);
     for (const url of reachable) console.log(`  also reachable at ${url}`);

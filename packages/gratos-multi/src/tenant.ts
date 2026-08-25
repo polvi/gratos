@@ -23,6 +23,37 @@ export type TenantInfo = {
  */
 export const SANDBOX_HOSTS = ['sandbox.authgravity.org', 'sandbox.localhost'];
 
+// Registrable-hostname shape for a custom sandbox RP ID (lowercase labels, no
+// port, no path). Effective-TLD checks are the browser's job; ours is only to
+// keep out junk and AuthGravity's own domains.
+const RP_ID_RE = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+const RESERVED_RP_SUFFIXES = ['authgravity.org'];
+
+/**
+ * Validate a caller-supplied sandbox RP ID. Sandboxes default to rpId=localhost;
+ * a custom one lets the ceremony run on a real hostname (e.g. a tailnet HTTPS
+ * proxy). AuthGravity's own domains are refused so a throwaway sandbox can
+ * never mint passkeys scoped to the real product RP.
+ */
+export function validateSandboxRpId(input: unknown): string | null {
+    if (typeof input !== 'string') return null;
+    const rpId = input.trim().toLowerCase();
+    if (!RP_ID_RE.test(rpId)) return null;
+    if (RESERVED_RP_SUFFIXES.some((d) => rpId === d || rpId.endsWith('.' + d))) return null;
+    return rpId;
+}
+
+/** Is `host` the sandbox's RP ID or one of its subdomains? */
+export function hostMatchesRpId(host: string, rpId: string): boolean {
+    return host === rpId || host.endsWith('.' + rpId);
+}
+
+/** Apply a stored custom RP ID to a resolved sandbox tenant. */
+export function withSandboxRpId(info: TenantInfo, rpId: string | null | undefined): TenantInfo {
+    if (!info.sandbox || !rpId) return info;
+    return { ...info, rpId };
+}
+
 /**
  * Passkey display name (WebAuthn rp.name). AuthGravity-owned surfaces (the
  * product's own pool, sandboxes, local dev) show "AuthGravity"; customer

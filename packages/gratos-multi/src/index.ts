@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { WorkerEntrypoint } from 'cloudflare:workers';
 
-import { resolveTenant } from './tenant';
+import { resolveTenant, validateSandboxRpId, withSandboxRpId, hostMatchesRpId, type TenantInfo } from './tenant';
 import { authRoutes } from './auth';
 import { sessionRoutes, getSessionId } from './session';
 import { keyRoutes } from './keys';
@@ -10,6 +10,8 @@ import { getUser } from './db';
 import { parseSessionValue, resolveSession } from './sessions';
 import { sha256Hex } from './hash';
 import { SURFACE_PATHS, renderSurface, validateReturnTo } from './surfaces';
+import { aauthRoutes } from './aauth/routes';
+import { expireSweep } from './aauth/missions';
 
 import type { AuthzRPC } from '../../gratos-authz/src/index';
 
@@ -19,11 +21,43 @@ export type Env = {
     // gratos-authz worker (no public route); mounted at /authz + /v1/authz/*,
     // plus control-plane RPC (grantTenantOwners/cleanupTenant).
     AUTHZ: Service<AuthzRPC>;
+    // Wrangler secret wrapping the per-tenant PS signing keys at rest (AES-GCM
+    // KEK). Unset in dev/CI → a fixed dev KEK keeps clone-and-dev zero-setup.
+    PS_KEK?: string;
 };
 
 export type Variables = {
     userId: string;
+    tenantInfo: TenantInfo;
 };
+
+/**
+ * Resolve the tenant for a request, applying a sandbox's stored custom rp_id.
+ * Memoised on the context so the CORS layer and the route dispatcher share one
+ * D1 lookup; non-sandbox tenants never touch the database.
+ */
+async function tenantFor(c: {
+    req: { url: string };
+    env: Env;
+    get: (k: 'tenantInfo') => TenantInfo | undefined;
+    set: (k: 'tenantInfo', v: TenantInfo) => void;
+}): Promise<TenantInfo> {
+    const cached = c.get('tenantInfo');
+    if (cached) return cached;
+    let info = resolveTenant(new URL(c.req.url));
+    if (info.sandbox && info.sandboxId) {
+        try {
+            const row = await c.env.DB.prepare('SELECT rp_id FROM sandboxes WHERE id = ?')
+                .bind(info.tenant)
+                .first<{ rp_id: string | null }>();
+            info = withSandboxRpId(info, row?.rp_id);
+        } catch {
+            // column/table may not exist yet in older deployments; keep default rpId
+        }
+    }
+    c.set('tenantInfo', info);
+    return info;
+}
 
 /**
  * RPC entrypoint for service bindings.
@@ -64,6 +98,7 @@ export class AuthRPC extends WorkerEntrypoint<Env> {
             await this.env.DB.prepare('DELETE FROM public_keys WHERE tenant = ?').bind(tenant).run();
             await this.env.DB.prepare('DELETE FROM users WHERE tenant = ?').bind(tenant).run();
             await this.env.DB.prepare('DELETE FROM sandboxes WHERE id = ?').bind(tenant).run();
+            await deleteAauthTenant(this.env.DB, tenant);
             try {
                 await this.env.AUTHZ.cleanupTenant(tenant);
             } catch (e) {
@@ -72,6 +107,14 @@ export class AuthRPC extends WorkerEntrypoint<Env> {
             swept++;
         }
         return { swept };
+    }
+
+    /**
+     * Expire overdue AAuth mission proposals. Called from the provisioner's
+     * scheduled cron alongside sweepSandboxes.
+     */
+    async sweepAauth(): Promise<{ expired: number }> {
+        return { expired: await expireSweep(this.env.DB) };
     }
 
     /**
@@ -117,8 +160,7 @@ export class AuthRPC extends WorkerEntrypoint<Env> {
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 app.use('/*', async (c, next) => {
-    const url = new URL(c.req.url);
-    const tenantInfo = resolveTenant(url);
+    const tenantInfo = await tenantFor(c);
 
     // Dynamic CORS: allow origins on the same tenant domain
     return cors({
@@ -128,8 +170,12 @@ app.use('/*', async (c, next) => {
                 if (host === tenantInfo.tenant || host.endsWith('.' + tenantInfo.tenant)) {
                     return origin;
                 }
-                // Sandbox tenants are driven from a developer's local app.
-                if (tenantInfo.sandbox && (host === 'localhost' || host === '127.0.0.1')) {
+                // Sandbox tenants are driven from a developer's local app, or
+                // from the sandbox's custom RP ID host when one was minted.
+                if (
+                    tenantInfo.sandbox &&
+                    (host === 'localhost' || host === '127.0.0.1' || hostMatchesRpId(host, tenantInfo.rpId))
+                ) {
                     return origin;
                 }
             } catch {
@@ -162,6 +208,8 @@ function wellKnown(endpoint: string, tenant: string) {
         endpoint,
         llms_txt: `${endpoint}/llms.txt`,
         console: `${endpoint}/authz`,
+        // AAuth Person Server discovery (spec-fixed path, served per host).
+        aauth: `${endpoint}/.well-known/aauth-person.json`,
         auth: {
             register_options: '/v1/register/options',
             register_verify: '/v1/register/verify',
@@ -215,6 +263,28 @@ app.post('/sandbox', async (c) => {
     }
     await c.env.KV.put(rlKey, String(count + 1), { expirationTtl: 3600 });
 
+    // Optional custom WebAuthn RP ID (default localhost). The body is optional
+    // and may be empty, so parse leniently.
+    let rpId: string | null = null;
+    const rawBody = await c.req.text();
+    if (rawBody.trim()) {
+        let body: { rp_id?: unknown };
+        try {
+            body = JSON.parse(rawBody);
+        } catch {
+            return c.json({ error: 'Invalid JSON body' }, 400);
+        }
+        if (body.rp_id !== undefined) {
+            rpId = validateSandboxRpId(body.rp_id);
+            if (!rpId) {
+                return c.json(
+                    { error: 'Invalid rp_id: expected a registrable hostname (not an AuthGravity domain)' },
+                    400
+                );
+            }
+        }
+    }
+
     const id = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
     const url = new URL(c.req.url);
     const isDev =
@@ -233,10 +303,15 @@ app.post('/sandbox', async (c) => {
     // Record the tenant for TTL cleanup / ownership (best-effort).
     const ownerId = await resolveRequestUser(c);
     try {
-        await c.env.DB.prepare('INSERT INTO sandboxes (id, created_at, user_id) VALUES (?, ?, ?)')
-            .bind(tenant, Date.now(), ownerId)
+        await c.env.DB.prepare('INSERT INTO sandboxes (id, created_at, user_id, rp_id) VALUES (?, ?, ?, ?)')
+            .bind(tenant, Date.now(), ownerId, rpId)
             .run();
-    } catch {
+    } catch (e) {
+        // A custom rp_id only works if it was persisted; the default needs no row.
+        if (rpId) {
+            console.error('sandbox insert failed with rp_id', tenant, e);
+            return c.json({ error: 'Could not persist sandbox rp_id' }, 500);
+        }
         // table may not exist yet in older deployments; non-fatal
     }
 
@@ -251,7 +326,7 @@ app.post('/sandbox', async (c) => {
         }
     }
 
-    return c.json({ id, endpoint, mode: 'sandbox', owned: !!ownerId });
+    return c.json({ id, endpoint, mode: 'sandbox', owned: !!ownerId, rp_id: rpId ?? 'localhost' });
 });
 
 // List the requester's owned sandboxes.
@@ -296,6 +371,7 @@ app.delete('/sandboxes/:sid', async (c) => {
     await c.env.DB.prepare('DELETE FROM public_keys WHERE tenant = ?').bind(tenant).run();
     await c.env.DB.prepare('DELETE FROM users WHERE tenant = ?').bind(tenant).run();
     await c.env.DB.prepare('DELETE FROM sandboxes WHERE id = ?').bind(tenant).run();
+    await deleteAauthTenant(c.env.DB, tenant);
     try {
         await c.env.AUTHZ.cleanupTenant(tenant);
     } catch (e) {
@@ -305,10 +381,22 @@ app.delete('/sandboxes/:sid', async (c) => {
     return c.json({ success: true });
 });
 
+/** Remove a tenant's AAuth state (keys, grants, missions, log) with its pool. */
+async function deleteAauthTenant(db: D1Database, tenant: string): Promise<void> {
+    try {
+        await db.prepare('DELETE FROM ps_keys WHERE tenant = ?').bind(tenant).run();
+        await db.prepare('DELETE FROM aauth_grants WHERE tenant = ?').bind(tenant).run();
+        await db.prepare('DELETE FROM aauth_missions WHERE tenant = ?').bind(tenant).run();
+        await db.prepare('DELETE FROM aauth_mission_log WHERE tenant = ?').bind(tenant).run();
+    } catch {
+        // tables may not exist yet in older deployments; non-fatal
+    }
+}
+
 // Mount tenant-scoped routes per request
 app.all('/*', async (c, next) => {
     const url = new URL(c.req.url);
-    const tenantInfo = resolveTenant(url);
+    const tenantInfo = await tenantFor(c);
 
     const auth = authRoutes(tenantInfo);
     const session = sessionRoutes(tenantInfo);
@@ -332,6 +420,12 @@ app.all('/*', async (c, next) => {
                 ? `${url.origin}/${tenantInfo.sandboxId}`
                 : url.origin;
         return c.json(wellKnown(endpoint, tenantInfo.tenant), 200, { 'Cache-Control': 'no-cache' });
+    }
+
+    // AAuth Person Server: spec-fixed discovery + /v1/aauth/* API. Served on
+    // every tenant host (root, sandboxes, claimed domains) like /v1/authz.
+    if (path === '/.well-known/aauth-person.json' || path === '/v1/aauth' || path.startsWith('/v1/aauth/')) {
+        return aauthRoutes(tenantInfo).fetch(req, c.env);
     }
 
     // Hosted end-user auth surfaces (/login, /register, /logout, /recover).
