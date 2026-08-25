@@ -86,6 +86,7 @@ packages/
 
 ```bash
 npx @authgravity/cli listen    # mints a sandbox, proxies it on http://localhost:8787
+npx @authgravity/cli listen --host 0.0.0.0   # also reachable from LAN/tailnet devices (CORS open)
 ```
 
 Point your app at `PUBLIC_AUTH_ENDPOINT=http://localhost:8787` and use the exact same code you'll ship to production.

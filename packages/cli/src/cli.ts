@@ -4,6 +4,7 @@ import { runSchemaTypes, SCHEMA_USAGE } from './schema';
 import { runTuplesImport, TUPLES_USAGE } from './tuples';
 
 const DEFAULT_PORT = 8787;
+const DEFAULT_HOST = 'localhost';
 const DEFAULT_MINT_HOST = 'https://authgravity.authgravity.org';
 
 const USAGE = `AuthGravity CLI
@@ -21,6 +22,8 @@ Usage:
 
 Options (listen):
   -p, --port <port>        Port to listen on (default: ${DEFAULT_PORT})
+  -H, --host <host>        Interface to bind (default: ${DEFAULT_HOST}; use 0.0.0.0
+                           to reach the proxy from LAN/tailnet devices)
       --endpoint <url>     Use an existing sandbox endpoint instead of minting
                            (e.g. https://sandbox.authgravity.org/<id>)
       --mint-host <url>    Host used to mint the sandbox
@@ -37,6 +40,7 @@ function parseFlags(args: string[]): Record<string, string> {
         const arg = args[i];
         if (arg === '-h' || arg === '--help') flags.help = 'true';
         else if (arg === '-p' || arg === '--port') flags.port = args[++i];
+        else if (arg === '-H' || arg === '--host') flags.host = args[++i];
         else if (arg === '--endpoint') flags.endpoint = args[++i];
         else if (arg === '--mint-host') flags.mintHost = args[++i];
         else {
@@ -87,19 +91,22 @@ async function runListen(args: string[]) {
         process.exit(1);
     }
 
-    const { endpoint, mintedId, proxyUrl } = await listen({
+    const { endpoint, mintedId, proxyUrl, reachable } = await listen({
         endpoint: flags.endpoint,
         port,
+        host: flags.host || DEFAULT_HOST,
         mintHost: flags.mintHost || DEFAULT_MINT_HOST,
     });
 
     console.log('AuthGravity CLI\n');
     if (mintedId) console.log(`✔ Minted sandbox ${mintedId}`);
     console.log(`  Sandbox endpoint: ${endpoint}`);
-    console.log(`▶ Listening on ${proxyUrl}\n`);
+    console.log(`▶ Listening on ${proxyUrl}`);
+    for (const url of reachable) console.log(`  also reachable at ${url}`);
+    console.log('');
     console.log('Point your app at the proxy:');
-    console.log(`  PUBLIC_AUTH_ENDPOINT=${proxyUrl}\n`);
-    console.log('Sessions will be set as a first-party session_id cookie on localhost.');
+    console.log(`  PUBLIC_AUTH_ENDPOINT=${reachable[0] ?? proxyUrl}\n`);
+    console.log('Sessions will be set as a first-party session_id cookie on the proxy host.');
     console.log('Requests:');
 }
 

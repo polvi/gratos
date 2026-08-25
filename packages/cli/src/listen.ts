@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
+import { networkInterfaces } from 'node:os';
 
 const COOKIE_NAME = 'session_id';
 const SESSION_TTL = 604800; // 7 days, matches the server
@@ -9,6 +10,8 @@ export type ListenOptions = {
     /** Sandbox auth endpoint, e.g. https://sandbox.authgravity.org/<id>. Minted if omitted. */
     endpoint?: string;
     port: number;
+    /** Interface to bind. Non-loopback hosts relax CORS to any origin. */
+    host: string;
     /** Host used to mint a sandbox when no endpoint is given. */
     mintHost: string;
 };
@@ -19,6 +22,11 @@ export async function mintSandbox(mintHost: string): Promise<{ id: string; endpo
         throw new Error(`Failed to mint sandbox (${res.status}): ${await res.text()}`);
     }
     return (await res.json()) as { id: string; endpoint: string };
+}
+
+export function isLoopbackHost(host: string): boolean {
+    const h = host.replace(/^\[|\]$/g, '');
+    return h === 'localhost' || h === '127.0.0.1' || h === '::1';
 }
 
 function isLocalOrigin(origin: string): boolean {
@@ -45,7 +53,12 @@ const DROP_RESPONSE_HEADERS = new Set([
     'connection',
 ]);
 
-export function createApp(endpoint: string) {
+export type AppOptions = {
+    /** Reflect every Origin instead of only localhost (used when bound off-loopback). */
+    allowAnyOrigin?: boolean;
+};
+
+export function createApp(endpoint: string, appOpts: AppOptions = {}) {
     const upstream = new URL(endpoint);
     const upstreamBase = upstream.origin + upstream.pathname.replace(/\/$/, '');
 
@@ -54,7 +67,7 @@ export function createApp(endpoint: string) {
     app.use(
         '/*',
         cors({
-            origin: (origin) => (isLocalOrigin(origin) ? origin : ''),
+            origin: (origin) => (appOpts.allowAnyOrigin || isLocalOrigin(origin) ? origin : ''),
             allowHeaders: ['Content-Type', 'Authorization'],
             allowMethods: ['POST', 'GET', 'OPTIONS', 'DELETE', 'PUT'],
             maxAge: 600,
@@ -104,8 +117,10 @@ export function createApp(endpoint: string) {
             try {
                 const data = JSON.parse(text) as { session_id?: string };
                 if (data.session_id) {
-                    // Host-only localhost cookie: no Domain, no Secure (plain
-                    // http://localhost), Lax is fine across localhost ports.
+                    // Host-only cookie: no Domain, so it scopes to whichever
+                    // host the client used (localhost, or a LAN/tailnet IP when
+                    // bound to 0.0.0.0); no Secure (plain http); Lax is fine
+                    // across ports.
                     setCookie(c, COOKIE_NAME, data.session_id, {
                         httpOnly: true,
                         sameSite: 'Lax',
@@ -140,8 +155,21 @@ export async function listen(opts: ListenOptions) {
         mintedId = minted.id;
     }
 
-    const app = createApp(endpoint);
-    const server = Bun.serve({ port: opts.port, fetch: app.fetch });
+    const loopback = isLoopbackHost(opts.host);
+    const app = createApp(endpoint, { allowAnyOrigin: !loopback });
+    const server = Bun.serve({ hostname: opts.host, port: opts.port, fetch: app.fetch });
 
-    return { server, endpoint, mintedId, proxyUrl: `http://localhost:${server.port}` };
+    const displayHost = loopback ? 'localhost' : opts.host;
+    const proxyUrl = `http://${displayHost}:${server.port}`;
+    // When bound to all interfaces, list the concrete addresses a device can use.
+    const reachable: string[] = [];
+    if (opts.host === '0.0.0.0' || opts.host === '::') {
+        for (const addrs of Object.values(networkInterfaces())) {
+            for (const a of addrs ?? []) {
+                if (!a.internal && a.family === 'IPv4') reachable.push(`http://${a.address}:${server.port}`);
+            }
+        }
+    }
+
+    return { server, endpoint, mintedId, proxyUrl, reachable };
 }
