@@ -9,16 +9,17 @@ export const prerender = false;
 const apiBaseUrl = env.PUBLIC_GRATOS_SERVER || import.meta.env.PUBLIC_GRATOS_SERVER;
 ---
 
-<Layout title="AuthGravity - Zero Knowledge Identity">
+<Layout title="AuthGravity - Auth in one prompt. Anonymous by design.">
   <style>
     .hero {
-      margin: 4rem 0 6rem;
+      margin: 4rem 0 4rem;
       text-align: left;
     }
     .hero h1 {
       font-size: 2.5rem;
       font-weight: 800;
       margin-bottom: 1rem;
+      line-height: 1.15;
     }
     .hero p {
       font-size: 1.15rem;
@@ -26,16 +27,143 @@ const apiBaseUrl = env.PUBLIC_GRATOS_SERVER || import.meta.env.PUBLIC_GRATOS_SER
       line-height: 1.7;
       margin-bottom: 1rem;
     }
+    .values {
+      margin: 0 0 3rem;
+    }
+    .values h2 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 0.35rem;
+    }
+    .values .value {
+      margin-bottom: 2rem;
+    }
+    .values p {
+      color: #52525b;
+      line-height: 1.7;
+      font-size: 0.95rem;
+    }
+    .values code {
+      background: #f4f4f5;
+      padding: 0.1rem 0.35rem;
+      border-radius: 0.25rem;
+      font-size: 0.85em;
+    }
+    .experimental {
+      border: 1px solid #e4e4e7;
+      border-radius: 0.5rem;
+      padding: 1.25rem 1.5rem;
+      margin: 0 0 3rem;
+    }
+    .experimental .tag {
+      display: inline-block;
+      font-family: ui-monospace, monospace;
+      font-size: 0.65rem;
+      letter-spacing: 0.08em;
+      font-weight: 600;
+      color: #a1a1aa;
+      border: 1px solid #d4d4d8;
+      border-radius: 0.25rem;
+      padding: 0.15rem 0.4rem;
+      margin-bottom: 0.6rem;
+    }
+    .experimental h2 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 0.35rem;
+    }
+    .experimental p {
+      color: #52525b;
+      line-height: 1.7;
+      font-size: 0.95rem;
+    }
+    .experimental a {
+      color: #18181b;
+    }
+    .closing {
+      margin: 0 0 4rem;
+      color: #52525b;
+      font-size: 0.95rem;
+      line-height: 1.7;
+    }
+    .closing strong {
+      color: #18181b;
+    }
+    .closing code {
+      background: #f4f4f5;
+      padding: 0.1rem 0.35rem;
+      border-radius: 0.25rem;
+      font-size: 0.85em;
+    }
   </style>
 
   <div class="hero">
-    <h1>Zero Knowledge Identity</h1>
+    <h1>Auth in one prompt.<br />Anonymous by design.</h1>
     <p>
-      AuthGravity is a hosted, free and open source, first-party authentication
-      service for the post-password era. It provides modern, privacy-focused
-      user authentication using passkeys.
+      AuthGravity is hosted, open-source, first-party passkey auth with
+      authorization built in. Your users are a UUID and a public key, and everything else stays in your
+      app. Point your coding agent at one URL and ship sign-in, permissions,
+      and recovery before your coffee's done.
     </p>
     <HomeAuth client:only="preact" apiBaseUrl={apiBaseUrl} />
     <HeroPrompt client:load />
+  </div>
+
+  <div class="values">
+    <div class="value">
+      <h2>Easy</h2>
+      <p>
+        <code>npx @authgravity/cli listen</code> mints a local sandbox in
+        seconds: real auth against a throwaway pool, running the exact code
+        you'll ship. When it's time to go live, connect your domain with one
+        click through Domain Connect, or add a single CNAME yourself, and
+        everything runs white-label on <code>authgravity.yourapp.com</code>.
+        Hosted sign-in pages if you'd rather build zero UI.
+      </p>
+    </div>
+    <div class="value">
+      <h2>Anonymous</h2>
+      <p>
+        The server stores public keys and a per-app UUID. There is nothing
+        worth stealing. You collect what you need, when you actually need it,
+        in your own database.
+      </p>
+    </div>
+    <div class="value">
+      <h2>Passkeys</h2>
+      <p>
+        Spec-shaped WebAuthn with first-party cookies on your own domain,
+        plus 12 written-down words as the recovery path for everyone and the
+        fallback for devices without an authenticator. The whole UI is two
+        buttons.
+      </p>
+    </div>
+    <div class="value">
+      <h2>Authz built in</h2>
+      <p>
+        Zanzibar-style relationships and permissions on the same endpoint and
+        session: define relations, write tuples, <code>check</code> on every
+        gated action. Your agent reads the live schema straight from your
+        <code>llms.txt</code>, so the docs are never stale.
+      </p>
+    </div>
+  </div>
+
+  <div class="experimental">
+    <span class="tag">EXPERIMENTAL</span>
+    <h2>Person Server (AAuth)</h2>
+    <p>
+      Every user pool is also a Person Server: when an AI agent wants to act
+      for one of your users, it has to ask. Your user approves on a consent
+      page under your domain, can dial budgets down before granting, and can
+      revoke anytime. Built on the AAuth IETF draft, interop-tested
+      against live resources. Mint a sandbox and your agent has a working PS
+      in seconds. <a href="/docs">Read the docs &rarr;</a>
+    </p>
+  </div>
+
+  <div class="closing">
+    <strong>One prompt to a working app.</strong>
+    <code>authgravity.org/llms.txt</code>. Free and open source.
   </div>
 </Layout>

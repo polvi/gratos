@@ -285,9 +285,6 @@ function AuthzPanel({ apiBaseUrl, tenant }: { apiBaseUrl: string; tenant: string
     const [status, setStatus] = useState<{ schema_version: number | null } | null>(null);
     const [denied, setDenied] = useState(false);
     const [schemaText, setSchemaText] = useState('');
-    const [rows, setRows] = useState<Array<{ object: string; relation: string; subject: string }>>([]);
-    const [filterType, setFilterType] = useState('');
-    const [form, setForm] = useState({ object: '', relation: '', subject: '' });
     const [msg, setMsg] = useState<{ error?: string; ok?: string } | null>(null);
     const [generating, setGenerating] = useState(false);
     const [aiDescription, setAiDescription] = useState('');
@@ -390,36 +387,6 @@ function AuthzPanel({ apiBaseUrl, tenant }: { apiBaseUrl: string; tenant: string
         } finally {
             setGenerating(false);
         }
-    };
-
-    const loadRows = async (type: string) => {
-        setMsg(null);
-        if (!type) {
-            setRows([]);
-            return;
-        }
-        const res = await fetch(`${base}/relationships?object_type=${encodeURIComponent(type)}`, {
-            credentials: 'include',
-        });
-        const data = await res.json();
-        if (res.ok) setRows(data.relationships);
-        else setMsg({ error: data.error || 'Load failed' });
-    };
-
-    const writeRel = async (op: 'touch' | 'delete', object: string, relation: string, subject: string) => {
-        setMsg(null);
-        const res = await fetch(`${base}/relationships`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ updates: [{ op, object, relation, subject }] }),
-        });
-        const data = await res.json();
-        if (!res.ok) {
-            setMsg({ error: (data.error || 'Write failed') + (data.details ? `\n${data.details.join('\n')}` : '') });
-            return;
-        }
-        await loadRows(filterType || object.split(':')[0]);
     };
 
     const codeStyle = {
@@ -592,7 +559,7 @@ function AuthzPanel({ apiBaseUrl, tenant }: { apiBaseUrl: string; tenant: string
                         ))}
                     </div>
                 )}
-                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
                     <input
                         placeholder="token name (e.g. production-backend)"
                         value={tokenName}
@@ -604,76 +571,18 @@ function AuthzPanel({ apiBaseUrl, tenant }: { apiBaseUrl: string; tenant: string
                     </button>
                 </div>
 
-                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                    <input
-                        placeholder="object type (e.g. document)"
-                        value={filterType}
-                        onInput={(e: any) => setFilterType(e.target.value)}
-                        style={inputStyle}
-                    />
-                    <button onClick={() => loadRows(filterType)} style={{ ...smallButton, background: '#f4f4f5', color: '#18181b', border: '1px solid #d4d4d8' }}>
-                        List Relationships
-                    </button>
-                </div>
-                {rows.length > 0 && (
-                    <div style={{ marginBottom: '0.5rem' }}>
-                        {rows.map((r) => (
-                            <div
-                                key={`${r.object}#${r.relation}@${r.subject}`}
-                                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.25rem 0', fontSize: '0.75rem' }}
-                            >
-                                <span style={codeStyle}>{r.object}</span>
-                                <span style={{ color: '#71717a' }}>{r.relation}</span>
-                                <span style={codeStyle}>{r.subject}</span>
-                                <button
-                                    onClick={() => writeRel('delete', r.object, r.relation, r.subject)}
-                                    style={{
-                                        marginLeft: 'auto',
-                                        padding: '0.125rem 0.5rem',
-                                        background: 'none',
-                                        border: '1px solid #fca5a5',
-                                        borderRadius: '0.375rem',
-                                        color: '#dc2626',
-                                        fontSize: '0.7rem',
-                                        cursor: 'pointer',
-                                    }}
-                                >
-                                    x
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                )}
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <input
-                        placeholder="document:readme"
-                        value={form.object}
-                        onInput={(e: any) => setForm({ ...form, object: e.target.value })}
-                        style={inputStyle}
-                    />
-                    <input
-                        placeholder="viewer"
-                        value={form.relation}
-                        onInput={(e: any) => setForm({ ...form, relation: e.target.value })}
-                        style={inputStyle}
-                    />
-                    <input
-                        placeholder="user:abc"
-                        value={form.subject}
-                        onInput={(e: any) => setForm({ ...form, subject: e.target.value })}
-                        style={inputStyle}
-                    />
-                    <button
-                        onClick={() => {
-                            if (!form.object || !form.relation || !form.subject) return;
-                            if (!filterType) setFilterType(form.object.split(':')[0]);
-                            writeRel('touch', form.object, form.relation, form.subject);
-                        }}
-                        style={smallButton}
+                <p style={{ fontSize: '0.75rem', color: '#71717a', lineHeight: 1.5 }}>
+                    Browse and edit relationship tuples in the live console at{' '}
+                    <a
+                        href={`${agentPrompt(tenant).endpoint}/authz`}
+                        target="_blank"
+                        rel="noopener"
+                        style={{ color: '#2563eb' }}
                     >
-                        Add
-                    </button>
-                </div>
+                        {agentPrompt(tenant).endpoint}/authz
+                    </a>
+                    .
+                </p>
             </div>
 
             {msg?.error && (

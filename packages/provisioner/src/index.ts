@@ -785,6 +785,16 @@ async function handleScheduled(env: Env) {
         console.error('Sweep: sweepSandboxes failed:', err);
     }
 
+    // Expire overdue AAuth mission proposals (multi-day consent windows).
+    try {
+        const { expired } = await env.AUTH.sweepAauth();
+        if (expired > 0) {
+            console.log(`Sweep: expired ${expired} overdue AAuth mission proposal(s)`);
+        }
+    } catch (err) {
+        console.error('Sweep: sweepAauth failed:', err);
+    }
+
     // --- Phase 5: Reconcile CF state against DB ---
     // DB is the source of truth. Any CF custom hostname not tracked in
     // pending_claims or domains must be deleted.

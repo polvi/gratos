@@ -188,6 +188,19 @@ import { HeroPrompt } from "../components/HeroPrompt";
       A browsable console lives at <code>/authz</code> on each host.
     </p>
 
+    <h2>Your users' Person Server (agents)</h2>
+
+    <p>
+      Every AuthGravity pool is also an <a href="https://aauth.dev">AAuth</a> <em>Person Server</em> —
+      the piece of the agent ecosystem that represents a human. When an AI agent wants to act for one
+      of your users at some third-party service, it asks this host; the user approves once with their
+      passkey (on a hosted consent page, under your domain), and the server issues a short-lived signed
+      token asserting exactly that consent — still no email, no PII, just the pool-scoped UUID. Agents
+      can also propose <em>missions</em> — longer-running jobs with an approved tool list and hard
+      spending caps the approver can dial down — with an audit log and a kill-switch. You build none of
+      this; it ships with the endpoint, and <code>llms.txt</code> documents it for your agent.
+    </p>
+
     <h2>Your database</h2>
 
     <p>

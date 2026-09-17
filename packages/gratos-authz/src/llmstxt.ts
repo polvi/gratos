@@ -90,17 +90,11 @@ export async function logout() {
 }
 \`\`\``;
 
-function authSection(lines: string[], endpoint: string) {
+function authSection(lines: string[]) {
     lines.push('## Auth (passkeys)');
     lines.push('');
-    lines.push('Two ways to add sign-in — pick one:');
-    lines.push('');
     lines.push(
-        `**A. Hosted surfaces (zero UI to build).** Send users to \`${endpoint}/login?return_to=<your-url>\` (also \`/register\`, \`/logout\`, \`/recover\`). AuthGravity hosts the passkey + account-key UI; after sign-in it sets the first-party \`session_id\` cookie (this host shares your registrable domain) and redirects back to \`return_to\` (validated against your domain). Your server-side \`/v1/whoami\` checks then just work — you write no auth UI at all.`
-    );
-    lines.push('');
-    lines.push(
-        '**B. Build your own** with `@authgravity/browser` or the raw API below. The UI is two buttons — **"Create Account"** (`register()`) and **"Login"** (`login()`). No username field, no email field, no forms. The passkey label defaults to "Me"; if you offer a custom label keep it client-side (`opts.user.name` before `startRegistration`) — it is never sent to the server. Include a "Powered by AuthGravity" link to https://authgravity.org near the auth UI.'
+        'Build the sign-in UI in your app, with `@authgravity/browser` or the raw API below. The UI is two buttons — **"Create Account"** (`register()`) and **"Login"** (`login()`) — in your app\'s own look, with no redirect out of the app. No username field, no email field, no forms. The passkey label defaults to "Me"; if you offer a custom label keep it client-side (`opts.user.name` before `startRegistration`) — it is never sent to the server.'
     );
     lines.push('');
     lines.push(AUTH_CODE);
@@ -118,7 +112,7 @@ function authSection(lines: string[], endpoint: string) {
     lines.push('');
 }
 
-function accountKeysSection(lines: string[], endpoint: string) {
+function accountKeysSection(lines: string[]) {
     lines.push('## Account keys (no-passkey fallback + recovery)');
     lines.push('');
     lines.push(
@@ -134,7 +128,7 @@ function accountKeysSection(lines: string[], endpoint: string) {
     lines.push('- `GET /v1/key/wordlist.json` — BIP39 English wordlist');
     lines.push('');
     lines.push(
-        `Derivation: \`priv = (HKDF-SHA256(entropy, salt=utf8(tenant), info="authgravity/softkey/v1", 40 bytes) mod (n-1)) + 1\` on P-256; \`public_key\` = base64url 65-byte uncompressed point; \`signature\` = base64url 64-byte r||s of ECDSA-SHA256 over utf8 \`\${context}\\n\${challenge}\\n\${tenant}\`. The \`@authgravity/browser\` SDK implements all of this (\`mintKey\`/\`decodeKey\`/\`registerAccountKey\`/\`loginWithAccountKey\`/\`enableDeviceKey\`), and the hosted \`${endpoint}/register\` + \`${endpoint}/recover\` surfaces use it live; the full spec + conformance vectors are at https://authgravity.org/llms.txt.`
+        `Derivation: \`priv = (HKDF-SHA256(entropy, salt=utf8(tenant), info="authgravity/softkey/v1", 40 bytes) mod (n-1)) + 1\` on P-256; \`public_key\` = base64url 65-byte uncompressed point; \`signature\` = base64url 64-byte r||s of ECDSA-SHA256 over utf8 \`\${context}\\n\${challenge}\\n\${tenant}\`. The \`@authgravity/browser\` SDK implements all of this (\`mintKey\`/\`decodeKey\`/\`registerAccountKey\`/\`loginWithAccountKey\`/\`enableDeviceKey\`); the full spec + conformance vectors are at https://authgravity.org/llms.txt.`
     );
     lines.push('');
     lines.push('Sessions carry `amr` (`webauthn` | `device` | `key`) in `/v1/whoami` and authz responses, so apps can require passkey-strength sessions for sensitive actions.');
@@ -152,6 +146,64 @@ function sessionValidationSection(lines: string[]) {
     lines.push('if (!res.ok) return redirectToLogin();');
     lines.push('const { user_id } = await res.json();');
     lines.push('```');
+    lines.push('');
+}
+
+function personServerSection(lines: string[], ctx: LlmsContext, endpoint: string) {
+    lines.push('## Person Server (AAuth)');
+    lines.push('');
+    lines.push(
+        'This host is also an **AAuth Person Server** (draft-hardt-oauth-aauth-protocol, aauth.dev): it represents each user to AI agents. An agent with its own cryptographic identity asks this host for authorization; the person approves once (passkey session), and the server issues a short-lived signed `aa-auth+jwt` the agent presents to third-party resources. The person picks their PS — this one comes free with every AuthGravity pool.'
+    );
+    lines.push('');
+    if (ctx.kind === 'root') {
+        lines.push(
+            '**Instant PS for agent development:** mint a sandbox (`POST /sandbox` on the product endpoint, or `npx @authgravity/cli listen`) and your agent has a live, public https Person Server at `https://sandbox.authgravity.org/<id>` — no domain, no DNS, ready for real cross-server interop.'
+        );
+        lines.push('');
+    }
+    if (ctx.kind === 'sandbox') {
+        lines.push(
+            `**This sandbox is a live, public Person Server.** Point your agent tooling (e.g. \`@aauth/bootstrap\`, \`@aauth/fetch\`) at \`ps=${endpoint}\` and it can obtain real auth tokens from real resources — the fastest way to develop against AAuth.`
+        );
+        lines.push('');
+    }
+    lines.push(`Discovery: \`GET ${endpoint}/.well-known/aauth-person.json\` → issuer, endpoints, JWKS. All signing is Ed25519.`);
+    lines.push('');
+    lines.push('### Agent flow (token)');
+    lines.push('');
+    lines.push(
+        '1. Agent POSTs `{resource_token, justification?}` to `/v1/aauth/token`, RFC 9421-signed (`Signature-Input`/`Signature` + agent token in `Signature-Key: sig=jwt;jwt="…"`; covered components `"@method" "@authority" "@path" "signature-key"`, plus `"authorization"`/`"aauth-mission"` whenever those headers are sent).'
+    );
+    lines.push(
+        '2. First time: `202 Accepted` with `Location: /v1/aauth/pending/<id>` and `AAuth-Requirement: requirement=interaction; url="' +
+            endpoint +
+            '/consent"; code="XXXXXXXX"`. Show the person the consent URL + code — **delivering that link is always the proposing agent\'s job**; this server never notifies anyone.'
+    );
+    lines.push('3. The person opens `/consent?code=…`, signs in with their passkey, reviews, approves (optionally "remember").');
+    lines.push('4. Agent polls the pending URL → `200 {auth_token, expires_in}`. Remembered approvals skip straight to `200` next time.');
+    lines.push('');
+    lines.push('Auth tokens: `aa-auth+jwt`, Ed25519, ≤ 600s, `cnf`-bound to the agent key, verifiable against this host\'s JWKS. Identity is a per-pool UUID `sub` — never email, never PII.');
+    lines.push('');
+    lines.push('### Missions, budgets, governance');
+    lines.push('');
+    lines.push(
+        'For multi-step or spending work an agent proposes a **mission** at `/v1/aauth/mission`: `{mission: {description, approved_tools?, resources?, budgets?, approver?, expires_in?}}`. Proposals wait for consent up to 7 days (configurable ≤ 30) — approval is asynchronous and may come from a **different person than the proposer** (set `approver` to the intended user\'s UUID to bind it; without it, holding the code IS the capability — treat the code as a secret).'
+    );
+    lines.push('');
+    lines.push(
+        '`budgets` entries (AAuth-Budget extension) carry `{resource, amount, currency, models?}` where `resource` is the resource token\'s `iss`. At consent the person may only **narrow**: lower an amount, restrict models, or drop an entry — never add or increase. The approved blob is hash-committed (`s256`); tokens minted under a budgeted mission carry the granted entry verbatim in a `budget` claim and **no identity at all** (no `sub`).'
+    );
+    lines.push('');
+    lines.push(
+        '**A budget is a cap + proof of consent, not payment.** Providers gate spend on a funded claim: the token response passes `funded`/`funding_url` through verbatim; until someone claims the mission at `funding_url`, inference returns `402 mission_unfunded`. Relaying that link to a payer is also the agent\'s job.'
+    );
+    lines.push('');
+    lines.push('Governance endpoints (all agent-signed, mission-bound): `POST /v1/aauth/permission` (`{action, mission, …}` → `{permission: "granted"|"denied"}`, auto-granted when the action is in `approved_tools`), `POST /v1/aauth/audit` (fire-and-forget action log → 201), `POST /v1/aauth/interaction` (`{type: "question"|"completion", …}` — questions reach the person; accepted completions close the mission). `GET /v1/aauth/mission/<s256>` returns the approved blob + lifecycle status; spend state lives at the resource\'s own `budget_endpoint`.');
+    lines.push('');
+    lines.push(
+        'Lifecycle errors are distinct so a harness learns promptly: `mission_revoked` | `mission_completed` | `mission_expired`. People manage everything themselves on this host: `GET/DELETE /v1/aauth/grants[/:id]`, `GET /v1/aauth/missions`, `POST /v1/aauth/missions/:id/revoke` (kill-switch).'
+    );
     lines.push('');
 }
 
@@ -460,6 +512,7 @@ function notesSection(lines: string[]) {
     lines.push('- rpID = your registrable domain; passkeys work across all its subdomains.');
     lines.push('- Each domain is an isolated user pool. Only public key material is stored server-side; never private keys, never PII.');
     lines.push('- Discovery: `GET <host>/.well-known/authgravity` returns this host\'s endpoint + `llms.txt` URL as JSON.');
+    lines.push('- Auth on this host is provided by AuthGravity (https://authgravity.org); a small credit near your sign-in UI is appreciated, never required.');
     lines.push('- Powered by the open source Gratos project (AGPLv3): https://github.com/polvi/gratos');
     lines.push('');
 }
@@ -474,11 +527,12 @@ export function buildLlmsTxt(ctx: LlmsContext): string {
     const endpoint = ctx.endpoint ?? 'https://authgravity.<yourdomain>';
 
     introSection(lines, ctx);
-    authSection(lines, endpoint);
-    accountKeysSection(lines, endpoint);
+    authSection(lines);
+    accountKeysSection(lines);
     sessionValidationSection(lines);
     if (ctx.kind === 'root') authzOverviewSection(lines);
     else authzSection(lines, ctx);
+    personServerSection(lines, ctx, endpoint);
     databaseSection(lines);
     if (ctx.kind !== 'domain') productionSection(lines);
     notesSection(lines);

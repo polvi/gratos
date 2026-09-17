@@ -17,7 +17,7 @@ import type { TenantInfo } from './tenant';
 const AG_URL = 'https://esm.sh/@authgravity/browser@0.0.7';
 const WA_URL = 'https://esm.sh/@simplewebauthn/browser@13.3.0';
 
-export const SURFACE_PATHS = new Set(['/login', '/register', '/logout', '/recover', '/demo']);
+export const SURFACE_PATHS = new Set(['/login', '/register', '/logout', '/recover', '/demo', '/consent']);
 
 /**
  * Validate a `return_to` against the tenant's own registrable domain — an
@@ -78,6 +78,22 @@ const STYLES = `
   code { background: #f4f4f5; padding: 0.1rem 0.35rem; border-radius: 0.25rem; font-size: 0.85rem; word-break: break-all; }
   .powered { margin-top: 2rem; font-size: 0.75rem; color: #a1a1aa; }
   .powered a { color: #a1a1aa; }
+  /* Consent surface: left-aligned detail panels for agent requests. */
+  .panel { text-align: left; background: #fff; border: 1px solid #e4e4e7; border-radius: 0.6rem;
+    padding: 1rem 1.25rem; margin-bottom: 1rem; }
+  .panel .lbl { font-family: ui-monospace, monospace; font-size: 0.7rem; letter-spacing: 0.08em;
+    text-transform: uppercase; color: #a1a1aa; margin-bottom: 0.2rem; }
+  .panel .val { font-size: 1rem; line-height: 1.5; color: #18181b; margin-bottom: 0.75rem; word-break: break-word; }
+  .panel .val:last-child { margin-bottom: 0; }
+  .budget-row { border-top: 1px solid #f4f4f5; padding-top: 0.75rem; margin-top: 0.75rem; }
+  .budget-row input[type="text"] { text-align: left; font-size: 1rem; margin-bottom: 0.4rem; }
+  .check-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; color: #3f3f46;
+    margin-bottom: 0.4rem; text-align: left; }
+  .check-row input { width: auto !important; margin: 0 !important; }
+  .chat { text-align: left; margin-bottom: 0.75rem; }
+  .chat .msg { font-size: 0.95rem; line-height: 1.5; margin-bottom: 0.4rem; }
+  .chat .msg .who { font-family: ui-monospace, monospace; font-size: 0.7rem; color: #a1a1aa;
+    text-transform: uppercase; margin-right: 0.4rem; }
   /* The print button puts ONLY the key sheet on paper. */
   #print-sheet { display: none; }
   @media print {
@@ -90,7 +106,7 @@ const STYLES = `
 // --- shared client prelude (pure JS, no template literals) ---
 const COMMON = `
   const CFG = JSON.parse(document.getElementById('ag-cfg').textContent);
-  const PREFIX = location.pathname.replace(/\\/(login|register|logout|recover|demo)\\/?$/, '');
+  const PREFIX = location.pathname.replace(/\\/(login|register|logout|recover|demo|consent)\\/?$/, '');
   const API = location.origin + PREFIX;
   const root = document.getElementById('root');
   const statusEl = document.getElementById('status');
@@ -304,6 +320,256 @@ const LOGOUT = `
   if (CFG.returnTo) { location.href = CFG.returnTo; } else { root.innerHTML = '<div class="ok">Signed out \\u2713</div>'; setStatus(''); }
 `;
 
+// --- /consent (AAuth Person Server: approve agent requests) ---
+// Everything an agent sent (descriptions, justifications, questions) is
+// UNTRUSTED text: it is only ever rendered via textContent, never innerHTML.
+const CONSENT = `
+  const qs = new URLSearchParams(location.search);
+  let code = (qs.get('code') || '').trim();
+
+  const el = (tag, cls, text) => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined && text !== null) n.textContent = String(text);
+    return n;
+  };
+  const kv = (panel, label, value) => {
+    panel.appendChild(el('div', 'lbl', label));
+    panel.appendChild(el('div', 'val', value));
+  };
+  const clear = () => { root.innerHTML = ''; };
+
+  const api = async (method, path, body) => {
+    const res = await fetch(API + path, {
+      method,
+      credentials: 'include',
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    return { res, data };
+  };
+
+  const done = (msg) => {
+    clear();
+    root.appendChild(el('div', 'ok', msg + ' \\u2713'));
+    const p = el('p', 'muted', 'You can close this page and return to your agent.');
+    root.appendChild(p);
+    setStatus('');
+  };
+
+  const askCode = () => {
+    clear();
+    root.appendChild(el('p', null, 'Enter the code your agent showed you.'));
+    const input = el('input');
+    input.autocomplete = 'off'; input.autocapitalize = 'characters'; input.spellcheck = false;
+    root.appendChild(input);
+    const btn = el('button', 'primary', 'Continue');
+    btn.onclick = () => { code = (input.value || '').trim(); if (code) load(); };
+    input.onkeydown = (e) => { if (e.key === 'Enter') btn.onclick(); };
+    root.appendChild(btn);
+    input.focus();
+  };
+
+  const decide = async (body, okMsg) => {
+    setStatus('Working\\u2026');
+    body.code = code;
+    const { res, data } = await api('POST', '/v1/aauth/consent', body);
+    if (!res.ok) { setStatus(data.error_description || data.error || 'Something went wrong', 'error'); return false; }
+    setStatus('');
+    if (okMsg) done(okMsg);
+    return true;
+  };
+
+  const agentLine = (agent) => (agent.sub || 'agent') + ' @ ' + agent.iss;
+
+  const renderChat = (panel, chat) => {
+    if (!chat || !chat.length) return;
+    const box = el('div', 'chat');
+    chat.forEach((m) => {
+      const msg = el('div', 'msg');
+      msg.appendChild(el('span', 'who', m.from === 'user' ? 'you' : 'agent'));
+      msg.appendChild(document.createTextNode(m.text || ''));
+      box.appendChild(msg);
+    });
+    panel.appendChild(el('div', 'lbl', 'Conversation'));
+    panel.appendChild(box);
+  };
+
+  const questionBox = (refresh) => {
+    const wrap = el('div');
+    const ta = el('textarea');
+    ta.rows = 2; ta.placeholder = 'Ask the agent a question before you decide\\u2026';
+    wrap.appendChild(ta);
+    const btn = el('button', null, 'Send question');
+    btn.onclick = async () => {
+      const text = (ta.value || '').trim();
+      if (!text) return;
+      if (await decide({ answer: text })) { setStatus('Question sent \\u2014 the agent will answer shortly.'); ta.value = '';
+        if (refresh) setTimeout(refresh, 4000); }
+    };
+    wrap.appendChild(btn);
+    return wrap;
+  };
+
+  const renderToken = (d) => {
+    clear();
+    const panel = el('div', 'panel');
+    kv(panel, 'Agent', agentLine(d.agent));
+    kv(panel, 'Wants access to', d.payload.resource);
+    if (d.payload.scope) kv(panel, 'Scope', d.payload.scope);
+    if (d.payload.justification) kv(panel, 'Why', d.payload.justification);
+    root.appendChild(panel);
+    const rem = el('label', 'check-row');
+    const cb = el('input'); cb.type = 'checkbox'; cb.checked = true;
+    rem.appendChild(cb);
+    rem.appendChild(document.createTextNode('Remember this approval for next time'));
+    root.appendChild(rem);
+    const ok = el('button', 'primary', 'Approve');
+    ok.onclick = () => decide({ decision: 'approve', remember: cb.checked }, 'Approved');
+    root.appendChild(ok);
+    const no = el('button', null, 'Deny');
+    no.onclick = () => decide({ decision: 'deny' }, 'Denied');
+    root.appendChild(no);
+  };
+
+  const renderMission = (d) => {
+    clear();
+    const p = d.proposal;
+    const panel = el('div', 'panel');
+    kv(panel, 'Agent', agentLine(d.agent));
+    kv(panel, 'Mission', p.description);
+    if (p.approved_tools && p.approved_tools.length) kv(panel, 'Tools it may use', p.approved_tools.join(', '));
+    if (p.resources && p.resources.length) kv(panel, 'Services it will call', p.resources.map((r) => r.resource).join(', '));
+    renderChat(panel, d.chat);
+    root.appendChild(panel);
+
+    // Budgets: the person may only NARROW — lower an amount, restrict models,
+    // or skip an entry entirely. Never add or increase.
+    const budgetRows = [];
+    if (p.budgets && p.budgets.length) {
+      const bp = el('div', 'panel');
+      bp.appendChild(el('div', 'lbl', 'Spending limits'));
+      p.budgets.forEach((b) => {
+        const row = el('div', 'budget-row');
+        row.appendChild(el('div', 'val', b.resource));
+        const amt = el('input'); amt.type = 'text'; amt.value = b.amount;
+        row.appendChild(el('div', 'lbl', 'Up to (' + b.currency + ', max ' + b.amount + ')'));
+        row.appendChild(amt);
+        const models = [];
+        if (b.models && b.models.length) {
+          row.appendChild(el('div', 'lbl', 'Models'));
+          b.models.forEach((m) => {
+            const lr = el('label', 'check-row');
+            const mc = el('input'); mc.type = 'checkbox'; mc.checked = true;
+            lr.appendChild(mc); lr.appendChild(document.createTextNode(m));
+            row.appendChild(lr);
+            models.push({ name: m, box: mc });
+          });
+        }
+        const skipRow = el('label', 'check-row');
+        const skip = el('input'); skip.type = 'checkbox';
+        skipRow.appendChild(skip);
+        skipRow.appendChild(document.createTextNode('Skip this one (grant nothing here)'));
+        row.appendChild(skipRow);
+        bp.appendChild(row);
+        budgetRows.push({ resource: b.resource, max: b.amount, amt, models, skip });
+      });
+      root.appendChild(bp);
+    }
+
+    root.appendChild(questionBox(load));
+
+    const ok = el('button', 'primary', 'Approve mission');
+    ok.onclick = () => {
+      const omit = [];
+      const budgets = [];
+      for (const r of budgetRows) {
+        if (r.skip.checked) { omit.push(r.resource); continue; }
+        const entry = { resource: r.resource };
+        const v = (r.amt.value || '').trim();
+        if (v && v !== r.max) entry.amount = v;
+        if (r.models.length) {
+          const picked = r.models.filter((m) => m.box.checked).map((m) => m.name);
+          if (!picked.length) { setStatus('Pick at least one model or skip the entry.', 'error'); return; }
+          if (picked.length !== r.models.length) entry.models = picked;
+        }
+        if (entry.amount !== undefined || entry.models !== undefined) budgets.push(entry);
+      }
+      decide({ decision: 'approve', attenuation: { budgets, omit } }, 'Mission approved');
+    };
+    root.appendChild(ok);
+    const no = el('button', null, 'Decline');
+    no.onclick = () => decide({ decision: 'deny' }, 'Declined');
+    root.appendChild(no);
+  };
+
+  const renderPermission = (d) => {
+    clear();
+    const panel = el('div', 'panel');
+    kv(panel, 'Agent', agentLine(d.agent));
+    kv(panel, 'Wants to', d.payload.action);
+    if (d.payload.description) kv(panel, 'Details', d.payload.description);
+    if (d.payload.parameters) kv(panel, 'Parameters', JSON.stringify(d.payload.parameters, null, 2));
+    renderChat(panel, d.chat);
+    root.appendChild(panel);
+    const ok = el('button', 'primary', 'Allow');
+    ok.onclick = () => decide({ decision: 'approve' }, 'Allowed');
+    root.appendChild(ok);
+    const no = el('button', null, 'Deny');
+    no.onclick = () => decide({ decision: 'deny' }, 'Denied');
+    root.appendChild(no);
+  };
+
+  const renderInteraction = (d) => {
+    clear();
+    const panel = el('div', 'panel');
+    kv(panel, 'Agent', agentLine(d.agent));
+    const type = d.payload.type;
+    if (type === 'completion') {
+      kv(panel, 'Says the mission is complete', d.payload.summary || '');
+      root.appendChild(panel);
+      const ok = el('button', 'primary', 'Accept \\u2014 mission complete');
+      ok.onclick = () => decide({ decision: 'approve' }, 'Mission closed');
+      root.appendChild(ok);
+      const no = el('button', null, 'Not yet');
+      no.onclick = () => decide({ decision: 'deny' }, 'Sent back');
+      root.appendChild(no);
+      return;
+    }
+    kv(panel, type === 'question' ? 'Asks you' : 'Needs your attention', d.payload.question || d.payload.summary || '');
+    renderChat(panel, d.chat);
+    root.appendChild(panel);
+    const ta = el('textarea');
+    ta.rows = 2; ta.placeholder = 'Your answer\\u2026';
+    root.appendChild(ta);
+    const ok = el('button', 'primary', 'Send answer');
+    ok.onclick = () => decide({ decision: 'approve', answer: ta.value || '' }, 'Answer sent');
+    root.appendChild(ok);
+    const no = el('button', null, 'Dismiss');
+    no.onclick = () => decide({ decision: 'deny' }, 'Dismissed');
+    root.appendChild(no);
+  };
+
+  const load = async () => {
+    if (!code) return askCode();
+    setStatus('Loading\\u2026');
+    const { res, data } = await api('GET', '/v1/aauth/consent?code=' + encodeURIComponent(code));
+    if (res.status === 401) {
+      location.href = PREFIX + '/login?return_to=' + encodeURIComponent(location.href);
+      return;
+    }
+    if (res.status === 403) { setStatus(''); clear(); root.appendChild(el('p', null, 'This request was addressed to a different account.')); return; }
+    if (!res.ok) { setStatus(''); clear(); root.appendChild(el('p', null, 'This code is unknown or has expired. Ask your agent for a fresh one.')); return; }
+    setStatus('');
+    if (data.kind === 'mission') renderMission(data);
+    else if (data.kind === 'permission') renderPermission(data);
+    else if (data.kind === 'interaction') renderInteraction(data);
+    else renderToken(data);
+  };
+  load();
+`;
+
 export function renderSurface(path: string, returnTo: string | null): string {
     switch (path) {
         case '/login':
@@ -314,6 +580,8 @@ export function renderSurface(path: string, returnTo: string | null): string {
             return page('Recover your account', 'Sign in with your 12 secret words.', RECOVER, returnTo);
         case '/logout':
             return page('Sign out', '', LOGOUT, returnTo);
+        case '/consent':
+            return page('Agent request', 'An agent is asking for your approval.', CONSENT, returnTo);
         default:
             return page('Sign in', '', LOGIN, returnTo);
     }

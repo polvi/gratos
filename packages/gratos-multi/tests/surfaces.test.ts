@@ -37,7 +37,7 @@ describe('validateReturnTo', () => {
 
 describe('renderSurface', () => {
     test('surface set + rendered pages carry the expected shape', () => {
-        expect([...SURFACE_PATHS].sort()).toEqual(['/demo', '/login', '/logout', '/recover', '/register']);
+        expect([...SURFACE_PATHS].sort()).toEqual(['/consent', '/demo', '/login', '/logout', '/recover', '/register']);
         const login = renderSurface('/login', 'https://myapp.com/back');
         expect(login).toContain('esm.sh/@authgravity/browser');
         expect(login).toContain('trySilentLogin');
@@ -48,6 +48,18 @@ describe('renderSurface', () => {
         expect(login).toContain('Recover your account');
         expect(renderSurface('/register', null)).toContain('Create account with a passkey');
         expect(renderSurface('/recover', null)).toContain('claimOrRecover');
+    });
+
+    test('the consent surface talks to the aauth consent API and offers attenuation', () => {
+        const consent = renderSurface('/consent', null);
+        expect(consent).toContain('/v1/aauth/consent');
+        // login round-trip for signed-out users, budget narrowing, chat
+        expect(consent).toContain("'/login?return_to='");
+        expect(consent).toContain('Skip this one');
+        expect(consent).toContain('Send question');
+        expect(consent).toContain('Approve mission');
+        // untrusted agent text is rendered via textContent (el helper), never innerHTML
+        expect(consent).toContain('n.textContent = String(text)');
     });
 
     test('the account-key setup follows the gentle write-it-down model', () => {
