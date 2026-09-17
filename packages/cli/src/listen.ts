@@ -4,6 +4,11 @@ import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { networkInterfaces } from 'node:os';
 
 const COOKIE_NAME = 'session_id';
+// Mirror of the upstream `ag_last_used` cookie (which is scoped to the sandbox
+// host and never reaches localhost): JS-readable, so the app's sign-in UI can
+// show its "Last used" hint in dev exactly as in production.
+const LAST_USED_COOKIE = 'ag_last_used';
+const LAST_USED_TTL = 365 * 86400;
 const SESSION_TTL = 604800; // 7 days, matches the server
 
 export type ListenOptions = {
@@ -121,10 +126,18 @@ export function createApp(endpoint: string, appOpts: AppOptions = {}) {
         c.res = new Response(text, { status: res.status, headers: responseHeaders });
 
         let note = '';
-        const isVerify = url.pathname === '/v1/register/verify' || url.pathname === '/v1/login/verify';
+        // Every ceremony that mints a session: passkey, account key, device key.
+        const isVerify = /^\/v1\/(?:key\/)?(?:register|login)\/verify$/.test(url.pathname);
         if (isVerify && res.ok) {
             try {
-                const data = JSON.parse(text) as { session_id?: string };
+                const data = JSON.parse(text) as { session_id?: string; last_used?: string };
+                if (typeof data.last_used === 'string' && /^(?:login|register)\.(?:webauthn|device|key)$/.test(data.last_used)) {
+                    setCookie(c, LAST_USED_COOKIE, data.last_used, {
+                        sameSite: 'Lax',
+                        path: '/',
+                        maxAge: LAST_USED_TTL,
+                    });
+                }
                 if (data.session_id) {
                     // Host-only cookie: no Domain, so it scopes to whichever
                     // host the client used (localhost, or a LAN/tailnet IP when

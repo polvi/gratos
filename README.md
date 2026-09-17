@@ -43,7 +43,7 @@ Three ways in, all ending with the same first-party `httpOnly` session cookie:
 2. **Passkeys (build your own)** — spec-shaped WebAuthn JSON: options endpoints return standard `PublicKeyCredential*OptionsJSON` unmodified, verify endpoints take the bare credential response as the whole body. Any conforming client works.
 3. **Account keys (no-passkey fallback + recovery)** — a client-generated 128-bit secret rendered as `agak1_…` or 12 BIP39 words, HKDF-derived into a per-tenant P-256 keypair. The server stores only the public key, exactly like a passkey. Silent **device keys** (non-extractable WebCrypto keys) handle daily logins so the words are only typed at setup and recovery. Bring-your-own BIP39 phrases work with no server support: decode → register (claim) → on 409, login (recover).
 
-The WebAuthn RP ID is the registrable domain (`authgravity.myapp.com` → RP ID `myapp.com`), so passkeys work across all its subdomains. Sessions record how they authenticated (`amr`: `webauthn` | `device` | `key`), so apps can require passkey-strength sessions for sensitive actions.
+The WebAuthn RP ID is the registrable domain (`authgravity.myapp.com` → RP ID `myapp.com`), so passkeys work across all its subdomains. Sessions record how they authenticated (`amr`: `webauthn` | `device` | `key`), so apps can require passkey-strength sessions for sensitive actions. Every ceremony also sets a JS-readable `ag_last_used` cookie (`login.webauthn`, `register.key`, …) so a sign-in screen can mark whichever of **Sign in** / **Create account** this browser used last (`lastUsed()` in `@authgravity/browser`).
 
 ## Authorization
 

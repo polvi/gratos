@@ -75,6 +75,12 @@ const STYLES = `
   #status { font-size: 0.95rem; margin-top: 1rem; min-height: 1.2rem; }
   #status.muted { color: #71717a; } #status.error { color: #dc2626; }
   .ok { color: #16a34a; font-weight: 600; }
+  /* "Last used" pill: marks the door this browser walked through last. */
+  .last { display: inline-block; margin-left: 0.5rem; padding: 0.1rem 0.5rem; border-radius: 999px;
+    font-size: 0.7rem; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; vertical-align: middle;
+    background: #dcfce7; color: #15803d; }
+  #root button.primary .last { background: #3f3f46; color: #e4e4e7; }
+  .alt .last { text-decoration: none; }
   code { background: #f4f4f5; padding: 0.1rem 0.35rem; border-radius: 0.25rem; font-size: 0.85rem; word-break: break-all; }
   .powered { margin-top: 2rem; font-size: 0.75rem; color: #a1a1aa; }
   .powered a { color: #a1a1aa; }
@@ -113,6 +119,24 @@ const COMMON = `
   const setStatus = (m, cls) => { statusEl.className = cls || 'muted'; statusEl.textContent = m || ''; };
   const go = () => { if (CFG.returnTo) { location.href = CFG.returnTo; } else { root.innerHTML = '<div class="ok">Done \\u2713</div>'; setStatus(''); } };
   const rt = CFG.returnTo ? ('?return_to=' + encodeURIComponent(CFG.returnTo)) : '';
+  // Which door this browser used last (set by the server on every ceremony):
+  // { action: 'login'|'register', method: 'webauthn'|'device'|'key' } or null.
+  const LAST = (() => {
+    try {
+      const m = document.cookie.match(/(?:^|; )ag_last_used=([^;]*)/);
+      if (!m) return null;
+      const parts = decodeURIComponent(m[1]).split('.');
+      if (parts.length !== 2 || !['login', 'register'].includes(parts[0]) || !['webauthn', 'device', 'key'].includes(parts[1])) return null;
+      return { action: parts[0], method: parts[1] };
+    } catch (e) { return null; }
+  })();
+  // Pill markup for a button, when this browser's last ceremony matches.
+  // viaKey selects the 12-words path over the passkey one for that action.
+  const lastPill = (action, viaKey) => {
+    if (!LAST || LAST.action !== action) return '';
+    if ((LAST.method === 'key') !== !!viaKey) return '';
+    return ' <span class="last">Last used</span>';
+  };
   // Fill the numbered word grid with id "el" and the hidden print sheet.
   const fillWords = (elId, words) => {
     const grid = document.getElementById(elId);
@@ -168,9 +192,9 @@ const LOGIN = `
   // First-run users land here too: creating an account is offered right on the
   // page, and the 12-words path lives quietly behind "Recover your account".
   const renderLogin = () => {
-    root.innerHTML = '<button id="pk" class="primary">Sign in with a passkey</button>'
-      + '<button id="create">New here? Create an account</button>'
-      + '<button id="rec" class="alt">Recover your account</button>';
+    root.innerHTML = '<button id="pk" class="primary">Sign in with a passkey' + lastPill('login') + '</button>'
+      + '<button id="create">New here? Create an account' + lastPill('register') + '</button>'
+      + '<button id="rec" class="alt">Recover your account' + lastPill('login', true) + '</button>';
     document.getElementById('pk').onclick = passkeyLogin;
     document.getElementById('create').onclick = () => { location.href = PREFIX + '/register' + rt; };
     document.getElementById('rec').onclick = () => { location.href = PREFIX + '/recover' + rt; };
@@ -276,9 +300,9 @@ const REGISTER = `
   // Passkey-first. The 12-words path stays available as a quiet fallback for
   // devices with no authenticator, but it is no longer a headline option.
   const renderStart = () => {
-    root.innerHTML = '<button id="pk" class="primary">Create account with a passkey</button>'
-      + '<button id="have" class="alt">Already have an account? Sign in</button>'
-      + '<button id="words" class="alt">No passkey on this device? Use 12 words</button>';
+    root.innerHTML = '<button id="pk" class="primary">Create account with a passkey' + lastPill('register') + '</button>'
+      + '<button id="have" class="alt">Already have an account? Sign in' + lastPill('login') + '</button>'
+      + '<button id="words" class="alt">No passkey on this device? Use 12 words' + lastPill('register', true) + '</button>';
     document.getElementById('pk').onclick = createPasskey;
     document.getElementById('words').onclick = () => startWords('create');
     document.getElementById('have').onclick = () => { location.href = PREFIX + '/login' + rt; };

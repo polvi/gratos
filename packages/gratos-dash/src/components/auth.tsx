@@ -18,6 +18,54 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+/**
+ * Which door this browser walked through last. The auth server sets a
+ * JS-readable `ag_last_used` cookie (`login.webauthn`, `register.key`, …) on
+ * the tenant domain after every ceremony; the dash shares that domain.
+ */
+export function readLastUsed(): { action: 'login' | 'register'; method: 'webauthn' | 'device' | 'key' } | null {
+    try {
+        const m = document.cookie.match(/(?:^|; )ag_last_used=([^;]*)/);
+        if (!m) return null;
+        const [action, method, extra] = decodeURIComponent(m[1]).split('.');
+        if (extra !== undefined) return null;
+        if (action !== 'login' && action !== 'register') return null;
+        if (method !== 'webauthn' && method !== 'device' && method !== 'key') return null;
+        return { action, method };
+    } catch {
+        return null;
+    }
+}
+
+function LastUsedTag({ action }: { action: 'login' | 'register' }) {
+    const [show, setShow] = useState(false);
+    // Read after mount: the cookie is browser state and this component SSRs.
+    useEffect(() => {
+        setShow(readLastUsed()?.action === action);
+    }, [action]);
+    if (!show) return null;
+    return (
+        <span
+            className="last-used-tag"
+            style={{
+                display: 'inline-block',
+                marginLeft: '0.5rem',
+                padding: '0.1rem 0.5rem',
+                borderRadius: '999px',
+                fontSize: '0.7rem',
+                fontWeight: 600,
+                letterSpacing: '0.02em',
+                textTransform: 'uppercase',
+                verticalAlign: 'middle',
+                background: '#dcfce7',
+                color: '#15803d',
+            }}
+        >
+            Last used
+        </span>
+    );
+}
+
 interface AuthProviderProps {
     children: any;
     apiBaseUrl: string;
@@ -171,6 +219,7 @@ export function RegisterButton() {
                 disabled={status === 'Registering...'}
             >
                 {status || 'Create Account'}
+                {!status && <LastUsedTag action="register" />}
             </button>
             {!window.isSecureContext && (
                 <div style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: '6px', textAlign: 'center', background: '#fee2e2', padding: '4px', borderRadius: '4px' }}>
@@ -245,6 +294,7 @@ export function LoginButton() {
             `}</style>
             <button className="login-btn" onClick={handleLogin} disabled={!!status}>
                 {status || 'Login'}
+                {!status && <LastUsedTag action="login" />}
             </button>
         </>
     );

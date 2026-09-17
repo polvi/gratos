@@ -25,6 +25,7 @@ import {
     touchCredential,
 } from './db';
 import { mintSession, resolveSession, AMR_RANK, Amr, SESSION_TTL } from './sessions';
+import { setLastUsed } from './last-used';
 import { getSessionId } from './session';
 import { WORDLIST } from './wordlist';
 
@@ -178,7 +179,8 @@ export function keyRoutes(tenantInfo: TenantInfo) {
                 }
             }
         }
-        if (!(await getUser(c.env.DB, tenantInfo.tenant, userId))) {
+        const created = !(await getUser(c.env.DB, tenantInfo.tenant, userId));
+        if (created) {
             await createUser(c.env.DB, tenantInfo.tenant, userId);
         }
 
@@ -187,11 +189,15 @@ export function keyRoutes(tenantInfo: TenantInfo) {
 
         const newSessionId = await mintSession(c.env.KV, tenantInfo.tenant, userId, KIND_TO_AMR[kind]);
         setSessionCookie(c, tenantInfo, newSessionId);
+        // Sign-up only when this ceremony created the account; attaching a
+        // recovery or device key to a signed-in user is not a "create account".
+        const lastUsed = created ? setLastUsed(c, tenantInfo, 'register', KIND_TO_AMR[kind]) : undefined;
 
         return c.json({
             verified: true,
             user: { id: userId },
             credential_id: credentialId,
+            ...(lastUsed ? { last_used: lastUsed } : {}),
             ...(tenantInfo.sandbox ? { session_id: newSessionId } : {}),
         });
     });
@@ -244,18 +250,16 @@ export function keyRoutes(tenantInfo: TenantInfo) {
         const user = await getUser(c.env.DB, tenantInfo.tenant, credential.user_id);
         if (!user) return c.json({ error: 'User not found' }, 400);
 
-        const newSessionId = await mintSession(
-            c.env.KV,
-            tenantInfo.tenant,
-            (user as any).id,
-            KIND_TO_AMR[credential.kind] ?? 'key'
-        );
+        const amr: Amr = KIND_TO_AMR[credential.kind] ?? 'key';
+        const newSessionId = await mintSession(c.env.KV, tenantInfo.tenant, (user as any).id, amr);
         setSessionCookie(c, tenantInfo, newSessionId);
+        const lastUsed = setLastUsed(c, tenantInfo, 'login', amr);
         c.executionCtx?.waitUntil?.(touchCredential(c.env.DB, credential.id));
 
         return c.json({
             verified: true,
             user: { id: (user as any).id },
+            last_used: lastUsed,
             ...(tenantInfo.sandbox ? { session_id: newSessionId } : {}),
         });
     });

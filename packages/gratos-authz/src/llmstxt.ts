@@ -67,7 +67,7 @@ export async function register() {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(cred), // bare RegistrationResponseJSON — no wrapper
   });
-  return res.json(); // { verified, user: { id } } — session_id cookie is now set
+  return res.json(); // { verified, user: { id }, last_used } — session_id cookie is now set
 }
 
 export async function login() {
@@ -77,7 +77,16 @@ export async function login() {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(cred), // bare AuthenticationResponseJSON — no wrapper
   });
-  return res.json(); // { verified, user: { id } } — session_id cookie is now set
+  return res.json(); // { verified, user: { id }, last_used } — session_id cookie is now set
+}
+
+// Which button to mark "Last used": the server sets a JS-readable
+// ag_last_used cookie ("login.webauthn", "register.key", ...) on your domain
+// after every ceremony. lastUsed() from @authgravity/browser does the same.
+export function lastUsed(): { action: 'login' | 'register'; method: 'webauthn' | 'device' | 'key' } | null {
+  const m = document.cookie.match(/(?:^|; )ag_last_used=([^;]*)/);
+  const [action, method] = m ? decodeURIComponent(m[1]).split('.') : [];
+  return action === 'login' || action === 'register' ? ({ action, method } as any) : null;
 }
 
 export async function whoami() {
@@ -102,13 +111,15 @@ function authSection(lines: string[]) {
     lines.push('HTTP API (spec-shaped WebAuthn JSON — any conforming client library works; always `credentials: \'include\'`):');
     lines.push('');
     lines.push('- `GET /v1/register/options` → `PublicKeyCredentialCreationOptionsJSON`, unmodified');
-    lines.push('- `POST /v1/register/verify` bare `RegistrationResponseJSON` → `{verified, user:{id}}`; sets `session_id` cookie');
+    lines.push('- `POST /v1/register/verify` bare `RegistrationResponseJSON` → `{verified, user:{id}, last_used}`; sets `session_id` cookie');
     lines.push('- `GET /v1/login/options` → `PublicKeyCredentialRequestOptionsJSON`, unmodified');
-    lines.push('- `POST /v1/login/verify` bare `AuthenticationResponseJSON` → `{verified, user:{id}}`; sets `session_id` cookie');
+    lines.push('- `POST /v1/login/verify` bare `AuthenticationResponseJSON` → `{verified, user:{id}, last_used}`; sets `session_id` cookie');
     lines.push('- `GET /v1/whoami` → `{user_id}` or 401. Accepts the cookie or `Authorization: Bearer <session_id>`');
     lines.push('- `POST /v1/logout` → destroys the session, clears the cookie');
     lines.push('');
     lines.push('The server keys the pending ceremony by the challenge (inside the signed `clientDataJSON`), so there is no correlation id to carry.');
+    lines.push('');
+    lines.push('**"Last used" hint.** Every successful ceremony also sets a JS-readable, one-year `ag_last_used` cookie on your domain (not httpOnly, unlike `session_id`) whose value is `<action>.<method>`: action `login` | `register` (only a ceremony that CREATED the account counts as `register`; adding a passkey or recovery key to a signed-in user leaves it alone), method `webauthn` | `device` | `key` (the session `amr` vocabulary). Read it on page load and put a small "Last used" pill on the matching button — returning users then see it on **Login**, first-time users see nothing. `lastUsed()` in `@authgravity/browser` parses it (falls back to `localStorage`, which the SDK fills from the `last_used` verify field when the cookie cannot reach your origin, e.g. a sandbox used without `authgravity listen`; the proxy mirrors the cookie onto localhost). Logout keeps the cookie on purpose. It carries no identity — no user id, no credential id.');
     lines.push('');
 }
 
@@ -122,8 +133,8 @@ function accountKeysSection(lines: string[]) {
     lines.push('Endpoints (mirror the WebAuthn pair; same session semantics):');
     lines.push('');
     lines.push('- `GET /v1/key/register/options` / `GET /v1/key/login/options` → `{challenge, context, tenant}` (single-use, 5 min)');
-    lines.push('- `POST /v1/key/register/verify` `{challenge, public_key, signature, kind: "softkey"|"devicekey", label?}` → `{verified, user:{id}, credential_id}`; with a session the credential is ADDED to that user');
-    lines.push('- `POST /v1/key/login/verify` `{challenge, public_key, signature}` → `{verified, user:{id}}`');
+    lines.push('- `POST /v1/key/register/verify` `{challenge, public_key, signature, kind: "softkey"|"devicekey", label?}` → `{verified, user:{id}, credential_id, last_used?}`; with a session the credential is ADDED to that user (then no `last_used`)');
+    lines.push('- `POST /v1/key/login/verify` `{challenge, public_key, signature}` → `{verified, user:{id}, last_used}`');
     lines.push('- `GET /v1/credentials`, `DELETE /v1/credentials/:id` — list/remove (a session can never remove a credential stronger than how it authenticated, nor the last one)');
     lines.push('- `GET /v1/key/wordlist.json` — BIP39 English wordlist');
     lines.push('');

@@ -21,6 +21,10 @@ export type { EnableDeviceKeyResult } from './device-key';
 export { suggestedMethod, supportsPasskeys } from './capabilities';
 export type { AuthMethod } from './capabilities';
 
+// "Last used" hint: which of Sign in / Create account this browser used last.
+export { lastUsed, rememberLastUsed, parseLastUsed, LAST_USED_COOKIE } from './last-used';
+export type { LastUsed, LastUsedAction, LastUsedMethod } from './last-used';
+
 export { createAccountKeySetup } from './setup';
 export type { AccountKeySetup, SetupState, SetupContext, SetupOptions } from './setup';
 

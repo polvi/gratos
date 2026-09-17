@@ -4,6 +4,7 @@
 // endpoints additionally return session_id in the body.
 
 import { b64u } from './crypto';
+import { rememberLastUsed } from './last-used';
 
 export interface CeremonyResult {
     ok: boolean;
@@ -48,5 +49,8 @@ export async function runCeremony(
     } catch {
         // non-JSON body
     }
+    // Keep the "last used" hint available even where the server's cookie
+    // cannot reach this origin (see last-used.ts).
+    if (verRes.ok && data && data.last_used) rememberLastUsed(data.last_used);
     return { ok: verRes.ok, status: verRes.status, data };
 }

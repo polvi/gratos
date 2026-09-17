@@ -33,3 +33,70 @@ test('isLoopbackHost', () => {
     expect(isLoopbackHost('[::1]')).toBe(true);
     expect(isLoopbackHost('0.0.0.0')).toBe(false);
 });
+
+describe('createApp verify translation', () => {
+    const withUpstream = async (path: string, body: unknown, run: (app: ReturnType<typeof createApp>) => Promise<Response>) => {
+        const realFetch = globalThis.fetch;
+        const seen: { url?: string; auth?: string | null } = {};
+        globalThis.fetch = (async (input: any, init?: RequestInit) => {
+            seen.url = String(input);
+            seen.auth = new Headers(init?.headers).get('Authorization');
+            return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+        }) as any;
+        try {
+            const app = createApp(UPSTREAM);
+            const res = await run(app);
+            return { res, seen };
+        } finally {
+            globalThis.fetch = realFetch;
+        }
+    };
+
+    const post = (app: ReturnType<typeof createApp>, path: string, cookie?: string) =>
+        app.request(path, {
+            method: 'POST',
+            headers: { Origin: 'http://localhost:5173', 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) },
+            body: '{}',
+        });
+
+    test('passkey verify: session cookie + last-used mirror land on localhost', async () => {
+        const { res } = await withUpstream('/v1/login/verify', { verified: true, session_id: 'sess-1', last_used: 'login.webauthn' }, (app) =>
+            post(app, '/v1/login/verify')
+        );
+        const cookies = res.headers.getSetCookie().join('\n');
+        expect(cookies).toContain('session_id=sess-1');
+        expect(cookies).toMatch(/session_id=[^\n]*HttpOnly/);
+        expect(cookies).toContain('ag_last_used=login.webauthn');
+        // the app's UI reads this one, so it is NOT HttpOnly
+        expect(cookies).not.toMatch(/ag_last_used=[^\n]*HttpOnly/i);
+        expect(cookies).toMatch(/ag_last_used=[^\n]*Max-Age=31536000/);
+        // the upstream's own Set-Cookie never leaks through
+        expect(cookies).not.toContain('Domain=');
+    });
+
+    test('account-key and device-key verifies are translated too', async () => {
+        for (const path of ['/v1/key/register/verify', '/v1/key/login/verify']) {
+            const { res } = await withUpstream(path, { verified: true, session_id: 'sess-k', last_used: 'register.key' }, (app) => post(app, path));
+            const cookies = res.headers.getSetCookie().join('\n');
+            expect(cookies).toContain('session_id=sess-k');
+            expect(cookies).toContain('ag_last_used=register.key');
+        }
+    });
+
+    test('a verify without last_used (credential added to a signed-in user) leaves the hint alone', async () => {
+        const { res, seen } = await withUpstream('/v1/key/register/verify', { verified: true, session_id: 'sess-2', credential_id: 'c' }, (app) =>
+            post(app, '/v1/key/register/verify', 'session_id=sess-1; ag_last_used=register.webauthn')
+        );
+        const cookies = res.headers.getSetCookie().join('\n');
+        expect(cookies).toContain('session_id=sess-2');
+        expect(cookies).not.toContain('ag_last_used');
+        expect(seen.auth).toBe('Bearer sess-1');
+    });
+
+    test('garbage last_used is ignored', async () => {
+        const { res } = await withUpstream('/v1/login/verify', { verified: true, session_id: 's', last_used: 'login.password; Path=/evil' }, (app) =>
+            post(app, '/v1/login/verify')
+        );
+        expect(res.headers.getSetCookie().join('\n')).not.toContain('ag_last_used');
+    });
+});

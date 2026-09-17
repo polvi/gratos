@@ -47,6 +47,14 @@ describe('renderSurface', () => {
         expect(login).toContain('Create an account');
         expect(login).toContain('Recover your account');
         expect(renderSurface('/register', null)).toContain('Create account with a passkey');
+        // both doors read the last-used cookie and can mark the matching button
+        for (const path of ['/login', '/register']) {
+            const html = renderSurface(path, null);
+            expect(html).toContain('ag_last_used=');
+            expect(html).toContain('Last used');
+            expect(html).toContain("lastPill('login')");
+            expect(html).toContain("lastPill('register')");
+        }
         expect(renderSurface('/recover', null)).toContain('claimOrRecover');
     });
 

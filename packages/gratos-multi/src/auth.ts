@@ -20,6 +20,7 @@ import { getUser, createUser, saveCredential, getCredentialById } from './db';
 import { mintSession, resolveSession, SESSION_TTL } from './sessions';
 import { getSessionId } from './session';
 import { ceremonyRateLimited } from './keys';
+import { setLastUsed } from './last-used';
 
 const CHALLENGE_TTL = 300; // 5 minutes
 
@@ -142,6 +143,7 @@ async function verifyRegistration(c: any, tenantInfo: TenantInfo, response: any)
 
     if (verification.verified && verification.registrationInfo) {
         let user = await getUser(c.env.DB, tenantInfo.tenant, userId);
+        const created = !user;
         if (!user) {
             await createUser(c.env.DB, tenantInfo.tenant, userId);
             user = { id: userId };
@@ -159,6 +161,9 @@ async function verifyRegistration(c: any, tenantInfo: TenantInfo, response: any)
             maxAge: SESSION_TTL,
             domain: tenantInfo.cookieDomain,
         });
+        // Only a brand-new account counts as "create account"; adding a
+        // passkey to a signed-in user leaves the last-used signal alone.
+        const lastUsed = created ? setLastUsed(c, tenantInfo, 'register', 'webauthn') : undefined;
 
         // Sandbox tenants are cross-site (local app ↔ sandbox host), so the
         // httpOnly cookie can't be relied on — return the session id so the
@@ -166,6 +171,7 @@ async function verifyRegistration(c: any, tenantInfo: TenantInfo, response: any)
         return c.json({
             verified: true,
             user: { id: userId },
+            ...(lastUsed ? { last_used: lastUsed } : {}),
             ...(tenantInfo.sandbox ? { session_id: sessionId } : {}),
         });
     }
@@ -242,10 +248,12 @@ async function verifyAuthentication(c: any, tenantInfo: TenantInfo, response: an
             maxAge: SESSION_TTL,
             domain: tenantInfo.cookieDomain,
         });
+        const lastUsed = setLastUsed(c, tenantInfo, 'login', 'webauthn');
 
         return c.json({
             verified: true,
             user,
+            last_used: lastUsed,
             ...(tenantInfo.sandbox ? { session_id: sessionId } : {}),
         });
     }
