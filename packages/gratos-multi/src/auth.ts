@@ -16,7 +16,17 @@ import { isoUint8Array } from '@simplewebauthn/server/helpers';
 
 import type { Env, Variables } from './index';
 import { hostMatchesRpId, type TenantInfo } from './tenant';
-import { getUser, createUser, saveCredential, getCredentialById } from './db';
+import {
+    getUser,
+    createUser,
+    saveCredential,
+    getCredentialById,
+    getUserCredentials,
+    countCredentials,
+    updateCredentialUse,
+    parseTransports,
+    MAX_CREDENTIALS_PER_USER,
+} from './db';
 import { mintSession, resolveSession, SESSION_TTL } from './sessions';
 import { getSessionId } from './session';
 import { ceremonyRateLimited } from './keys';
@@ -26,6 +36,32 @@ const CHALLENGE_TTL = 300; // 5 minutes
 
 // The challenge becomes part of a KV key, so require base64url charset.
 const CHALLENGE_RE = /^[A-Za-z0-9_-]{16,256}$/;
+
+/** Optional passkey label from `?label=`: trimmed, capped, else null. */
+export function sanitizeLabel(raw: unknown): string | null {
+    if (typeof raw !== 'string') return null;
+    const t = raw.trim();
+    return t ? t.slice(0, 64) : null;
+}
+
+/**
+ * Pending-registration state stored under the challenge. Newer values are
+ * JSON `{u, l}` (userId + optional label); values written before labels
+ * existed are the bare userId, so a deploy never breaks an in-flight ceremony.
+ */
+export function parseRegChallenge(value: string | null): { userId: string; label: string | null } | null {
+    if (!value) return null;
+    if (value.startsWith('{')) {
+        try {
+            const parsed = JSON.parse(value) as { u?: unknown; l?: unknown };
+            if (typeof parsed.u !== 'string' || !parsed.u) return null;
+            return { userId: parsed.u, label: sanitizeLabel(parsed.l) };
+        } catch {
+            return null;
+        }
+    }
+    return { userId: value, label: null };
+}
 
 /**
  * Get the allowed origin for WebAuthn verification.
@@ -84,13 +120,28 @@ async function createRegistrationOptions(c: any, tenantInfo: TenantInfo) {
     // userId is minted; it travels only through the KV value — the client
     // never needs to see or echo it.
     let userId = crypto.randomUUID();
+    // Existing passkeys of the signed-in user: the authenticator refuses to
+    // enroll a second credential for one it already holds (InvalidStateError),
+    // so "add a passkey" can never silently overwrite the one on this device.
+    let excludeCredentials: { id: string; transports?: any[] }[] = [];
     const sessionId = getSessionId(c);
     if (sessionId) {
         const session = await resolveSession(c.env.KV, tenantInfo.tenant, sessionId);
         if (session && (await getUser(c.env.DB, tenantInfo.tenant, session.userId))) {
             userId = session.userId;
+            const existing = await getUserCredentials(c.env.DB, tenantInfo.tenant, userId);
+            if (existing.length >= MAX_CREDENTIALS_PER_USER) {
+                return { error: 'Too many credentials on this account' };
+            }
+            excludeCredentials = existing
+                .filter((r: any) => (r.kind ?? 'webauthn') === 'webauthn')
+                .map((r: any) => {
+                    const transports = parseTransports(r.transports);
+                    return transports.length ? { id: r.credential_id, transports } : { id: r.credential_id };
+                });
         }
     }
+    const label = sanitizeLabel(c.req.query('label'));
 
     const opts: GenerateRegistrationOptionsOpts = {
         rpName: tenantInfo.rpName,
@@ -98,20 +149,22 @@ async function createRegistrationOptions(c: any, tenantInfo: TenantInfo) {
         userID: isoUint8Array.fromUTF8String(userId),
         userName: 'Me',
         userDisplayName: 'Me',
-        excludeCredentials: [],
+        excludeCredentials,
+        // Any authenticator: platform (Touch ID, Windows Hello, phone) or
+        // roaming (security keys) — a backup passkey is the point of allowing
+        // several, so no attachment restriction.
         authenticatorSelection: {
             residentKey: 'preferred',
             userVerification: 'preferred',
-            authenticatorAttachment: 'platform',
         },
     };
 
     const options = await generateRegistrationOptions(opts);
 
-    // Keyed by challenge; the value carries the minted userId for verify.
+    // Keyed by challenge; the value carries the minted userId (+ label) for verify.
     await c.env.KV.put(
         `reg_challenge:${tenantInfo.tenant}:${options.challenge}`,
-        userId,
+        JSON.stringify({ u: userId, ...(label ? { l: label } : {}) }),
         { expirationTtl: CHALLENGE_TTL }
     );
 
@@ -125,10 +178,11 @@ async function verifyRegistration(c: any, tenantInfo: TenantInfo, response: any)
     }
 
     const key = `reg_challenge:${tenantInfo.tenant}:${challenge}`;
-    const userId = await c.env.KV.get(key);
-    if (!userId) {
+    const pending = parseRegChallenge(await c.env.KV.get(key));
+    if (!pending) {
         return c.json({ error: 'Challenge not found or expired' }, 400);
     }
+    const { userId, label } = pending;
     // Single-use: consume before verification. KV is eventually consistent,
     // so this is per-colo — same trust level as the previous design.
     await c.env.KV.delete(key);
@@ -142,16 +196,38 @@ async function verifyRegistration(c: any, tenantInfo: TenantInfo, response: any)
     });
 
     if (verification.verified && verification.registrationInfo) {
+        // Same authenticator, same account (or any account in this pool):
+        // mirror the key path's 409 rather than surfacing a UNIQUE failure.
+        if (typeof response.id !== 'string' || (await getCredentialById(c.env.DB, tenantInfo.tenant, response.id))) {
+            return c.json({ error: 'Credential already registered' }, 409);
+        }
+
         let user = await getUser(c.env.DB, tenantInfo.tenant, userId);
         const created = !user;
         if (!user) {
             await createUser(c.env.DB, tenantInfo.tenant, userId);
             user = { id: userId };
+        } else if ((await countCredentials(c.env.DB, tenantInfo.tenant, userId)) >= MAX_CREDENTIALS_PER_USER) {
+            return c.json({ error: 'Too many credentials on this account' }, 400);
         }
 
-        await saveCredential(c.env.DB, tenantInfo.tenant, userId, verification, response.id);
+        const info = verification.registrationInfo as any;
+        let rowId: string;
+        try {
+            rowId = await saveCredential(c.env.DB, tenantInfo.tenant, userId, verification, response.id, {
+                label,
+                aaguid: typeof info.aaguid === 'string' ? info.aaguid : null,
+                transports: Array.isArray(info.credential?.transports) ? info.credential.transports : [],
+                counter: typeof info.credential?.counter === 'number' ? info.credential.counter : 0,
+            });
+        } catch (e: any) {
+            if (String(e?.message ?? e).includes('UNIQUE')) {
+                return c.json({ error: 'Credential already registered' }, 409);
+            }
+            throw e;
+        }
 
-        const sessionId = await mintSession(c.env.KV, tenantInfo.tenant, userId, 'webauthn');
+        const sessionId = await mintSession(c.env.KV, tenantInfo.tenant, userId, 'webauthn', rowId);
 
         setCookie(c, 'session_id', sessionId, {
             httpOnly: true,
@@ -171,6 +247,7 @@ async function verifyRegistration(c: any, tenantInfo: TenantInfo, response: any)
         return c.json({
             verified: true,
             user: { id: userId },
+            credential: { id: rowId },
             ...(lastUsed ? { last_used: lastUsed } : {}),
             ...(tenantInfo.sandbox ? { session_id: sessionId } : {}),
         });
@@ -217,10 +294,12 @@ async function verifyAuthentication(c: any, tenantInfo: TenantInfo, response: an
         return c.json({ error: 'Credential not found' }, 400);
     }
 
+    const storedTransports = parseTransports(credential.transports);
     const credentialObj = {
         id: credentialId,
         publicKey: new Uint8Array(Buffer.from(credential.public_key, 'base64')),
-        counter: 0,
+        counter: typeof credential.counter === 'number' ? credential.counter : 0,
+        ...(storedTransports.length ? { transports: storedTransports as any } : {}),
     };
 
     const expectedOrigin = getExpectedOrigin(c, tenantInfo);
@@ -238,7 +317,7 @@ async function verifyAuthentication(c: any, tenantInfo: TenantInfo, response: an
             return c.json({ error: 'User not found' }, 400);
         }
 
-        const sessionId = await mintSession(c.env.KV, tenantInfo.tenant, (user as any).id, 'webauthn');
+        const sessionId = await mintSession(c.env.KV, tenantInfo.tenant, (user as any).id, 'webauthn', credential.id);
 
         setCookie(c, 'session_id', sessionId, {
             httpOnly: true,
@@ -249,6 +328,10 @@ async function verifyAuthentication(c: any, tenantInfo: TenantInfo, response: an
             domain: tenantInfo.cookieDomain,
         });
         const lastUsed = setLastUsed(c, tenantInfo, 'login', 'webauthn');
+        const newCounter = verification.authenticationInfo?.newCounter ?? credentialObj.counter;
+        const bookkeeping = updateCredentialUse(c.env.DB, credential.id, newCounter);
+        if (c.executionCtx?.waitUntil) c.executionCtx.waitUntil(bookkeeping);
+        else await bookkeeping;
 
         return c.json({
             verified: true,
@@ -275,7 +358,9 @@ export function authRoutes(tenantInfo: TenantInfo) {
         // software authenticator can script this pipeline, so challenge
         // minting must be as bounded here as it is there.
         if (await ceremonyRateLimited(c)) return c.json({ error: 'Rate limit exceeded, try again later' }, 429);
-        return c.json(await createRegistrationOptions(c, tenantInfo));
+        const options = await createRegistrationOptions(c, tenantInfo);
+        if ('error' in options) return c.json(options, 400);
+        return c.json(options);
     });
 
     app.post('/v1/register/verify', async (c) => {

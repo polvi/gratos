@@ -47,18 +47,19 @@ Note: there is no `packages/demo` or `packages/e2e`; an older single-tenant `wor
 
 v1 — spec-shaped WebAuthn JSON (options returned unmodified; verify takes the bare credential response as the whole body):
 
-- `GET /v1/register/options`, `POST /v1/register/verify` — WebAuthn registration (with a valid session, ADDS a credential to that user instead of creating one)
+- `GET /v1/register/options[?label=]`, `POST /v1/register/verify` — WebAuthn registration. With a valid session it ADDS a passkey to that user (multi-passkey): options carry `excludeCredentials` for the user's existing passkeys, any authenticator attachment is allowed, the `MAX_CREDENTIALS_PER_USER` cap (10, `src/db.ts`) applies, and a known credential id gets 409. Passkeys store `label` (from `?label=`), `aaguid` (→ provider name via `src/aaguid.ts`), `transports`, and the signature `counter` (migration 0008); verify returns `credential: {id}` (row id)
 - `GET /v1/login/options`, `POST /v1/login/verify` — WebAuthn authentication
 - `GET|POST /v1/key/(register|login)/(options|verify)` — Account-key/device-key credentials (`src/keys.ts`): client-derived P-256 keys (128-bit `agak1_…` secret or 12 BIP39 words, HKDF salted by tenant — spec + vectors in `tests/keyspec-ref.ts`/`keyspec.test.ts`); server stores public keys only in `public_keys` with `kind` = webauthn|devicekey|softkey. Bring-your-own external BIP39 phrases work with no server change: client decodes → register (claim) → on 409, login (recover) — create-or-recover is purely client-side
-- `GET /v1/credentials`, `DELETE /v1/credentials/:id` — Credential management (session; rank rule: a session can't remove a credential stronger than its own `amr`; last credential undeletable)
+- `GET /v1/credentials`, `DELETE /v1/credentials/:id` — Credential management (session; rows carry `kind, label, provider, display, backed_up, transports, created_at, last_used_at, current`; `current` = the credential that minted this session, which sessions now record as `c`; rank rule: a session can't remove a credential stronger than its own `amr`; last credential undeletable)
 - `GET /v1/key/wordlist.json` — BIP39 English wordlist (encoding only)
-- `GET /v1/whoami`, `POST /v1/logout` — Session management (cookie or Bearer). Sessions are JSON `{u, amr}` in KV (`src/sessions.ts`; legacy bare-userId values parse as amr=webauthn); `whoami` and authz `status` report `amr` (webauthn|device|key)
+- `GET /v1/whoami`, `POST /v1/logout` — Session management (cookie or Bearer). Sessions are JSON `{u, amr, c?}` in KV (`src/sessions.ts`; `c` = row id of the minting credential, surfaced as `current` in `/v1/credentials`; legacy bare-userId values parse as amr=webauthn); `whoami` and authz `status` report `amr` (webauthn|device|key)
 
 Unversioned:
 
 - `POST /sandbox` — Mint an instant sandbox auth endpoint (anonymous OK; with a valid session the sandbox is owned by that user)
 - `GET /sandboxes`, `DELETE /sandboxes/:sid` — List/delete the requester's owned sandboxes (session required)
-- `GET /`, `GET /demo` — Health + self-contained demo page
+- `GET /`, `GET /demo` — Health + self-contained demo page (alias → `/login`)
+- Hosted surfaces (`src/surfaces.ts`, `?return_to=`): `/login`, `/register` (`?mode=recovery` jumps to the 12-words flow for a signed-in user), `/recover`, `/account` (session-gated: list credentials, add a passkey with optional name, remove, recovery-key link; bounces through `/login` on 401), `/logout`, `/consent`
 
 Authz (served on every tenant host, forwarded to gratos-authz; session required; writes require manage = tenant owner via on-behalf routes, or any user in an anonymous sandbox):
 

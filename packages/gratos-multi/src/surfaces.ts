@@ -17,7 +17,7 @@ import type { TenantInfo } from './tenant';
 const AG_URL = 'https://esm.sh/@authgravity/browser@0.0.7';
 const WA_URL = 'https://esm.sh/@simplewebauthn/browser@13.3.0';
 
-export const SURFACE_PATHS = new Set(['/login', '/register', '/logout', '/recover', '/demo', '/consent']);
+export const SURFACE_PATHS = new Set(['/login', '/register', '/logout', '/recover', '/account', '/demo', '/consent']);
 
 /**
  * Validate a `return_to` against the tenant's own registrable domain — an
@@ -92,6 +92,18 @@ const STYLES = `
   .panel .val { font-size: 1rem; line-height: 1.5; color: #18181b; margin-bottom: 0.75rem; word-break: break-word; }
   .panel .val:last-child { margin-bottom: 0; }
   .budget-row { border-top: 1px solid #f4f4f5; padding-top: 0.75rem; margin-top: 0.75rem; }
+  /* Account surface: one row per credential. */
+  .cred { display: flex; align-items: center; gap: 0.75rem; }
+  .cred .info { flex: 1; min-width: 0; }
+  .cred .name { font-size: 1.05rem; font-weight: 600; color: #18181b; word-break: break-word; }
+  .cred .meta { font-size: 0.85rem; color: #71717a; margin-top: 0.15rem; }
+  .cred .tag { display: inline-block; margin-left: 0.5rem; padding: 0.1rem 0.5rem; border-radius: 999px;
+    font-size: 0.7rem; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; vertical-align: middle;
+    background: #dcfce7; color: #15803d; }
+  #root .cred button { width: auto; margin: 0; padding: 0.45rem 0.8rem; font-size: 0.9rem; font-weight: 500; }
+  #root .add-row { display: flex; gap: 0.5rem; margin-top: 1.25rem; }
+  #root .add-row input { flex: 1; margin: 0; text-align: left; font-family: system-ui, sans-serif; font-size: 1rem; }
+  #root .add-row button { width: auto; margin: 0; white-space: nowrap; }
   .budget-row input[type="text"] { text-align: left; font-size: 1rem; margin-bottom: 0.4rem; }
   .check-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; color: #3f3f46;
     margin-bottom: 0.4rem; text-align: left; }
@@ -112,7 +124,7 @@ const STYLES = `
 // --- shared client prelude (pure JS, no template literals) ---
 const COMMON = `
   const CFG = JSON.parse(document.getElementById('ag-cfg').textContent);
-  const PREFIX = location.pathname.replace(/\\/(login|register|logout|recover|demo|consent)\\/?$/, '');
+  const PREFIX = location.pathname.replace(/\\/(login|register|logout|recover|account|demo|consent)\\/?$/, '');
   const API = location.origin + PREFIX;
   const root = document.getElementById('root');
   const statusEl = document.getElementById('status');
@@ -307,7 +319,9 @@ const REGISTER = `
     document.getElementById('words').onclick = () => startWords('create');
     document.getElementById('have').onclick = () => { location.href = PREFIX + '/login' + rt; };
   };
-  renderStart();
+  // /register?mode=recovery: a signed-in user (sent here from /account) adds a
+  // recovery key; the ceremony attaches to their account via the cookie.
+  if (new URLSearchParams(location.search).get('mode') === 'recovery') { startWords('recovery'); } else { renderStart(); }
 `;
 
 // --- /recover (sign in / set up with 12 words) ---
@@ -335,6 +349,117 @@ const RECOVER = `
     } catch (e) { setStatus(String(e && e.message || e), 'error'); }
     finally { btn.disabled = false; }
   };
+`;
+
+// --- /account (manage passkeys: list, add a backup, remove) ---
+// Session-gated: a 401 from the list bounces through /login and back here.
+const ACCOUNT = `
+  const el = (tag, cls, text) => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined && text !== null) n.textContent = String(text);
+    return n;
+  };
+  const api = async (method, path) => {
+    const res = await fetch(API + path, { method, credentials: 'include' });
+    const data = await res.json().catch(() => ({}));
+    return { res, data };
+  };
+  const when = (ms) => {
+    if (!ms) return null;
+    try { return new Date(ms).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }); } catch (e) { return null; }
+  };
+  const kindLine = (c) => c.kind === 'webauthn' ? 'Passkey' : c.kind === 'devicekey' ? 'This device (silent sign-in)' : 'Recovery key (12 words)';
+  const DUPLICATE = 'This device already holds a passkey for this account \\u2014 add one from another device, or a security key.';
+
+  let creds = [];
+
+  const remove = async (c) => {
+    setStatus('Removing\\u2026');
+    const { res, data } = await api('DELETE', '/v1/credentials/' + encodeURIComponent(c.id));
+    if (!res.ok) { setStatus(data.error || 'Could not remove that one.', 'error'); return; }
+    setStatus('Removed \\u2713');
+    load();
+  };
+
+  const addPasskey = async (label) => {
+    try {
+      setStatus('Creating your passkey\\u2026');
+      const q = label ? '?label=' + encodeURIComponent(label) : '';
+      const optRes = await fetch(API + '/v1/register/options' + q, { credentials: 'include' });
+      const opts = await optRes.json().catch(() => ({}));
+      if (!optRes.ok) { setStatus(opts.error || 'Could not start the passkey prompt.', 'error'); return; }
+      let cred;
+      try { cred = await startRegistration({ optionsJSON: opts }); }
+      catch (e) {
+        if (e && e.name === 'InvalidStateError') { setStatus(DUPLICATE, 'error'); return; }
+        setStatus('The passkey prompt was cancelled or failed \\u2014 give it another try.', 'error'); return;
+      }
+      const res = await fetch(API + '/v1/register/verify', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cred) });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 409) { setStatus(DUPLICATE, 'error'); return; }
+      if (!res.ok || !data.verified) { setStatus(data.error || 'That did not verify \\u2014 give it another try.', 'error'); return; }
+      setStatus('Passkey added \\u2713');
+      load();
+    } catch (e) { setStatus('Something went wrong \\u2014 try once more.', 'error'); }
+  };
+
+  const render = () => {
+    root.innerHTML = '';
+    const list = el('div');
+    creds.forEach((c) => {
+      const row = el('div', 'panel cred');
+      const info = el('div', 'info');
+      const name = el('div', 'name', c.display || 'Passkey');
+      if (c.current) name.appendChild(el('span', 'tag', 'Signed in with this'));
+      info.appendChild(name);
+      const bits = [kindLine(c)];
+      if (c.label && c.provider) bits.push(c.provider);
+      const added = when(c.created_at); if (added) bits.push('Added ' + added);
+      const used = when(c.last_used_at); if (used) bits.push('Last used ' + used);
+      info.appendChild(el('div', 'meta', bits.join(' \\u00b7 ')));
+      row.appendChild(info);
+      const btn = el('button', null, 'Remove');
+      if (creds.length <= 1) { btn.disabled = true; btn.title = 'You need at least one way to sign in.'; }
+      btn.onclick = () => remove(c);
+      row.appendChild(btn);
+      list.appendChild(row);
+    });
+    root.appendChild(list);
+
+    const add = el('div', 'add-row');
+    const input = el('input'); input.placeholder = 'Name this passkey (optional)'; input.maxLength = 64; input.autocomplete = 'off';
+    const btn = el('button', 'primary', 'Add a passkey');
+    btn.onclick = async () => { btn.disabled = true; try { await addPasskey((input.value || '').trim()); } finally { btn.disabled = false; } };
+    input.onkeydown = (e) => { if (e.key === 'Enter') btn.onclick(); };
+    add.appendChild(input); add.appendChild(btn);
+    root.appendChild(add);
+    root.appendChild(el('p', 'muted', 'A passkey on a second device, or a security key, keeps you signed in if this one is lost.'));
+
+    const hasRecovery = creds.some((c) => c.kind === 'softkey');
+    if (!hasRecovery) {
+      const rec = el('button', 'alt', 'Set up a recovery key (12 words)');
+      rec.onclick = () => { location.href = PREFIX + '/register?mode=recovery' + (CFG.returnTo ? '&return_to=' + encodeURIComponent(CFG.returnTo) : ''); };
+      root.appendChild(rec);
+    }
+    const done = el('button', null, CFG.returnTo ? 'Done' : 'Sign out');
+    done.onclick = () => { if (CFG.returnTo) { go(); } else { location.href = PREFIX + '/logout'; } };
+    root.appendChild(done);
+  };
+
+  const load = async () => {
+    const { res, data } = await api('GET', '/v1/credentials');
+    if (res.status === 401) {
+      location.href = PREFIX + '/login?return_to=' + encodeURIComponent(location.href);
+      return;
+    }
+    if (!res.ok) { setStatus(data.error || 'Could not load your passkeys.', 'error'); return; }
+    creds = data.credentials || [];
+    render();
+  };
+  setStatus('Loading\\u2026');
+  await load();
+  if (creds.length) setStatus('');
 `;
 
 // --- /logout ---
@@ -602,6 +727,8 @@ export function renderSurface(path: string, returnTo: string | null): string {
             return page('Create your account', 'One passkey, no password.', REGISTER, returnTo);
         case '/recover':
             return page('Recover your account', 'Sign in with your 12 secret words.', RECOVER, returnTo);
+        case '/account':
+            return page('Your passkeys', 'Add a backup, or remove one you no longer use.', ACCOUNT, returnTo);
         case '/logout':
             return page('Sign out', '', LOGOUT, returnTo);
         case '/consent':

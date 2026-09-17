@@ -13,30 +13,46 @@ function NavButtonInner({ currentPath }: { currentPath: string }) {
     }
 
     if (isAuthenticated) {
+        // Passkey management lives on the auth host's hosted /account surface
+        // (the dash is just another tenant); return_to brings the user back.
+        const accountHref = `${apiBaseUrl}/account?return_to=${encodeURIComponent(
+            typeof window !== 'undefined' ? window.location.href : '/'
+        )}`;
+        const passkeys = (
+            <a href={accountHref} class="nav-button" style={{ marginRight: '0.5rem' }}>
+                Passkeys
+            </a>
+        );
         if (currentPath === '/domains') {
             return (
-                <button
-                    class="nav-button"
-                    onClick={async () => {
-                        await logout();
-                        window.location.href = '/';
-                    }}
-                >
-                    Log Out
-                </button>
+                <>
+                    {passkeys}
+                    <button
+                        class="nav-button"
+                        onClick={async () => {
+                            await logout();
+                            window.location.href = '/';
+                        }}
+                    >
+                        Log Out
+                    </button>
+                </>
             );
         }
         return (
-            <a href="/domains" class="nav-button">
-                Dashboard
-            </a>
+            <>
+                {passkeys}
+                <a href="/domains" class="nav-button">
+                    Dashboard
+                </a>
+            </>
         );
     }
 
     const handleLogin = async () => {
         try {
             setStatus('Logging in...');
-            const resp = await fetch(`${apiBaseUrl}/v1/login/options`);
+            const resp = await fetch(`${apiBaseUrl}/v1/login/options`, { credentials: 'include' });
             const options = await resp.json();
 
             const asseResp = await startAuthentication({ optionsJSON: options });

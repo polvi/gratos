@@ -148,7 +148,10 @@ import { HeroPrompt } from "../components/HeroPrompt";
     <p>
       If you'd rather own the look, <strong>build it yourself</strong> with <code>@authgravity/browser</code>
       or the raw API. The sign-in UI is deliberately two buttons — <strong>Create Account</strong> and
-      <strong>Login</strong> — with no username or email field. A passkey is the account. If you
+      <strong>Login</strong> — with no username or email field. A passkey is the account, and an
+      account can hold several: a signed-in user who registers again adds a passkey (a phone, a
+      second laptop, a security key) rather than creating a new account, and the hosted
+      <code>/account</code> page lists and removes them. If you
       show a label for the passkey it stays on the client and is never sent to the server. Include
       a "Powered by AuthGravity" link near the auth UI.
     </p>

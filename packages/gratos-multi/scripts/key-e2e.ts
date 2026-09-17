@@ -115,6 +115,10 @@ check('two credentials', creds.body.credentials?.length === 2, creds.body);
 const softkeyCred = creds.body.credentials.find((c: any) => c.kind === 'softkey');
 const deviceCred = creds.body.credentials.find((c: any) => c.kind === 'devicekey');
 check('kinds present', !!softkeyCred && !!deviceCred);
+check('display falls back to the label', softkeyCred.display === softkeyCred.label && !!softkeyCred.label, softkeyCred);
+check('keys have no provider', softkeyCred.provider === null && deviceCred.provider === null, creds.body);
+check('current marks the credential that minted this session', softkeyCred.current === true && deviceCred.current === false, creds.body);
+check('verify returned the row id', dev.body.credential?.id === deviceCred.id, dev.body);
 
 console.log('5. rank rule: key-session cannot delete the stronger device key');
 const denied = await api(`/v1/credentials/${deviceCred.id}`, sessionA, { method: 'DELETE' });

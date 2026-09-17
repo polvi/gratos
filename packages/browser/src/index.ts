@@ -25,6 +25,10 @@ export type { AuthMethod } from './capabilities';
 export { lastUsed, rememberLastUsed, parseLastUsed, LAST_USED_COOKIE } from './last-used';
 export type { LastUsed, LastUsedAction, LastUsedMethod } from './last-used';
 
+// Manage the credentials on a signed-in account (passkeys, device + recovery keys).
+export { listCredentials, removeCredential } from './credentials';
+export type { Credential, CredentialKind, CredentialList, RemoveResult } from './credentials';
+
 export { createAccountKeySetup } from './setup';
 export type { AccountKeySetup, SetupState, SetupContext, SetupOptions } from './setup';
 

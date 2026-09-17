@@ -39,7 +39,7 @@ The provisioner Worker handles domain claims (DNS verification, Domain Connect, 
 
 Three ways in, all ending with the same first-party `httpOnly` session cookie:
 
-1. **Hosted surfaces (zero UI to build)** — send users to `https://authgravity.myapp.com/login?return_to=<url>` (also `/register`, `/recover`, `/logout`). Passkey-first UI with account creation on the login page; after the ceremony the cookie is set and the user is redirected back.
+1. **Hosted surfaces (zero UI to build)** — send users to `https://authgravity.myapp.com/login?return_to=<url>` (also `/register`, `/recover`, `/account`, `/logout`). Passkey-first UI with account creation on the login page; after the ceremony the cookie is set and the user is redirected back. `/account` lets a signed-in user add a backup passkey (any device or security key) or remove one — an account holds several passkeys, and registering while signed in adds rather than creates.
 2. **Passkeys (build your own)** — spec-shaped WebAuthn JSON: options endpoints return standard `PublicKeyCredential*OptionsJSON` unmodified, verify endpoints take the bare credential response as the whole body. Any conforming client works.
 3. **Account keys (no-passkey fallback + recovery)** — a client-generated 128-bit secret rendered as `agak1_…` or 12 BIP39 words, HKDF-derived into a per-tenant P-256 keypair. The server stores only the public key, exactly like a passkey. Silent **device keys** (non-extractable WebCrypto keys) handle daily logins so the words are only typed at setup and recovery. Bring-your-own BIP39 phrases work with no server support: decode → register (claim) → on 409, login (recover).
 
@@ -156,10 +156,10 @@ Served on every tenant host (`authgravity.<domain>` or `sandbox.authgravity.org/
 | GET | `/v1/register/options`, `/v1/login/options` | Standard WebAuthn options JSON, unmodified |
 | POST | `/v1/register/verify`, `/v1/login/verify` | Verify bare credential response, create session |
 | GET/POST | `/v1/key/(register\|login)/(options\|verify)` | Account-key / device-key credentials |
-| GET | `/v1/credentials` · DELETE `/v1/credentials/:id` | Credential management (rank-guarded) |
+| GET | `/v1/credentials` · DELETE `/v1/credentials/:id` | Credential management: list every passkey/key with a display name and which one is signing you in; remove (rank-guarded, last one undeletable) |
 | GET | `/v1/whoami` · POST `/v1/logout` | Session (cookie or `Authorization: Bearer`) |
 | GET/PUT/POST | `/v1/authz/(status\|schema\|relationships\|check)` | Authorization API |
-| GET | `/login`, `/register`, `/recover`, `/logout` | Hosted auth surfaces |
+| GET | `/login`, `/register`, `/recover`, `/account`, `/logout` | Hosted auth surfaces (`/account` manages passkeys) |
 | GET | `/authz` | Authz console |
 | GET | `/llms.txt` · `/.well-known/authgravity` | Per-host agent guide + discovery JSON |
 | POST | `/sandbox` · GET/DELETE `/sandboxes[/:id]` | Mint / manage instant sandboxes |

@@ -37,7 +37,7 @@ describe('validateReturnTo', () => {
 
 describe('renderSurface', () => {
     test('surface set + rendered pages carry the expected shape', () => {
-        expect([...SURFACE_PATHS].sort()).toEqual(['/consent', '/demo', '/login', '/logout', '/recover', '/register']);
+        expect([...SURFACE_PATHS].sort()).toEqual(['/account', '/consent', '/demo', '/login', '/logout', '/recover', '/register']);
         const login = renderSurface('/login', 'https://myapp.com/back');
         expect(login).toContain('esm.sh/@authgravity/browser');
         expect(login).toContain('trySilentLogin');
@@ -56,6 +56,18 @@ describe('renderSurface', () => {
             expect(html).toContain("lastPill('register')");
         }
         expect(renderSurface('/recover', null)).toContain('claimOrRecover');
+        // /register?mode=recovery jumps straight to the 12-words flow for signed-in users
+        expect(renderSurface('/register', null)).toContain("get('mode') === 'recovery'");
+        // /account: session-gated passkey management (list, add with label, remove)
+        const account = renderSurface('/account', 'https://myapp.com/settings');
+        expect(account).toContain('/v1/credentials');
+        expect(account).toContain("'/v1/register/options' + q");
+        expect(account).toContain('InvalidStateError');
+        expect(account).toContain("'/login?return_to='");
+        expect(account).toContain('Signed in with this');
+        expect(account).toContain('Add a passkey');
+        // every surface strips its own path segment to find the API prefix
+        expect(account).toContain('login|register|logout|recover|account|demo|consent');
     });
 
     test('the consent surface talks to the aauth consent API and offers attenuation', () => {

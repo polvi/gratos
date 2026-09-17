@@ -99,6 +99,26 @@ export async function logout() {
 }
 \`\`\``;
 
+const ADD_PASSKEY_CODE = `\`\`\`typescript
+// Add a passkey to the signed-in account (same ceremony as register(), plus a label).
+export async function addPasskey(label?: string) {
+  const q = label ? '?label=' + encodeURIComponent(label) : '';
+  const opts = await (await api('/v1/register/options' + q)).json();
+  let cred;
+  try {
+    cred = await startRegistration({ optionsJSON: opts });
+  } catch (e: any) {
+    if (e?.name === 'InvalidStateError') throw new Error('This device already has a passkey for this account');
+    throw e;
+  }
+  const res = await api('/v1/register/verify', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cred),
+  });
+  if (res.status === 409) throw new Error('This device already has a passkey for this account');
+  return res.json(); // { verified, user: { id }, credential: { id } }
+}
+\`\`\``;
+
 function authSection(lines: string[]) {
     lines.push('## Auth (passkeys)');
     lines.push('');
@@ -119,6 +139,23 @@ function authSection(lines: string[]) {
     lines.push('');
     lines.push('The server keys the pending ceremony by the challenge (inside the signed `clientDataJSON`), so there is no correlation id to carry.');
     lines.push('');
+    lines.push('### Multiple passkeys per account');
+    lines.push('');
+    lines.push(
+        'An account holds up to 10 credentials. Run the SAME registration ceremony while signed in and the new passkey is ADDED to the session\'s account instead of creating a new one (`register()` above, with the cookie or Bearer present). The options then carry `excludeCredentials` for the passkeys the account already has, so an authenticator that already holds one refuses with `InvalidStateError` in the browser — never a silent overwrite; if a response for a known credential still reaches the server it answers 409. Any authenticator is accepted (platform passkeys, phones, hardware security keys), so "add a backup passkey" is a one-button feature.'
+    );
+    lines.push('');
+    lines.push('- `GET /v1/register/options?label=<name>` — optional owner label (≤64 chars) for the new passkey; otherwise the list shows the provider name derived from the authenticator AAGUID (iCloud Keychain, Google Password Manager, 1Password, YubiKey, …)');
+    lines.push('- `POST /v1/register/verify` → also `credential: {id}` (the row id used by DELETE below); when adding to a signed-in user there is no `last_used` (not a sign-up)');
+    lines.push('- `GET /v1/credentials` → `{amr, credentials: [{id, kind: "webauthn"|"devicekey"|"softkey", label, provider, display, backed_up, transports, created_at, last_used_at, current}]}` — `display` is what to show (label, else provider, else "Passkey"); `current` marks the credential that minted this session');
+    lines.push('- `DELETE /v1/credentials/:id` → `{deleted: true}`; 409 on the last credential (never orphan an account), 403 when the session is weaker than the target (a session from a recovery key cannot remove a passkey — sign in with a passkey first)');
+    lines.push('');
+    lines.push(
+        'Zero-UI option: send signed-in users to `<endpoint>/account?return_to=<url>` — a hosted page (like `/login`) that lists credentials, adds a passkey with an optional name, removes one, and offers the 12-word recovery key. In your own UI use `listCredentials(endpoint)` / `removeCredential(endpoint, id)` from `@authgravity/browser`, and this for the add button:'
+    );
+    lines.push('');
+    lines.push(ADD_PASSKEY_CODE);
+    lines.push('');
     lines.push('**"Last used" hint.** Every successful ceremony also sets a JS-readable, one-year `ag_last_used` cookie on your domain (not httpOnly, unlike `session_id`) whose value is `<action>.<method>`: action `login` | `register` (only a ceremony that CREATED the account counts as `register`; adding a passkey or recovery key to a signed-in user leaves it alone), method `webauthn` | `device` | `key` (the session `amr` vocabulary). Read it on page load and put a small "Last used" pill on the matching button — returning users then see it on **Login**, first-time users see nothing. `lastUsed()` in `@authgravity/browser` parses it (falls back to `localStorage`, which the SDK fills from the `last_used` verify field when the cookie cannot reach your origin, e.g. a sandbox used without `authgravity listen`; the proxy mirrors the cookie onto localhost). Logout keeps the cookie on purpose. It carries no identity — no user id, no credential id.');
     lines.push('');
 }
@@ -135,7 +172,7 @@ function accountKeysSection(lines: string[]) {
     lines.push('- `GET /v1/key/register/options` / `GET /v1/key/login/options` → `{challenge, context, tenant}` (single-use, 5 min)');
     lines.push('- `POST /v1/key/register/verify` `{challenge, public_key, signature, kind: "softkey"|"devicekey", label?}` → `{verified, user:{id}, credential_id, last_used?}`; with a session the credential is ADDED to that user (then no `last_used`)');
     lines.push('- `POST /v1/key/login/verify` `{challenge, public_key, signature}` → `{verified, user:{id}, last_used}`');
-    lines.push('- `GET /v1/credentials`, `DELETE /v1/credentials/:id` — list/remove (a session can never remove a credential stronger than how it authenticated, nor the last one)');
+    lines.push('- `GET /v1/credentials`, `DELETE /v1/credentials/:id` — list/remove every kind (see "Multiple passkeys per account" above for the shape and guards)');
     lines.push('- `GET /v1/key/wordlist.json` — BIP39 English wordlist');
     lines.push('');
     lines.push(

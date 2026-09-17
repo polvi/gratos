@@ -23,7 +23,10 @@ import {
     saveKeyCredential,
     countCredentials,
     touchCredential,
+    parseTransports,
+    MAX_CREDENTIALS_PER_USER,
 } from './db';
+import { providerName } from './aaguid';
 import { mintSession, resolveSession, AMR_RANK, Amr, SESSION_TTL } from './sessions';
 import { setLastUsed } from './last-used';
 import { getSessionId } from './session';
@@ -31,7 +34,6 @@ import { WORDLIST } from './wordlist';
 
 const CHALLENGE_TTL = 300; // 5 minutes, matches WebAuthn ceremonies
 const CHALLENGE_RE = /^[A-Za-z0-9_-]{16,256}$/;
-const MAX_CREDENTIALS_PER_USER = 10;
 
 export const KEY_REGISTER_CONTEXT = 'authgravity-key-register-v1';
 export const KEY_LOGIN_CONTEXT = 'authgravity-key-login-v1';
@@ -185,9 +187,9 @@ export function keyRoutes(tenantInfo: TenantInfo) {
         }
 
         const safeLabel = typeof label === 'string' && label.trim() ? label.trim().slice(0, 64) : null;
-        await saveKeyCredential(c.env.DB, tenantInfo.tenant, userId, credentialId, public_key, kind, safeLabel);
+        const rowId = await saveKeyCredential(c.env.DB, tenantInfo.tenant, userId, credentialId, public_key, kind, safeLabel);
 
-        const newSessionId = await mintSession(c.env.KV, tenantInfo.tenant, userId, KIND_TO_AMR[kind]);
+        const newSessionId = await mintSession(c.env.KV, tenantInfo.tenant, userId, KIND_TO_AMR[kind], rowId);
         setSessionCookie(c, tenantInfo, newSessionId);
         // Sign-up only when this ceremony created the account; attaching a
         // recovery or device key to a signed-in user is not a "create account".
@@ -197,6 +199,7 @@ export function keyRoutes(tenantInfo: TenantInfo) {
             verified: true,
             user: { id: userId },
             credential_id: credentialId,
+            credential: { id: rowId },
             ...(lastUsed ? { last_used: lastUsed } : {}),
             ...(tenantInfo.sandbox ? { session_id: newSessionId } : {}),
         });
@@ -251,7 +254,7 @@ export function keyRoutes(tenantInfo: TenantInfo) {
         if (!user) return c.json({ error: 'User not found' }, 400);
 
         const amr: Amr = KIND_TO_AMR[credential.kind] ?? 'key';
-        const newSessionId = await mintSession(c.env.KV, tenantInfo.tenant, (user as any).id, amr);
+        const newSessionId = await mintSession(c.env.KV, tenantInfo.tenant, (user as any).id, amr, credential.id);
         setSessionCookie(c, tenantInfo, newSessionId);
         const lastUsed = setLastUsed(c, tenantInfo, 'login', amr);
         c.executionCtx?.waitUntil?.(touchCredential(c.env.DB, credential.id));
@@ -265,6 +268,28 @@ export function keyRoutes(tenantInfo: TenantInfo) {
     });
 
     // --- credential management (session required) ---
+
+    // Wire shape of one credential. `display` is what a UI shows: the owner's
+    // label, else the passkey provider (from the AAGUID), else a kind default.
+    // `current` marks the credential that minted this very session.
+    const publicCredential = (r: any, sessionCredentialId?: string) => {
+        const kind: string = r.kind ?? 'webauthn';
+        const label: string | null = r.label ?? null;
+        const provider = kind === 'webauthn' ? providerName(r.aaguid) : null;
+        const fallback = kind === 'webauthn' ? 'Passkey' : kind === 'devicekey' ? 'This device' : 'Account key';
+        return {
+            id: r.id,
+            kind,
+            label,
+            provider,
+            display: label ?? provider ?? fallback,
+            backed_up: kind === 'webauthn' ? !!r.user_backed_up : null,
+            transports: parseTransports(r.transports),
+            created_at: r.created_at ?? null,
+            last_used_at: r.last_used_at ?? null,
+            current: !!sessionCredentialId && r.id === sessionCredentialId,
+        };
+    };
 
     const requireSession = async (c: any) => {
         const sessionId = getSessionId(c);
@@ -281,13 +306,7 @@ export function keyRoutes(tenantInfo: TenantInfo) {
         const rows = await getUserCredentials(c.env.DB, tenantInfo.tenant, session.userId);
         return c.json({
             amr: session.amr,
-            credentials: rows.map((r: any) => ({
-                id: r.id,
-                kind: r.kind ?? 'webauthn',
-                label: r.label ?? null,
-                created_at: r.created_at ?? null,
-                last_used_at: r.last_used_at ?? null,
-            })),
+            credentials: rows.map((r: any) => publicCredential(r, session.credentialId)),
         });
     });
 

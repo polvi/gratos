@@ -93,6 +93,20 @@ describe('createApp verify translation', () => {
         expect(seen.auth).toBe('Bearer sess-1');
     });
 
+    test('credential management passes through with the cookie translated to Bearer', async () => {
+        const { res, seen } = await withUpstream('/v1/credentials/row-1', { deleted: true }, (app) =>
+            app.request('/v1/credentials/row-1', {
+                method: 'DELETE',
+                headers: { Origin: 'http://localhost:5173', Cookie: 'session_id=sess-1' },
+            })
+        );
+        expect(res.status).toBe(200);
+        expect(seen.url).toMatch(/\/v1\/credentials\/row-1$/);
+        expect(seen.auth).toBe('Bearer sess-1');
+        // not a ceremony: the localhost session cookie is left alone
+        expect(res.headers.getSetCookie().join('\n')).not.toContain('session_id');
+    });
+
     test('garbage last_used is ignored', async () => {
         const { res } = await withUpstream('/v1/login/verify', { verified: true, session_id: 's', last_used: 'login.password; Path=/evil' }, (app) =>
             post(app, '/v1/login/verify')

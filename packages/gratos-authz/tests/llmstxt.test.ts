@@ -43,6 +43,11 @@ describe('buildLlmsTxt', () => {
         // one doc now carries auth AND authz
         expect(txt).toContain('# AuthGravity — hippo.love');
         expect(txt).toContain('## Auth (passkeys)');
+        expect(txt).toContain('### Multiple passkeys per account');
+        expect(txt).toContain('excludeCredentials');
+        expect(txt).toContain('/account?return_to=');
+        expect(txt).toContain('export async function addPasskey');
+        expect(txt).toContain('listCredentials(endpoint)');
         expect(txt).toContain('PUBLIC_AUTH_ENDPOINT=https://authgravity.hippo.love');
         expect(txt).toContain('## Account keys');
         // live schema

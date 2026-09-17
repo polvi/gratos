@@ -155,8 +155,10 @@ export function RegisterButton() {
         try {
             setStatus('Registering...');
             // No username: the passkey label defaults to "Me" (set server-side
-            // in the options; the server never stores it).
-            const resp = await fetch(`${apiBaseUrl}/v1/register/options`);
+            // in the options; the server never stores it). The cookie must
+            // travel: a signed-in user adds a passkey to THEIR account here
+            // rather than minting a second one.
+            const resp = await fetch(`${apiBaseUrl}/v1/register/options`, { credentials: 'include' });
             const options = await resp.json();
 
             const attResp = await startRegistration({ optionsJSON: options });
@@ -237,7 +239,7 @@ export function LoginButton() {
     const handleLogin = async () => {
         try {
             setStatus('Login...');
-            const resp = await fetch(`${apiBaseUrl}/v1/login/options`);
+            const resp = await fetch(`${apiBaseUrl}/v1/login/options`, { credentials: 'include' });
             const options = await resp.json();
 
             const asseResp = await startAuthentication({ optionsJSON: options });

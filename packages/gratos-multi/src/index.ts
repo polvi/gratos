@@ -217,6 +217,15 @@ function wellKnown(endpoint: string, tenant: string) {
             login_verify: '/v1/login/verify',
             whoami: '/v1/whoami',
             logout: '/v1/logout',
+            credentials: '/v1/credentials',
+        },
+        // Hosted end-user surfaces (return_to=<app url> on each).
+        surfaces: {
+            login: '/login',
+            register: '/register',
+            recover: '/recover',
+            account: '/account',
+            logout: '/logout',
         },
         authz: '/v1/authz',
     };
