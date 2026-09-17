@@ -484,13 +484,13 @@ app.all('/*', async (c, next) => {
     }
 
     // Try auth routes first, then key routes, then session routes
-    const authResponse = await auth.fetch(req, c.env);
+    const authResponse = await auth.fetch(req, c.env, c.executionCtx);
     if (authResponse.status !== 404) return authResponse;
 
     const keyResponse = await keys.fetch(req, c.env, c.executionCtx);
     if (keyResponse.status !== 404) return keyResponse;
 
-    const sessionResponse = await session.fetch(req, c.env);
+    const sessionResponse = await session.fetch(req, c.env, c.executionCtx);
     if (sessionResponse.status !== 404) return sessionResponse;
 
     return next();

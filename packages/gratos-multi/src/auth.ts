@@ -37,6 +37,27 @@ const CHALLENGE_TTL = 300; // 5 minutes
 // The challenge becomes part of a KV key, so require base64url charset.
 const CHALLENGE_RE = /^[A-Za-z0-9_-]{16,256}$/;
 
+/**
+ * Run telemetry-grade work after the response when an ExecutionContext is
+ * available, inline otherwise, and never let it break the response. Hono's
+ * `c.executionCtx` getter THROWS when the app was invoked without one.
+ */
+export async function inBackground(c: any, work: () => Promise<unknown>): Promise<void> {
+    let ctx: { waitUntil?: (p: Promise<unknown>) => void } | undefined;
+    try {
+        ctx = c.executionCtx;
+    } catch {
+        ctx = undefined;
+    }
+    try {
+        const p = work().catch(() => undefined);
+        if (ctx?.waitUntil) ctx.waitUntil(p);
+        else await p;
+    } catch {
+        // bookkeeping only
+    }
+}
+
 /** Optional passkey label from `?label=`: trimmed, capped, else null. */
 export function sanitizeLabel(raw: unknown): string | null {
     if (typeof raw !== 'string') return null;
@@ -329,9 +350,7 @@ async function verifyAuthentication(c: any, tenantInfo: TenantInfo, response: an
         });
         const lastUsed = setLastUsed(c, tenantInfo, 'login', 'webauthn');
         const newCounter = verification.authenticationInfo?.newCounter ?? credentialObj.counter;
-        const bookkeeping = updateCredentialUse(c.env.DB, credential.id, newCounter);
-        if (c.executionCtx?.waitUntil) c.executionCtx.waitUntil(bookkeeping);
-        else await bookkeeping;
+        await inBackground(c, () => updateCredentialUse(c.env.DB, credential.id, newCounter));
 
         return c.json({
             verified: true,
