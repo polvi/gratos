@@ -55,3 +55,10 @@ describe('inBackground', () => {
         ).resolves.toBeUndefined();
     });
 });
+
+describe('parseRegChallenge amr', () => {
+    test('carries the adding session amr so verify can cap the new session', () => {
+        expect(parseRegChallenge('{"u":"u1","a":"otp"}')).toEqual({ userId: 'u1', label: null, amr: 'otp' });
+        expect(parseRegChallenge('{"u":"u1","a":"bogus"}')).toEqual({ userId: 'u1', label: null });
+    });
+});

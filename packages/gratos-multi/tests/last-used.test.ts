@@ -5,7 +5,7 @@ import { formatLastUsed, parseLastUsed, setLastUsed, LAST_USED_COOKIE, LAST_USED
 describe('last-used wire form', () => {
     test('round-trips every action × method', () => {
         for (const action of ['login', 'register'] as const) {
-            for (const method of ['webauthn', 'device', 'key'] as const) {
+            for (const method of ['webauthn', 'device', 'key', 'otp'] as const) {
                 const v = formatLastUsed(action, method);
                 expect(v).toBe(`${action}.${method}`);
                 expect(parseLastUsed(v)).toEqual({ action, method });

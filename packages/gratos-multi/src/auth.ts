@@ -27,7 +27,7 @@ import {
     parseTransports,
     MAX_CREDENTIALS_PER_USER,
 } from './db';
-import { mintSession, resolveSession, SESSION_TTL } from './sessions';
+import { mintSession, resolveSession, weakerAmr, AMR_RANK, SESSION_TTL, type Amr } from './sessions';
 import { getSessionId } from './session';
 import { ceremonyRateLimited } from './keys';
 import { setLastUsed } from './last-used';
@@ -67,16 +67,24 @@ export function sanitizeLabel(raw: unknown): string | null {
 
 /**
  * Pending-registration state stored under the challenge. Newer values are
- * JSON `{u, l}` (userId + optional label); values written before labels
- * existed are the bare userId, so a deploy never breaks an in-flight ceremony.
+ * JSON `{u, l, a}` (userId + optional label + the amr of the session that
+ * started an add-passkey ceremony); values written before labels existed are
+ * the bare userId, so a deploy never breaks an in-flight ceremony.
  */
-export function parseRegChallenge(value: string | null): { userId: string; label: string | null } | null {
+export function parseRegChallenge(
+    value: string | null
+): { userId: string; label: string | null; amr?: Amr } | null {
     if (!value) return null;
     if (value.startsWith('{')) {
         try {
-            const parsed = JSON.parse(value) as { u?: unknown; l?: unknown };
+            const parsed = JSON.parse(value) as { u?: unknown; l?: unknown; a?: unknown };
             if (typeof parsed.u !== 'string' || !parsed.u) return null;
-            return { userId: parsed.u, label: sanitizeLabel(parsed.l) };
+            const out: { userId: string; label: string | null; amr?: Amr } = {
+                userId: parsed.u,
+                label: sanitizeLabel(parsed.l),
+            };
+            if (typeof parsed.a === 'string' && parsed.a in AMR_RANK) out.amr = parsed.a as Amr;
+            return out;
         } catch {
             return null;
         }
@@ -145,11 +153,13 @@ async function createRegistrationOptions(c: any, tenantInfo: TenantInfo) {
     // enroll a second credential for one it already holds (InvalidStateError),
     // so "add a passkey" can never silently overwrite the one on this device.
     let excludeCredentials: { id: string; transports?: any[] }[] = [];
+    let sessionAmr: Amr | undefined;
     const sessionId = getSessionId(c);
     if (sessionId) {
         const session = await resolveSession(c.env.KV, tenantInfo.tenant, sessionId);
         if (session && (await getUser(c.env.DB, tenantInfo.tenant, session.userId))) {
             userId = session.userId;
+            sessionAmr = session.amr;
             const existing = await getUserCredentials(c.env.DB, tenantInfo.tenant, userId);
             if (existing.length >= MAX_CREDENTIALS_PER_USER) {
                 return { error: 'Too many credentials on this account' };
@@ -182,10 +192,11 @@ async function createRegistrationOptions(c: any, tenantInfo: TenantInfo) {
 
     const options = await generateRegistrationOptions(opts);
 
-    // Keyed by challenge; the value carries the minted userId (+ label) for verify.
+    // Keyed by challenge; the value carries the minted userId (+ label, + the
+    // adding session's amr so verify can cap the re-minted session) for verify.
     await c.env.KV.put(
         `reg_challenge:${tenantInfo.tenant}:${options.challenge}`,
-        JSON.stringify({ u: userId, ...(label ? { l: label } : {}) }),
+        JSON.stringify({ u: userId, ...(label ? { l: label } : {}), ...(sessionAmr ? { a: sessionAmr } : {}) }),
         { expirationTtl: CHALLENGE_TTL }
     );
 
@@ -203,7 +214,7 @@ async function verifyRegistration(c: any, tenantInfo: TenantInfo, response: any)
     if (!pending) {
         return c.json({ error: 'Challenge not found or expired' }, 400);
     }
-    const { userId, label } = pending;
+    const { userId, label, amr: addingAmr } = pending;
     // Single-use: consume before verification. KV is eventually consistent,
     // so this is per-colo — same trust level as the previous design.
     await c.env.KV.delete(key);
@@ -248,7 +259,10 @@ async function verifyRegistration(c: any, tenantInfo: TenantInfo, response: any)
             throw e;
         }
 
-        const sessionId = await mintSession(c.env.KV, tenantInfo.tenant, userId, 'webauthn', rowId);
+        // Adding a passkey from a weaker session (a code, an account key)
+        // must not upgrade that session; the next passkey sign-in will.
+        const amr = addingAmr ? weakerAmr(addingAmr, 'webauthn') : 'webauthn';
+        const sessionId = await mintSession(c.env.KV, tenantInfo.tenant, userId, amr, rowId);
 
         setCookie(c, 'session_id', sessionId, {
             httpOnly: true,

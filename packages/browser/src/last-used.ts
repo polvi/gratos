@@ -12,11 +12,11 @@ export const LAST_USED_COOKIE = 'ag_last_used';
 const STORAGE_KEY = 'ag_last_used';
 
 export type LastUsedAction = 'login' | 'register';
-export type LastUsedMethod = 'webauthn' | 'device' | 'key';
+export type LastUsedMethod = 'webauthn' | 'device' | 'key' | 'otp';
 export type LastUsed = { action: LastUsedAction; method: LastUsedMethod };
 
 const ACTIONS: ReadonlySet<string> = new Set(['login', 'register']);
-const METHODS: ReadonlySet<string> = new Set(['webauthn', 'device', 'key']);
+const METHODS: ReadonlySet<string> = new Set(['webauthn', 'device', 'key', 'otp']);
 
 /** Parse the wire form (`login.webauthn`, `register.key`, …); null otherwise. */
 export function parseLastUsed(value: unknown): LastUsed | null {

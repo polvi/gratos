@@ -170,6 +170,20 @@ import { HeroPrompt } from "../components/HeroPrompt";
       <a href="/llms.txt">llms.txt</a>.
     </p>
 
+    <h3>Sign in with a code: for people without passkeys</h3>
+
+    <p>
+      Some of your users have no phone and no passkey-capable device, or just can't manage one: a
+      grandparent with a desktop and a landline, say. For them your app can deliver a short
+      <strong>sign-in code</strong> over a channel it already owns, like a voice call or an email.
+      You provision the account ahead of time and keep the phone number or email yourself, and
+      AuthGravity only mints and checks the code. The code works only in the browser that asked for it.
+      Once they're in, the client enrolls a silent device key, so they type a code once per computer.
+      Codes are the weakest way in (they can be read aloud to a scammer), so these sessions are
+      marked <code>otp</code> and you can require something stronger for sensitive actions. Details
+      are in <a href="/llms.txt">llms.txt</a>.
+    </p>
+
     <h2>Authorization (optional)</h2>
 
     <p>

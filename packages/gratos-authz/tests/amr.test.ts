@@ -12,6 +12,7 @@ describe('parseMinAmr', () => {
         expect(parseMinAmr('webauthn')).toBe('webauthn');
         expect(parseMinAmr('device')).toBe('device');
         expect(parseMinAmr('key')).toBe('key');
+        expect(parseMinAmr('otp')).toBe('otp');
     });
 
     test('invalid value throws 400', () => {
@@ -33,6 +34,12 @@ describe('meetsMinAmr', () => {
         expect(meetsMinAmr('key', 'device')).toBe(false);
         expect(meetsMinAmr('device', 'webauthn')).toBe(false);
         expect(meetsMinAmr('key', 'webauthn')).toBe(false);
+        expect(meetsMinAmr('otp', 'key')).toBe(false);
+    });
+
+    test('a code session only meets an otp floor', () => {
+        expect(meetsMinAmr('otp', 'otp')).toBe(true);
+        expect(meetsMinAmr('key', 'otp')).toBe(true);
     });
 
     test('missing/unknown amr fails closed', () => {

@@ -27,7 +27,7 @@ import {
     MAX_CREDENTIALS_PER_USER,
 } from './db';
 import { providerName } from './aaguid';
-import { mintSession, resolveSession, AMR_RANK, Amr, SESSION_TTL } from './sessions';
+import { mintSession, resolveSession, weakerAmr, AMR_RANK, Amr, SESSION_TTL } from './sessions';
 import { setLastUsed } from './last-used';
 import { getSessionId } from './session';
 import { WORDLIST } from './wordlist';
@@ -105,7 +105,7 @@ export async function ceremonyRateLimited(c: any): Promise<boolean> {
     return false;
 }
 
-function setSessionCookie(c: any, tenantInfo: TenantInfo, sessionId: string) {
+export function setSessionCookie(c: any, tenantInfo: TenantInfo, sessionId: string) {
     setCookie(c, 'session_id', sessionId, {
         httpOnly: true,
         secure: true,
@@ -171,11 +171,15 @@ export function keyRoutes(tenantInfo: TenantInfo) {
         // (recovery-key enrollment, device provisioning). Otherwise create a
         // fresh user — this is sign-up for the no-passkey path.
         let userId = crypto.randomUUID();
+        let amr: Amr = KIND_TO_AMR[kind];
         const sessionId = getSessionId(c);
         if (sessionId) {
             const session = await resolveSession(c.env.KV, tenantInfo.tenant, sessionId);
             if (session && (await getUser(c.env.DB, tenantInfo.tenant, session.userId))) {
                 userId = session.userId;
+                // Attaching never upgrades the session: a code or account-key
+                // session that enrolls a device key stays at its own rank.
+                amr = weakerAmr(session.amr, amr);
                 if ((await countCredentials(c.env.DB, tenantInfo.tenant, userId)) >= MAX_CREDENTIALS_PER_USER) {
                     return c.json({ error: 'Too many credentials on this account' }, 400);
                 }
@@ -189,7 +193,7 @@ export function keyRoutes(tenantInfo: TenantInfo) {
         const safeLabel = typeof label === 'string' && label.trim() ? label.trim().slice(0, 64) : null;
         const rowId = await saveKeyCredential(c.env.DB, tenantInfo.tenant, userId, credentialId, public_key, kind, safeLabel);
 
-        const newSessionId = await mintSession(c.env.KV, tenantInfo.tenant, userId, KIND_TO_AMR[kind], rowId);
+        const newSessionId = await mintSession(c.env.KV, tenantInfo.tenant, userId, amr, rowId);
         setSessionCookie(c, tenantInfo, newSessionId);
         // Sign-up only when this ceremony created the account; attaching a
         // recovery or device key to a signed-in user is not a "create account".

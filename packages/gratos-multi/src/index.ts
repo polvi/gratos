@@ -6,6 +6,7 @@ import { resolveTenant, validateSandboxRpId, withSandboxRpId, hostMatchesRpId, t
 import { authRoutes } from './auth';
 import { sessionRoutes, getSessionId } from './session';
 import { keyRoutes } from './keys';
+import { codeRoutes } from './codes';
 import { getUser } from './db';
 import { parseSessionValue, resolveSession } from './sessions';
 import { sha256Hex } from './hash';
@@ -97,6 +98,7 @@ export class AuthRPC extends WorkerEntrypoint<Env> {
             const tenant = row.id;
             await this.env.DB.prepare('DELETE FROM public_keys WHERE tenant = ?').bind(tenant).run();
             await this.env.DB.prepare('DELETE FROM users WHERE tenant = ?').bind(tenant).run();
+            await this.env.DB.prepare('DELETE FROM code_tickets WHERE tenant = ?').bind(tenant).run();
             await this.env.DB.prepare('DELETE FROM sandboxes WHERE id = ?').bind(tenant).run();
             await deleteAauthTenant(this.env.DB, tenant);
             try {
@@ -379,6 +381,7 @@ app.delete('/sandboxes/:sid', async (c) => {
     const tenant = row.id;
     await c.env.DB.prepare('DELETE FROM public_keys WHERE tenant = ?').bind(tenant).run();
     await c.env.DB.prepare('DELETE FROM users WHERE tenant = ?').bind(tenant).run();
+    await c.env.DB.prepare('DELETE FROM code_tickets WHERE tenant = ?').bind(tenant).run();
     await c.env.DB.prepare('DELETE FROM sandboxes WHERE id = ?').bind(tenant).run();
     await deleteAauthTenant(c.env.DB, tenant);
     try {
@@ -410,6 +413,7 @@ app.all('/*', async (c, next) => {
     const auth = authRoutes(tenantInfo);
     const session = sessionRoutes(tenantInfo);
     const keys = keyRoutes(tenantInfo);
+    const codes = codeRoutes(tenantInfo);
 
     // For path-based sandbox tenants, strip the "/<id>" prefix so the existing
     // auth/session routes (mounted at root) match "/v1/register/options" etc.
@@ -483,12 +487,15 @@ app.all('/*', async (c, next) => {
         return c.env.AUTHZ.fetch(new Request(req, { headers }));
     }
 
-    // Try auth routes first, then key routes, then session routes
+    // Try auth routes first, then key routes, then code routes, then session routes
     const authResponse = await auth.fetch(req, c.env, c.executionCtx);
     if (authResponse.status !== 404) return authResponse;
 
     const keyResponse = await keys.fetch(req, c.env, c.executionCtx);
     if (keyResponse.status !== 404) return keyResponse;
+
+    const codeResponse = await codes.fetch(req, c.env, c.executionCtx);
+    if (codeResponse.status !== 404) return codeResponse;
 
     const sessionResponse = await session.fetch(req, c.env, c.executionCtx);
     if (sessionResponse.status !== 404) return sessionResponse;

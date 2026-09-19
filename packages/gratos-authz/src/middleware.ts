@@ -5,12 +5,14 @@
 
 import type { Context, Next } from 'hono';
 
+import { isAmr } from './amr';
+
 export const TENANT_HEADER = 'X-Gratos-Tenant';
 export const USER_HEADER = 'X-Gratos-User';
 // For sandbox tenants only: 'owned' | 'anonymous', from gratos-multi's
 // sandboxes table. Absent (e.g. missing row) means fail-closed: managed mode.
 export const SANDBOX_HEADER = 'X-Gratos-Sandbox';
-// How the session was authenticated: webauthn | device | key.
+// How the session was authenticated: webauthn | device | key | otp.
 export const AMR_HEADER = 'X-Gratos-Amr';
 
 export type Variables = {
@@ -36,7 +38,7 @@ export async function trustedContext(c: Context, next: Next) {
     const userId = c.req.header(USER_HEADER);
     if (userId) c.set('userId', userId);
     const amr = c.req.header(AMR_HEADER);
-    if (amr === 'webauthn' || amr === 'device' || amr === 'key') c.set('amr', amr);
+    if (isAmr(amr)) c.set('amr', amr);
     const sandbox = c.req.header(SANDBOX_HEADER);
     if (sandbox === 'owned' || sandbox === 'anonymous') c.set('sandboxMode', sandbox);
     await next();

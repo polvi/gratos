@@ -18,6 +18,9 @@ export {
 } from './device-key';
 export type { EnableDeviceKeyResult } from './device-key';
 
+// Sign in with a code your backend delivers (voice call, email): no passkey needed.
+export { startCodeLogin, verifyCode } from './code';
+
 export { suggestedMethod, supportsPasskeys } from './capabilities';
 export type { AuthMethod } from './capabilities';
 

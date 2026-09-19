@@ -20,7 +20,7 @@ export type LastUsedAction = 'login' | 'register';
 export type LastUsed = { action: LastUsedAction; method: Amr };
 
 const ACTIONS = new Set<string>(['login', 'register']);
-const METHODS = new Set<string>(['webauthn', 'device', 'key']);
+const METHODS = new Set<string>(['webauthn', 'device', 'key', 'otp']);
 
 /** Wire form of the cookie / response field: `login.webauthn`, `register.key`, … */
 export function formatLastUsed(action: LastUsedAction, method: Amr): string {

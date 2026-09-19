@@ -5,7 +5,7 @@
 
 import { objectRef } from './ids';
 
-export type Amr = 'webauthn' | 'device' | 'key';
+export type Amr = 'webauthn' | 'device' | 'key' | 'otp';
 
 /** Structural schema shape; the generated `AuthzSchema` satisfies it. */
 export interface SchemaShape {
@@ -47,7 +47,7 @@ export interface RelUpdate {
 export interface AuthgravityConfig {
     /** e.g. https://authgravity.myapp.com */
     endpoint: string;
-    /** Service token (agk_…) for relationship writes and service-token checks. */
+    /** Service token (agk_…) for relationship writes, service-token checks, and sign-in codes. */
     serviceToken?: string;
 }
 
@@ -80,7 +80,7 @@ export class AuthgravityServer<S extends SchemaShape = AnySchema> {
             if (!this.config.serviceToken) {
                 throw new Error(
                     requireService
-                        ? 'a serviceToken is required for relationship writes'
+                        ? 'a serviceToken is required for this call'
                         : 'no session cookie and no serviceToken: cannot authenticate the check'
                 );
             }
@@ -163,6 +163,31 @@ export class AuthgravityServer<S extends SchemaShape = AnySchema> {
             deleted += data.deleted ?? 0;
         }
         return { written, deleted };
+    }
+
+    /**
+     * Provision a user with no credentials yet (e.g. a relative you set up
+     * for code sign-in). Store the returned id against their phone/email —
+     * AuthGravity never sees either.
+     */
+    async createUser(): Promise<{ userId: string }> {
+        const res = await this.post('/v1/users', {}, undefined, true);
+        if (!res.ok) throw new Error(`create user failed (${res.status}): ${await res.text()}`);
+        const data = (await res.json()) as { user_id: string };
+        return { userId: data.user_id };
+    }
+
+    /**
+     * Mint a 6-digit sign-in code for a ticket the person's browser started
+     * (`startCodeLogin` in @authgravity/browser). Deliver the code yourself
+     * (voice call, email); it only works in that browser, for 10 minutes.
+     * Calling again for the same ticket is a resend (replaces the code).
+     */
+    async mintCode(args: { ticket: string; userId: string }): Promise<{ code: string; expiresAt: number }> {
+        const res = await this.post('/v1/code/mint', { ticket: args.ticket, user_id: args.userId }, undefined, true);
+        if (!res.ok) throw new Error(`mint code failed (${res.status}): ${await res.text()}`);
+        const data = (await res.json()) as { code: string; expires_at: number };
+        return { code: data.code, expiresAt: data.expires_at };
     }
 }
 

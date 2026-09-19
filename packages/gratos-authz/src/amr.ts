@@ -2,18 +2,18 @@
 //
 // The source of truth for these ranks is `packages/gratos-multi/src/sessions.ts`
 // (AMR_RANK). It is duplicated here on purpose: gratos-authz is a separately
-// deployed Worker with no dependency on gratos-multi, and this is a three-entry
+// deployed Worker with no dependency on gratos-multi, and this is a four-entry
 // constant. The authz worker only ever sees `amr` as the trusted `X-Gratos-Amr`
 // header (see middleware.ts), which is one of these strings or undefined.
 
 import { ApiError } from './model';
 
-export type Amr = 'webauthn' | 'device' | 'key';
+export type Amr = 'webauthn' | 'device' | 'key' | 'otp';
 
-export const AMR_RANK: Record<Amr, number> = { webauthn: 3, device: 2, key: 1 };
+export const AMR_RANK: Record<Amr, number> = { webauthn: 3, device: 2, key: 1, otp: 0 };
 
 export function isAmr(v: unknown): v is Amr {
-    return v === 'webauthn' || v === 'device' || v === 'key';
+    return v === 'webauthn' || v === 'device' || v === 'key' || v === 'otp';
 }
 
 /**
@@ -23,7 +23,7 @@ export function isAmr(v: unknown): v is Amr {
 export function parseMinAmr(v: unknown, label = ''): Amr | null {
     if (v === undefined || v === null) return null;
     if (isAmr(v)) return v;
-    throw new ApiError(400, `${label}min_amr must be one of "webauthn", "device", "key"`);
+    throw new ApiError(400, `${label}min_amr must be one of "webauthn", "device", "key", "otp"`);
 }
 
 /**

@@ -126,12 +126,12 @@ export function createApp(endpoint: string, appOpts: AppOptions = {}) {
         c.res = new Response(text, { status: res.status, headers: responseHeaders });
 
         let note = '';
-        // Every ceremony that mints a session: passkey, account key, device key.
-        const isVerify = /^\/v1\/(?:key\/)?(?:register|login)\/verify$/.test(url.pathname);
+        // Every ceremony that mints a session: passkey, account key, device key, code.
+        const isVerify = /^\/v1\/(?:(?:key\/)?(?:register|login)|code)\/verify$/.test(url.pathname);
         if (isVerify && res.ok) {
             try {
                 const data = JSON.parse(text) as { session_id?: string; last_used?: string };
-                if (typeof data.last_used === 'string' && /^(?:login|register)\.(?:webauthn|device|key)$/.test(data.last_used)) {
+                if (typeof data.last_used === 'string' && /^(?:login|register)\.(?:webauthn|device|key|otp)$/.test(data.last_used)) {
                     setCookie(c, LAST_USED_COOKIE, data.last_used, {
                         sameSite: 'Lax',
                         path: '/',

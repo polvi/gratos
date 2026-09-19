@@ -156,7 +156,7 @@ function authSection(lines: string[]) {
     lines.push('');
     lines.push(ADD_PASSKEY_CODE);
     lines.push('');
-    lines.push('**"Last used" hint.** Every successful ceremony also sets a JS-readable, one-year `ag_last_used` cookie on your domain (not httpOnly, unlike `session_id`) whose value is `<action>.<method>`: action `login` | `register` (only a ceremony that CREATED the account counts as `register`; adding a passkey or recovery key to a signed-in user leaves it alone), method `webauthn` | `device` | `key` (the session `amr` vocabulary). Read it on page load and put a small "Last used" pill on the matching button — returning users then see it on **Login**, first-time users see nothing. `lastUsed()` in `@authgravity/browser` parses it (falls back to `localStorage`, which the SDK fills from the `last_used` verify field when the cookie cannot reach your origin, e.g. a sandbox used without `authgravity listen`; the proxy mirrors the cookie onto localhost). Logout keeps the cookie on purpose. It carries no identity — no user id, no credential id.');
+    lines.push('**"Last used" hint.** Every successful ceremony also sets a JS-readable, one-year `ag_last_used` cookie on your domain (not httpOnly, unlike `session_id`) whose value is `<action>.<method>`: action `login` | `register` (only a ceremony that CREATED the account counts as `register`; adding a passkey or recovery key to a signed-in user leaves it alone), method `webauthn` | `device` | `key` | `otp` (the session `amr` vocabulary). Read it on page load and put a small "Last used" pill on the matching button — returning users then see it on **Login**, first-time users see nothing. `lastUsed()` in `@authgravity/browser` parses it (falls back to `localStorage`, which the SDK fills from the `last_used` verify field when the cookie cannot reach your origin, e.g. a sandbox used without `authgravity listen`; the proxy mirrors the cookie onto localhost). Logout keeps the cookie on purpose. It carries no identity — no user id, no credential id.');
     lines.push('');
 }
 
@@ -179,7 +179,52 @@ function accountKeysSection(lines: string[]) {
         `Derivation: \`priv = (HKDF-SHA256(entropy, salt=utf8(tenant), info="authgravity/softkey/v1", 40 bytes) mod (n-1)) + 1\` on P-256; \`public_key\` = base64url 65-byte uncompressed point; \`signature\` = base64url 64-byte r||s of ECDSA-SHA256 over utf8 \`\${context}\\n\${challenge}\\n\${tenant}\`. The \`@authgravity/browser\` SDK implements all of this (\`mintKey\`/\`decodeKey\`/\`registerAccountKey\`/\`loginWithAccountKey\`/\`enableDeviceKey\`); the full spec + conformance vectors are at https://authgravity.org/llms.txt.`
     );
     lines.push('');
-    lines.push('Sessions carry `amr` (`webauthn` | `device` | `key`) in `/v1/whoami` and authz responses, so apps can require passkey-strength sessions for sensitive actions.');
+    lines.push('Sessions carry `amr` (`webauthn` | `device` | `key` | `otp`, strongest first) in `/v1/whoami` and authz responses, so apps can require passkey-strength sessions for sensitive actions. Adding a credential while signed in never raises the session: an `otp` session that enrolls a device key stays `otp` until the next sign-in.');
+    lines.push('');
+}
+
+const CODE_LOGIN_CODE = `\`\`\`typescript
+// Browser — your "sign in with a phone call" screen.
+import { startCodeLogin, verifyCode, enableDeviceKey } from '@authgravity/browser';
+
+const ticket = await startCodeLogin(ENDPOINT);          // verifier stays in this tab
+await fetch('/api/send-code', { method: 'POST', body: JSON.stringify({ ticket, phone }) });
+// …person types the code they heard…
+const r = await verifyCode(ENDPOINT, typed);            // session_id cookie, amr "otp"
+if (r.verified) await enableDeviceKey(ENDPOINT);        // this computer signs in silently from now on
+
+// Backend — /api/send-code (service token stays server-side).
+import { authgravity } from '@authgravity/server';
+const ag = authgravity({ endpoint: ENDPOINT, serviceToken: process.env.AUTHGRAVITY_SERVICE_TOKEN });
+const userId = await db.userIdForPhone(phone);          // YOUR mapping; AuthGravity never sees the phone
+if (userId) {
+  const { code } = await ag.mintCode({ ticket, userId });
+  await placeVoiceCall(phone, code);                    // or email, or anything
+}
+return ok();                                            // same response whether or not the number is known
+\`\`\``;
+
+function codeLoginSection(lines: string[]) {
+    lines.push('## Sign in with a code (app-delivered, for people without passkeys)');
+    lines.push('');
+    lines.push(
+        'For people who cannot use a passkey — no phone, no platform authenticator, not comfortable with one — your app delivers a 6-digit code over a channel it already owns (a voice call to a landline, an email) and the person types it once per computer. Your backend owns the phone/email and its mapping to an AuthGravity user id; AuthGravity only provisions users and mints/verifies codes. **Accounts are provisioned, not self-served**: codes are minted only for users your backend created, so a stranger cannot trigger calls to arbitrary numbers through AuthGravity.'
+    );
+    lines.push('');
+    lines.push(CODE_LOGIN_CODE);
+    lines.push('');
+    lines.push('- `POST /v1/users` (service token) → `{user_id}` — a user with no credentials yet; store the id against their phone/email');
+    lines.push('- `POST /v1/code/start` (browser) → `{ticket, verifier, expires_at}` — send only `ticket` to your backend');
+    lines.push('- `POST /v1/code/mint` `{ticket, user_id}` (service token) → `{code, expires_at}` — 6 digits, valid 10 minutes; calling again is a resend (new code, max 3 per ticket; 5 codes per user per hour)');
+    lines.push('- `POST /v1/code/verify` `{ticket, verifier, code}` (browser) → `{verified, user:{id}, last_used: "login.otp"}`; sets `session_id` with `amr: "otp"`. 5 wrong codes burn the ticket');
+    lines.push('');
+    lines.push(
+        'Service tokens (`agk_…`) are minted by the tenant owner in the dashboard; any of the tenant\'s tokens may provision users and mint codes. Anonymous sandboxes need no token (open pools). The code is bound to the browser that started the ticket (its `verifier`), so a code overheard or left on voicemail is useless elsewhere.'
+    );
+    lines.push('');
+    lines.push(
+        '**This is not phishing-resistant** (NIST SP 800-63B out-of-band): a scammer who starts a sign-in with the person\'s number and then asks them to read the code aloud gets in. So: (1) say it in the message — "Never share this code. We will never call and ask for it."; (2) never leave a code on voicemail (use answering-machine detection); (3) tell a family member or the account holder whenever a code is issued; (4) rate-limit your own send-code endpoint and answer identically for unknown numbers; (5) right after a code sign-in, `enableDeviceKey()` so later sign-ins are silent and codes stay rare; (6) gate sensitive actions with `min_amr` — an `otp` session is the weakest.'
+    );
     lines.push('');
 }
 
@@ -427,7 +472,7 @@ function authzSection(lines: string[], ctx: LlmsContext) {
     lines.push('');
     lines.push('Batch (list pages): `{"items": [{"object": "...", "permission": "..."}, ...]}` (max 50) → `{"results": [...], "user_id": "..."}`, order preserved. Do not cache allow/deny across requests — per-request checks are what make revocation instant.');
     lines.push('');
-    lines.push('Require step-up strength for sensitive actions with `min_amr` (`webauthn` | `device` | `key`), top-level or per item: `{"object": "...", "permission": "...", "min_amr": "webauthn"}`. A session weaker than required returns `{"allowed": false, "reason": "insufficient_amr"}` (so you can prompt re-auth rather than treat it as a plain deny). `min_amr` is session-only — a service-token check that sends it gets 400. Every check response also carries an `X-Schema-Version` header.');
+    lines.push('Require step-up strength for sensitive actions with `min_amr` (`webauthn` | `device` | `key` | `otp`), top-level or per item: `{"object": "...", "permission": "...", "min_amr": "webauthn"}`. A session weaker than required returns `{"allowed": false, "reason": "insufficient_amr"}` (so you can prompt re-auth rather than treat it as a plain deny). `min_amr` is session-only — a service-token check that sends it gets 400. Every check response also carries an `X-Schema-Version` header.');
     lines.push('');
     lines.push('Other endpoints: `GET /v1/authz/status`, `GET /v1/authz/schema`, `GET /v1/authz/relationships?object_type=…`, `POST /v1/authz/relationships` `{updates:[{op:"touch"|"create"|"delete",object,relation,subject}]}` (max 100, atomic).');
     lines.push('');
@@ -577,6 +622,7 @@ export function buildLlmsTxt(ctx: LlmsContext): string {
     introSection(lines, ctx);
     authSection(lines);
     accountKeysSection(lines);
+    codeLoginSection(lines);
     sessionValidationSection(lines);
     if (ctx.kind === 'root') authzOverviewSection(lines);
     else authzSection(lines, ctx);

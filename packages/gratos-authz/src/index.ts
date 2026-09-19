@@ -5,6 +5,7 @@ import { authzRoutes, runCheck, serviceTokenAuth, Env } from './routes';
 import { requireUser, trustedContext, Variables } from './middleware';
 import { loadSchema } from './schema';
 import { grantOwnerTuples, deleteTenantData, OwnerGrant } from './tuples';
+import { isServiceToken, verifyToken } from './tokens';
 import { consolePage } from './console';
 import { buildLlmsTxt, LlmsKind } from './llmstxt';
 
@@ -34,6 +35,19 @@ export class AuthzRPC extends WorkerEntrypoint<Env> {
     async check(tenant: string, object: string, permission: string, subject: string): Promise<boolean> {
         const schema = await loadSchema(this.env.DB, tenant);
         return runCheck(this.env.DB, tenant, schema?.doc ?? null, object, permission, subject);
+    }
+
+    /**
+     * Is `secret` a live service token for `tenant`? gratos-multi calls this
+     * for the tenant backend's own endpoints (user provisioning, sign-in code
+     * minting); the tenant scoping in verifyToken is the security boundary.
+     */
+    async verifyServiceToken(tenant: string, secret: string): Promise<boolean> {
+        if (!tenant || !isServiceToken(secret)) return false;
+        const hit = await verifyToken(this.env.DB, tenant, secret);
+        if (!hit) return false;
+        this.ctx.waitUntil(hit.touch());
+        return true;
     }
 
     /**

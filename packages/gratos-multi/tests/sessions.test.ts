@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parseSessionValue, mintSession } from '../src/sessions';
+import { parseSessionValue, mintSession, weakerAmr } from '../src/sessions';
 
 describe('parseSessionValue', () => {
     test('JSON sessions carry amr and the minting credential', () => {
@@ -16,6 +16,18 @@ describe('parseSessionValue', () => {
         expect(parseSessionValue('u1')).toEqual({ userId: 'u1', amr: 'webauthn' });
         expect(parseSessionValue(null)).toBeNull();
         expect(parseSessionValue('{"amr":"key"}')).toBeNull();
+    });
+
+    test('code sessions keep their amr; unknown amr fails closed instead of reading as a passkey', () => {
+        expect(parseSessionValue('{"u":"u1","amr":"otp"}')).toEqual({ userId: 'u1', amr: 'otp' });
+        expect(parseSessionValue('{"u":"u1"}')).toEqual({ userId: 'u1', amr: 'webauthn' });
+        expect(parseSessionValue('{"u":"u1","amr":"password"}')).toBeNull();
+    });
+
+    test('weakerAmr never upgrades', () => {
+        expect(weakerAmr('otp', 'device')).toBe('otp');
+        expect(weakerAmr('key', 'webauthn')).toBe('key');
+        expect(weakerAmr('webauthn', 'device')).toBe('device');
     });
 
     test('mintSession writes the credential only when given', async () => {
